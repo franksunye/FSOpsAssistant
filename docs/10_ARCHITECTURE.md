@@ -1,18 +1,222 @@
-# 10_ARCHITECTURE
+# FSOA 系统架构
 
-本文件描述项目的系统架构，遵循敏捷开发和KISS原则。
+Field Service Operations Assistant - 现场服务运营助手
 
-## 架构目标
-- 简单、可扩展、易于维护
+## 1. 架构目标
 
-## 总体架构
-- 采用模块化设计，核心功能独立实现
-- 保持架构层次清晰，避免过度设计
+### 业务目标
+- **主动监控**：自动检测现场服务时效超标
+- **智能决策**：基于规则+LLM的混合决策机制
+- **自动化运营**：减少人工干预，提升运营效率
+- **可扩展性**：支持未来功能扩展和业务场景增加
 
-## 主要组件
-- 核心业务模块
-- API接口层
-- 数据存储层
+### 技术目标
+- **非侵入式**：通过Metabase获取数据，不影响现有业务系统
+- **Agentic特性**：体现主动性、自主决策、目标导向
+- **企业级**：稳定可靠，支持多租户（多企微群）
+
+## 2. 总体架构
+
+### 2.1 系统架构图
+
+```mermaid
+graph TB
+    subgraph "外部系统"
+        MB[Metabase<br/>数据源]
+        WX[企微群A/B/C<br/>通知渠道]
+        DS[DeepSeek<br/>LLM服务]
+    end
+
+    subgraph "FSOA Agent 系统"
+        subgraph "Agent 编排层"
+            AO[Agent Orchestrator<br/>LangGraph DAG]
+            SC[Scheduler<br/>定时调度器]
+        end
+
+        subgraph "工具层 (Tool Layer)"
+            DF[Data Fetcher<br/>数据获取]
+            DE[Decision Engine<br/>决策引擎]
+            MS[Message Sender<br/>消息发送]
+            MM[Memory Manager<br/>记忆管理]
+        end
+
+        subgraph "数据层"
+            DB[(SQLite<br/>本地数据库)]
+            DM[Data Models<br/>数据模型]
+        end
+
+        subgraph "用户界面"
+            UI[Streamlit UI<br/>管理界面]
+            API[REST API<br/>接口服务]
+        end
+    end
+
+    subgraph "核心流程"
+        P1[1. 定时触发]
+        P2[2. 获取任务数据]
+        P3[3. 分析超时状态]
+        P4[4. 智能决策]
+        P5[5. 发送通知]
+        P6[6. 记录结果]
+    end
+
+    %% 数据流连接
+    SC --> AO
+    AO --> DF
+    DF --> MB
+    AO --> DE
+    DE --> DS
+    AO --> MS
+    MS --> WX
+    AO --> MM
+    MM --> DB
+    DM --> DB
+
+    %% UI连接
+    UI --> API
+    API --> DB
+    API --> AO
+
+    %% 流程连接
+    P1 --> P2
+    P2 --> P3
+    P3 --> P4
+    P4 --> P5
+    P5 --> P6
+
+    %% 样式
+    classDef external fill:#e1f5fe
+    classDef agent fill:#f3e5f5
+    classDef tool fill:#e8f5e8
+    classDef data fill:#fff3e0
+    classDef ui fill:#fce4ec
+    classDef process fill:#f1f8e9
+
+    class MB,WX,DS external
+    class AO,SC agent
+    class DF,DE,MS,MM tool
+    class DB,DM data
+    class UI,API ui
+    class P1,P2,P3,P4,P5,P6 process
+```
+
+### 2.2 架构说明
+
+```
+┌─────────────────┐    ┌──────────────────────────────┐
+│   Metabase      │    │        FSOA Agent            │
+│  (数据源)        │◄───┤  ┌─────────────────────────┐  │
+└─────────────────┘    │  │   Agent Orchestrator    │  │
+                       │  │    (LangGraph DAG)      │  │
+┌─────────────────┐    │  └─────────────────────────┘  │
+│  企微群 A/B/C    │◄───┤  ┌─────────────────────────┐  │
+│  (通知渠道)      │    │  │     Tool Layer          │  │
+└─────────────────┘    │  │ • Data Fetcher          │  │
+                       │  │ • Message Sender        │  │
+┌─────────────────┐    │  │ • Decision Engine       │  │
+│   SQLite        │◄───┤  │ • Memory Manager        │  │
+│  (本地存储)      │    │  └─────────────────────────┘  │
+└─────────────────┘    └──────────────────────────────┘
+                                      ▲
+┌─────────────────┐                   │
+│  Streamlit UI   │───────────────────┘
+│  (管理界面)      │
+└─────────────────┘
+```
+
+## 3. 核心组件
+
+### 3.1 Agent Orchestrator (LangGraph)
+- **定时触发**：基于Cron的定时任务调度
+- **状态管理**：维护Agent执行状态和上下文
+- **流程控制**：DAG节点控制执行流程
+- **错误处理**：异常捕获和恢复机制
+
+### 3.2 Tool Layer
+```python
+# 核心工具集
+- fetch_overdue_tasks()     # 从Metabase获取超时任务
+- analyze_task_priority()   # 分析任务优先级（规则+LLM）
+- send_wechat_message()     # 发送企微通知
+- update_task_status()      # 更新任务状态
+- log_agent_action()        # 记录Agent行为
+```
+
+### 3.3 Decision Engine
+- **规则引擎**：基于SLA时间的硬规则判断
+- **LLM推理**：可选的智能决策和内容生成
+- **混合决策**：规则触发 + LLM优化的决策模式
+
+### 3.4 Data Layer
+```sql
+-- Agent运行记录
+agent_runs: id, trigger_time, status, context
+
+-- 任务处理历史
+task_actions: id, task_id, action_type, content, timestamp
+
+-- 通知记录
+notifications: id, task_id, group_id, message, status
+
+-- 配置管理
+configs: key, value, description
+```
+
+## 4. Agentic特性实现
+
+### 4.1 主动性 (Proactive)
+- **定时扫描**：每小时自动检查任务状态
+- **事件驱动**：基于业务规则主动触发行动
+- **持续监控**：7x24小时无人值守运行
+
+### 4.2 自主决策 (Autonomous)
+- **智能判断**：结合规则和LLM的决策机制
+- **上下文感知**：基于历史记录和当前状态决策
+- **自适应**：根据反馈调整决策策略
+
+### 4.3 目标导向 (Goal-Oriented)
+- **明确目标**：提升现场服务时效合规率
+- **结果导向**：以业务KPI为驱动
+- **持续优化**：基于效果反馈优化策略
+
+## 5. 技术栈
+
+### 5.1 核心技术
+- **Python 3.9+**：主要开发语言
+- **LangGraph**：Agent编排框架
+- **DeepSeek**：LLM推理引擎
+- **SQLite**：本地数据存储
+- **Streamlit**：Web UI框架
+
+### 5.2 集成技术
+- **Metabase API**：数据源集成
+- **企微Webhook**：消息通知
+- **APScheduler**：定时任务调度
+- **Pydantic**：数据验证和序列化
+
+## 6. 部署架构
+
+### 6.1 单机部署（POC阶段）
+```
+┌─────────────────────────────────┐
+│         FSOA Server             │
+│  ┌─────────────────────────────┐│
+│  │    Streamlit Frontend       ││
+│  └─────────────────────────────┘│
+│  ┌─────────────────────────────┐│
+│  │    Agent Engine             ││
+│  └─────────────────────────────┘│
+│  ┌─────────────────────────────┐│
+│  │    SQLite Database          ││
+│  └─────────────────────────────┘│
+└─────────────────────────────────┘
+```
+
+### 6.2 扩展部署（生产阶段）
+- **容器化**：Docker部署
+- **数据库**：PostgreSQL替换SQLite
+- **消息队列**：Redis/RabbitMQ
+- **监控**：Prometheus + Grafana
 
 ---
-> 架构文档应随项目演进持续完善，保持内容简洁。 
+> 架构设计遵循KISS原则，优先实现核心功能，保持扩展性
