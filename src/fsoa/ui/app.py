@@ -60,44 +60,74 @@ def main():
     st.title("🤖 FSOA - 现场服务运营助手")
     st.markdown("---")
     
-    # 侧边栏导航
+    # 侧边栏导航 - 重新设计为业务导向的清晰结构
     with st.sidebar:
-        st.header("📋 导航菜单")
-        page = st.selectbox(
-            "选择页面",
-            ["📊 运营仪表板", "📈 业务分析", "🤖 Agent控制", "📋 商机列表",
-             "🔍 执行历史", "📬 通知管理", "💾 缓存管理", "🔔 通知历史",
-             "🔧 企微群配置", "⚙️ 系统设置", "🧪 系统测试"]
-        )
+        st.title("🤖 FSOA 运营助手")
+        st.markdown("*现场服务智能监控系统*")
+        st.markdown("---")
+
+        # 核心业务功能
+        st.subheader("📊 核心监控")
+        if st.button("🎯 运营仪表板", use_container_width=True):
+            st.session_state.page = "dashboard"
+        if st.button("📋 商机监控", use_container_width=True):
+            st.session_state.page = "opportunities"
+        if st.button("📈 业务分析", use_container_width=True):
+            st.session_state.page = "analytics"
+
+        st.markdown("---")
+
+        # Agent管理功能
+        st.subheader("🤖 Agent管理")
+        if st.button("🎛️ Agent控制台", use_container_width=True):
+            st.session_state.page = "agent_control"
+        if st.button("🔍 执行历史", use_container_width=True):
+            st.session_state.page = "execution_history"
+        if st.button("📬 通知管理", use_container_width=True):
+            st.session_state.page = "notification_management"
+
+        st.markdown("---")
+
+        # 系统管理功能
+        st.subheader("⚙️ 系统管理")
+        if st.button("💾 缓存管理", use_container_width=True):
+            st.session_state.page = "cache_management"
+        if st.button("🔧 企微群配置", use_container_width=True):
+            st.session_state.page = "wechat_config"
+        if st.button("🧪 系统测试", use_container_width=True):
+            st.session_state.page = "system_test"
+
+        # 获取当前页面
+        page = st.session_state.get("page", "dashboard")
     
     # 根据选择显示不同页面
-    if page == "📊 运营仪表板":
+    if page == "dashboard":
         show_dashboard()
-    elif page == "📈 业务分析":
-        show_business_analytics()
-    elif page == "🤖 Agent控制":
-        show_agent_control()
-    elif page == "📋 商机列表":
+    elif page == "opportunities":
         show_opportunity_list()
-    elif page == "🔍 执行历史":
+    elif page == "analytics":
+        show_business_analytics()
+    elif page == "agent_control":
+        show_agent_control()
+    elif page == "execution_history":
         show_execution_history()
-    elif page == "📬 通知管理":
+    elif page == "notification_management":
         show_notification_management()
-    elif page == "💾 缓存管理":
+    elif page == "cache_management":
         show_cache_management()
-    elif page == "🔔 通知历史":
-        show_notification_history()
-    elif page == "🔧 企微群配置":
+    elif page == "wechat_config":
         show_wechat_config()
-    elif page == "⚙️ 系统设置":
-        show_system_settings()
-    elif page == "🧪 系统测试":
+    elif page == "system_test":
         show_system_test()
+    else:
+        show_dashboard()  # 默认页面
 
 
 def show_dashboard():
-    """显示运营仪表板"""
-    st.header("📊 运营仪表板")
+    """显示运营仪表板 - 重新设计为业务价值导向"""
+    st.title("🎯 FSOA 智能运营仪表板")
+    st.markdown("**现场服务运营助手** - 主动监控 • 智能决策 • 自动通知")
+    st.markdown("---")
 
     # 获取实时数据
     try:
@@ -158,57 +188,97 @@ def show_dashboard():
         org_count = 0
         cache_stats = {}
 
-    # 系统状态卡片
+    # 核心业务指标 - 突出Agent的价值
+    st.subheader("🎯 核心业务指标")
+
     col1, col2, col3, col4 = st.columns(4)
 
     with col1:
         st.metric(
-            label="Agent状态",
+            label="🤖 Agent状态",
             value=agent_status,
             delta=agent_delta,
             delta_color="normal" if agent_delta == "正常" else "inverse"
         )
+        if agent_status == "运行中":
+            st.success("✅ 智能监控运行中")
+        else:
+            st.error("❌ 需要启动Agent")
 
     with col2:
         st.metric(
-            label="逾期商机总数",
+            label="⚠️ 逾期商机",
             value=str(overdue_opportunities),
             delta=f"总计{total_opportunities}个商机" if total_opportunities > 0 else "0"
         )
+        if overdue_opportunities > 0:
+            st.warning(f"🔔 {overdue_opportunities}个商机需要关注")
+        else:
+            st.success("✅ 暂无逾期商机")
 
     with col3:
         st.metric(
-            label="需要升级处理",
+            label="🚨 升级处理",
             value=str(escalation_count),
             delta="紧急" if escalation_count > 0 else "正常",
             delta_color="inverse" if escalation_count > 0 else "normal"
         )
+        if escalation_count > 0:
+            st.error(f"🚨 {escalation_count}个商机需要升级处理")
+        else:
+            st.success("✅ 无需升级处理")
 
     with col4:
         st.metric(
-            label="涉及组织数",
+            label="🏢 涉及组织",
             value=str(org_count),
             delta=f"缓存命中率{cache_stats.get('cache_hit_ratio', 0):.1%}" if cache_stats else "无缓存数据"
         )
+        if cache_stats.get('cache_hit_ratio', 0) > 0.8:
+            st.success("⚡ 缓存性能优秀")
+        else:
+            st.info("📊 缓存性能一般")
     
     st.markdown("---")
 
-    # 实时刷新控制
-    col_refresh1, col_refresh2, col_refresh3 = st.columns([1, 1, 2])
+    # Agent价值展示区域
+    st.subheader("🚀 Agent智能化价值")
 
-    with col_refresh1:
-        auto_refresh = st.checkbox("自动刷新", value=False)
+    col_value1, col_value2, col_value3 = st.columns(3)
 
-    with col_refresh2:
-        if st.button("🔄 手动刷新"):
+    with col_value1:
+        st.info("**🎯 主动监控**\n\n✅ 7x24小时自动扫描\n✅ 实时识别超时风险\n✅ 无需人工干预")
+
+    with col_value2:
+        st.info("**🧠 智能决策**\n\n✅ 规则引擎+LLM混合决策\n✅ 基于上下文智能判断\n✅ 自适应策略调整")
+
+    with col_value3:
+        st.info("**📱 自动通知**\n\n✅ 多企微群差异化通知\n✅ 智能去重和频率控制\n✅ 升级机制自动触发")
+
+    st.markdown("---")
+
+    # 快速操作区域
+    st.subheader("⚡ 快速操作")
+
+    col_action1, col_action2, col_action3, col_action4 = st.columns(4)
+
+    with col_action1:
+        if st.button("🚀 立即执行Agent", type="primary", use_container_width=True):
+            st.session_state.page = "agent_control"
             st.rerun()
 
-    with col_refresh3:
-        if auto_refresh:
-            st.info("⏱️ 页面将每30秒自动刷新")
-            # 自动刷新（注意：这会导致页面重新加载）
-            import time
-            time.sleep(30)
+    with col_action2:
+        if st.button("📋 查看商机列表", use_container_width=True):
+            st.session_state.page = "opportunities"
+            st.rerun()
+
+    with col_action3:
+        if st.button("📬 管理通知任务", use_container_width=True):
+            st.session_state.page = "notification_management"
+            st.rerun()
+
+    with col_action4:
+        if st.button("🔄 刷新数据", use_container_width=True):
             st.rerun()
 
     # Agent执行信息和系统状态
@@ -297,8 +367,10 @@ def show_dashboard():
 
 
 def show_agent_control():
-    """显示Agent控制页面"""
-    st.header("🤖 Agent控制中心")
+    """显示Agent控制台页面 - 重新设计为Agent管理导向"""
+    st.title("🤖 Agent智能控制台")
+    st.markdown("**Agent生命周期管理 • 执行监控 • 性能调优**")
+    st.markdown("---")
 
     # Agent状态信息
     col1, col2 = st.columns(2)
@@ -857,8 +929,10 @@ def show_business_analytics():
 
 
 def show_opportunity_list():
-    """显示商机列表页面"""
-    st.header("📋 商机列表")
+    """显示商机监控页面 - 重新设计为业务监控导向"""
+    st.title("📋 现场服务商机监控")
+    st.markdown("**实时监控现场服务时效 • 智能识别超时风险 • 主动预警处理**")
+    st.markdown("---")
 
     try:
         # 获取逾期商机数据
