@@ -11,7 +11,7 @@ from functools import wraps
 
 from ..data.models import (
     TaskInfo, NotificationInfo, NotificationStatus, Priority, OpportunityInfo,
-    AgentRun, AgentHistory, NotificationTask
+    TaskStatus, NotificationTask
 )
 from ..data.database import get_db_manager
 from ..data.metabase import get_metabase_client, MetabaseError
@@ -223,6 +223,52 @@ def get_opportunities_by_org(org_name: str, force_refresh: bool = False) -> List
     except Exception as e:
         logger.error(f"Failed to fetch opportunities for {org_name}: {e}")
         raise ToolError(f"Failed to fetch opportunities for {org_name}: {e}")
+
+
+@log_function_call
+def get_approaching_overdue_opportunities(force_refresh: bool = False) -> List[OpportunityInfo]:
+    """
+    获取即将逾期的商机列表
+
+    Args:
+        force_refresh: 是否强制刷新数据，忽略缓存
+
+    Returns:
+        即将逾期的商机列表
+    """
+    try:
+        data_strategy = get_data_strategy()
+        opportunities = data_strategy.get_approaching_overdue_opportunities(force_refresh)
+
+        logger.info(f"Successfully fetched {len(opportunities)} approaching overdue opportunities")
+        return opportunities
+
+    except Exception as e:
+        logger.error(f"Failed to fetch approaching overdue opportunities: {e}")
+        raise ToolError(f"Failed to fetch approaching overdue opportunities: {e}")
+
+
+@log_function_call
+def get_opportunity_statistics(force_refresh: bool = False) -> Dict[str, Any]:
+    """
+    获取商机统计信息
+
+    Args:
+        force_refresh: 是否强制刷新数据，忽略缓存
+
+    Returns:
+        商机统计信息字典
+    """
+    try:
+        data_strategy = get_data_strategy()
+        statistics = data_strategy.get_opportunity_statistics(force_refresh)
+
+        logger.info(f"Successfully generated opportunity statistics")
+        return statistics
+
+    except Exception as e:
+        logger.error(f"Failed to get opportunity statistics: {e}")
+        raise ToolError(f"Failed to get opportunity statistics: {e}")
 
 
 @log_function_call

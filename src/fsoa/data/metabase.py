@@ -196,8 +196,8 @@ class MetabaseClient:
             logger.error(f"Failed to get field service opportunities: {e}")
             return []
 
-    def get_overdue_opportunities(self) -> List[OpportunityInfo]:
-        """获取逾期的商机列表"""
+    def get_all_monitored_opportunities(self) -> List[OpportunityInfo]:
+        """获取所有需要监控的商机列表（包括逾期和即将逾期）"""
         try:
             raw_opportunities = self.get_field_service_opportunities()
             opportunities = []
@@ -210,16 +210,29 @@ class MetabaseClient:
                     # 更新逾期信息
                     opportunity.update_overdue_info()
 
-                    # 只返回逾期的商机
-                    if opportunity.is_overdue:
+                    # 只返回需要监控的商机（有SLA阈值的状态）
+                    if opportunity.sla_threshold_hours and opportunity.sla_threshold_hours > 0:
                         opportunities.append(opportunity)
 
                 except Exception as e:
                     logger.warning(f"Failed to convert opportunity {raw_opp.get('orderNum', 'unknown')}: {e}")
                     continue
 
-            logger.info(f"Found {len(opportunities)} overdue opportunities")
+            logger.info(f"Found {len(opportunities)} monitored opportunities")
             return opportunities
+
+        except Exception as e:
+            logger.error(f"Failed to get monitored opportunities: {e}")
+            return []
+
+    def get_overdue_opportunities(self) -> List[OpportunityInfo]:
+        """获取逾期的商机列表"""
+        try:
+            all_opportunities = self.get_all_monitored_opportunities()
+            overdue_opportunities = [opp for opp in all_opportunities if opp.is_overdue]
+
+            logger.info(f"Found {len(overdue_opportunities)} overdue opportunities")
+            return overdue_opportunities
 
         except Exception as e:
             logger.error(f"Failed to get overdue opportunities: {e}")

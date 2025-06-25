@@ -135,15 +135,11 @@ def show_dashboard():
 
     # 获取实时数据
     try:
-        # 使用新的数据统计API
-        from src.fsoa.agent.tools import get_data_statistics, get_data_strategy
+        # 使用新的商机统计API
+        from src.fsoa.agent.tools import get_opportunity_statistics, get_data_strategy
 
-        # 获取综合数据统计
-        data_stats = get_data_statistics()
-
-        # 获取逾期商机数据（使用新的数据策略）
-        data_strategy = get_data_strategy()
-        opportunities = data_strategy.get_overdue_opportunities()
+        # 获取商机统计信息
+        opportunity_stats = get_opportunity_statistics()
 
         # 获取系统健康状态
         health = get_system_health()
@@ -160,41 +156,34 @@ def show_dashboard():
             agent_status = "Web模式"
             agent_delta = "仅Web界面"
 
-        # 使用新的数据统计
-        total_opportunities = data_stats.get("total_opportunities", 0)
-        overdue_opportunities = data_stats.get("overdue_opportunities", 0)
-        escalation_count = data_stats.get("escalation_opportunities", 0)
-        org_count = data_stats.get("organizations", 0)
+        # 从统计信息中提取数据
+        total_opportunities = opportunity_stats.get("total_opportunities", 0)
+        overdue_opportunities = opportunity_stats.get("overdue_count", 0)
+        approaching_opportunities = opportunity_stats.get("approaching_overdue_count", 0)
+        normal_opportunities = opportunity_stats.get("normal_count", 0)
+        escalation_count = opportunity_stats.get("escalation_count", 0)
 
-        # 获取缓存统计
-        cache_stats = data_stats.get("cache_statistics", {})
+        # 组织统计
+        org_breakdown = opportunity_stats.get("organization_breakdown", {})
+        org_count = len(org_breakdown)
 
-        # 按组织分组统计（保持兼容性）
-        org_stats = {}
-        for opp in opportunities:
-            org_name = opp.org_name
-            if org_name not in org_stats:
-                org_stats[org_name] = {"total": 0, "overdue": 0, "escalation": 0}
-
-            org_stats[org_name]["total"] += 1
-            if opp.is_overdue:
-                org_stats[org_name]["overdue"] += 1
-            if opp.escalation_level > 0:
-                org_stats[org_name]["escalation"] += 1
+        # 状态统计
+        status_breakdown = opportunity_stats.get("status_breakdown", {})
 
     except Exception as e:
         st.error(f"获取系统数据失败: {e}")
-        opportunities = []
         health = {}
         jobs_info = {"is_running": False, "total_jobs": 0}
         agent_status = "未知"
         agent_delta = "错误"
-        org_stats = {}
         escalation_count = 0
         total_opportunities = 0
         overdue_opportunities = 0
+        approaching_opportunities = 0
+        normal_opportunities = 0
         org_count = 0
-        cache_stats = {}
+        org_breakdown = {}
+        status_breakdown = {}
 
     # 核心业务指标 - 突出Agent的价值
     st.subheader("🎯 核心业务指标")
@@ -244,13 +233,47 @@ def show_dashboard():
         st.metric(
             label="🏢 涉及组织",
             value=str(org_count),
-            delta=f"缓存命中率{cache_stats.get('cache_hit_ratio', 0):.1%}" if cache_stats else "无缓存数据"
+            delta=f"监控{total_opportunities}个商机" if total_opportunities > 0 else "无数据"
         )
-        if cache_stats.get('cache_hit_ratio', 0) > 0.8:
-            st.success("⚡ 缓存性能优秀")
+        if org_count > 0:
+            st.info(f"📊 {org_count}个组织")
         else:
-            st.info("📊 缓存性能一般")
+            st.warning("⚠️ 无组织数据")
     
+    # 第二行：详细分类统计
+    st.markdown("### 📈 商机分类统计")
+    col5, col6, col7, col8 = st.columns(4)
+
+    with col5:
+        st.metric(
+            label="🔴 已逾期",
+            value=str(overdue_opportunities),
+            delta=f"{overdue_opportunities/total_opportunities*100:.1f}%" if total_opportunities > 0 else "0%"
+        )
+
+    with col6:
+        st.metric(
+            label="🟡 即将逾期",
+            value=str(approaching_opportunities),
+            delta=f"{approaching_opportunities/total_opportunities*100:.1f}%" if total_opportunities > 0 else "0%"
+        )
+
+    with col7:
+        st.metric(
+            label="🟢 正常跟进",
+            value=str(normal_opportunities),
+            delta=f"{normal_opportunities/total_opportunities*100:.1f}%" if total_opportunities > 0 else "0%"
+        )
+
+    with col8:
+        overdue_rate = opportunity_stats.get("overdue_rate", 0)
+        approaching_rate = opportunity_stats.get("approaching_rate", 0)
+        st.metric(
+            label="📊 风险比例",
+            value=f"{overdue_rate + approaching_rate:.1f}%",
+            delta="需关注" if (overdue_rate + approaching_rate) > 20 else "良好"
+        )
+
     st.markdown("---")
 
     # Agent价值展示区域
@@ -1476,21 +1499,82 @@ def show_notification_test(db_manager, config):
                 if st.button("发送测试消息"):
                     selected_config = org_options[org_name]
                     st.info(f"正在向 {org_name} 发送测试消息...")
-                    # 这里可以添加实际的测试逻辑
-                    st.success("测试消息发送成功！")
+
+                    try:
+                        # 导入企微客户端
+                        from src.fsoa.notification.wechat import get_wechat_client
+                        from datetime import datetime
+
+                        # 获取企微客户端
+                        wechat_client = get_wechat_client()
+
+                        # 构造测试消息
+                        test_message = f"""🧪 FSOA系统测试消息
+
+组织: {org_name}
+时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+状态: 测试通知功能正常
+
+这是一条来自FSOA系统的测试消息，用于验证企微群通知功能是否正常工作。"""
+
+                        # 发送测试消息
+                        success = wechat_client.send_notification_to_org(
+                            org_name=org_name,
+                            content=test_message,
+                            is_escalation=False
+                        )
+
+                        if success:
+                            st.success(f"✅ 测试消息发送成功！请检查 {org_name} 的企微群。")
+                        else:
+                            st.error(f"❌ 测试消息发送失败！请检查webhook配置和网络连接。")
+
+                    except Exception as e:
+                        st.error(f"❌ 发送测试消息时发生错误: {e}")
+                        st.exception(e)
             else:
                 st.warning("没有配置有效的组织群Webhook")
         else:
             st.warning("没有启用的组织群配置")
 
-    elif test_type == "内部运营群通知":
-        if st.button("发送测试消息"):
-            internal_webhook = config.internal_ops_webhook_url
-            if internal_webhook:
-                st.info("正在向内部运营群发送测试消息...")
-                st.success("测试消息发送成功！")
-            else:
-                st.error("内部运营群未配置Webhook URL")
+    else:  # 内部运营群通知
+        if st.button("发送内部运营群测试消息"):
+            st.info("正在向内部运营群发送测试消息...")
+
+            try:
+                # 导入企微客户端
+                from src.fsoa.notification.wechat import get_wechat_client
+                from datetime import datetime
+
+                # 获取企微客户端
+                wechat_client = get_wechat_client()
+
+                # 构造测试消息
+                test_message = f"""🚨 FSOA内部运营群测试消息
+
+时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+类型: 升级通知测试
+状态: 系统功能正常
+
+这是一条来自FSOA系统的内部运营群测试消息，用于验证升级通知功能是否正常工作。"""
+
+                # 发送升级通知测试消息
+                success = wechat_client.send_notification_to_org(
+                    org_name="内部运营群",
+                    content=test_message,
+                    is_escalation=True
+                )
+
+                if success:
+                    st.success("✅ 内部运营群测试消息发送成功！请检查内部运营群。")
+                else:
+                    st.error("❌ 内部运营群测试消息发送失败！请检查内部运营群webhook配置。")
+
+            except Exception as e:
+                st.error(f"❌ 发送内部运营群测试消息时发生错误: {e}")
+                st.exception(e)
+
+
 
     if st.button("关闭测试"):
         st.session_state.test_notification = False

@@ -302,9 +302,11 @@ class OpportunityInfo(BaseModel):
     # 计算字段
     elapsed_hours: Optional[float] = Field(None, description="已经过时长(小时)")
     is_overdue: Optional[bool] = Field(None, description="是否逾期")
+    is_approaching_overdue: Optional[bool] = Field(None, description="是否即将逾期")
     overdue_hours: Optional[float] = Field(None, description="逾期时长(小时)")
     sla_threshold_hours: Optional[int] = Field(None, description="SLA阈值(小时)")
     escalation_level: Optional[int] = Field(0, description="升级级别 0=正常 1=升级")
+    sla_progress_ratio: Optional[float] = Field(None, description="SLA进度比例 0-1")
 
     # 缓存相关字段
     last_updated: Optional[datetime] = Field(None, description="最后更新时间")
@@ -359,42 +361,49 @@ class OpportunityInfo(BaseModel):
         else:
             return 0  # 其他状态不需要监控
 
-    def check_overdue_status(self) -> tuple[bool, float, int]:
+    def check_overdue_status(self) -> tuple[bool, bool, float, int, float]:
         """检查逾期状态
 
         Returns:
-            tuple: (是否逾期, 逾期时长, 升级级别)
+            tuple: (是否逾期, 是否即将逾期, 逾期时长, 升级级别, SLA进度比例)
         """
         elapsed = self.calculate_elapsed_hours()
         threshold = self.get_sla_threshold()
 
         if threshold == 0:
-            return False, 0, 0
+            return False, False, 0, 0, 0.0
 
-        if elapsed > threshold:
-            overdue_hours = elapsed - threshold
+        # 计算SLA进度比例
+        sla_progress = elapsed / threshold if threshold > 0 else 0.0
 
-            # 判断升级级别
+        # 判断是否逾期
+        is_overdue = elapsed > threshold
+        overdue_hours = max(0, elapsed - threshold) if is_overdue else 0
+
+        # 判断是否即将逾期（达到SLA阈值的80%）
+        is_approaching_overdue = not is_overdue and sla_progress >= 0.8
+
+        # 判断升级级别
+        escalation_level = 0
+        if is_overdue:
             if self.order_status == OpportunityStatus.PENDING_APPOINTMENT:
                 # 待预约：超过48小时升级
                 escalation_level = 1 if elapsed > 48 else 0
             elif self.order_status == OpportunityStatus.TEMPORARILY_NOT_VISITING:
                 # 暂不上门：超过72小时升级
                 escalation_level = 1 if elapsed > 72 else 0
-            else:
-                escalation_level = 0
 
-            return True, overdue_hours, escalation_level
-
-        return False, 0, 0
+        return is_overdue, is_approaching_overdue, overdue_hours, escalation_level, sla_progress
 
     def update_overdue_info(self):
         """更新逾期相关信息"""
-        is_overdue, overdue_hours, escalation_level = self.check_overdue_status()
+        is_overdue, is_approaching_overdue, overdue_hours, escalation_level, sla_progress = self.check_overdue_status()
         self.is_overdue = is_overdue
+        self.is_approaching_overdue = is_approaching_overdue
         self.overdue_hours = overdue_hours
         self.escalation_level = escalation_level
         self.sla_threshold_hours = self.get_sla_threshold()
+        self.sla_progress_ratio = sla_progress
 
     def generate_source_hash(self) -> str:
         """生成数据源哈希值，用于检测数据变化"""
@@ -419,13 +428,9 @@ class OpportunityInfo(BaseModel):
 
     def should_cache(self) -> bool:
         """判断是否应该缓存此商机"""
-        # 只缓存逾期或接近逾期的商机
-        if self.is_overdue:
+        # 缓存所有需要监控的商机（有SLA阈值的状态）
+        if self.sla_threshold_hours and self.sla_threshold_hours > 0:
             return True
-
-        # 如果已经过了SLA阈值的80%，也进行缓存
-        if self.sla_threshold_hours and self.elapsed_hours:
-            return self.elapsed_hours > (self.sla_threshold_hours * 0.8)
 
         return False
 

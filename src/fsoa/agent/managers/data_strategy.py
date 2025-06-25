@@ -83,15 +83,13 @@ class BusinessDataStrategy:
         """直接从Metabase获取数据"""
         try:
             logger.info("Fetching opportunities directly from Metabase")
-            opportunities = self.metabase_client.get_overdue_opportunities()
-            
-            # 更新逾期信息
-            for opp in opportunities:
-                opp.update_overdue_info()
-            
+            # 获取所有需要监控的商机（包括逾期和即将逾期）
+            opportunities = self.metabase_client.get_all_monitored_opportunities()
+
+            # 更新逾期信息（已在get_all_monitored_opportunities中处理）
             logger.info(f"Retrieved {len(opportunities)} opportunities from Metabase")
             return opportunities
-            
+
         except Exception as e:
             logger.error(f"Failed to fetch from Metabase: {e}")
             raise
@@ -157,12 +155,41 @@ class BusinessDataStrategy:
         try:
             all_opportunities = self.get_opportunities(force_refresh)
             overdue_opportunities = [opp for opp in all_opportunities if opp.is_overdue]
-            
+
             logger.info(f"Found {len(overdue_opportunities)}/{len(all_opportunities)} overdue opportunities")
             return overdue_opportunities
-            
+
         except Exception as e:
             logger.error(f"Failed to get overdue opportunities: {e}")
+            raise
+
+    @log_function_call
+    def get_approaching_overdue_opportunities(self, force_refresh: bool = False) -> List[OpportunityInfo]:
+        """获取即将逾期的商机"""
+        try:
+            all_opportunities = self.get_opportunities(force_refresh)
+            approaching_opportunities = [opp for opp in all_opportunities if opp.is_approaching_overdue]
+
+            logger.info(f"Found {len(approaching_opportunities)}/{len(all_opportunities)} approaching overdue opportunities")
+            return approaching_opportunities
+
+        except Exception as e:
+            logger.error(f"Failed to get approaching overdue opportunities: {e}")
+            raise
+
+    @log_function_call
+    def get_normal_opportunities(self, force_refresh: bool = False) -> List[OpportunityInfo]:
+        """获取正常跟进的商机（未逾期且未即将逾期）"""
+        try:
+            all_opportunities = self.get_opportunities(force_refresh)
+            normal_opportunities = [opp for opp in all_opportunities
+                                  if not opp.is_overdue and not opp.is_approaching_overdue]
+
+            logger.info(f"Found {len(normal_opportunities)}/{len(all_opportunities)} normal opportunities")
+            return normal_opportunities
+
+        except Exception as e:
+            logger.error(f"Failed to get normal opportunities: {e}")
             raise
     
     @log_function_call
@@ -185,12 +212,75 @@ class BusinessDataStrategy:
         try:
             overdue_opportunities = self.get_overdue_opportunities(force_refresh)
             escalation_opportunities = [opp for opp in overdue_opportunities if opp.escalation_level > 0]
-            
+
             logger.info(f"Found {len(escalation_opportunities)} opportunities requiring escalation")
             return escalation_opportunities
-            
+
         except Exception as e:
             logger.error(f"Failed to get escalation opportunities: {e}")
+            raise
+
+    @log_function_call
+    def get_opportunity_statistics(self, force_refresh: bool = False) -> Dict[str, Any]:
+        """获取商机统计信息"""
+        try:
+            all_opportunities = self.get_opportunities(force_refresh)
+
+            # 分类统计
+            overdue_count = sum(1 for opp in all_opportunities if opp.is_overdue)
+            approaching_count = sum(1 for opp in all_opportunities if opp.is_approaching_overdue)
+            normal_count = len(all_opportunities) - overdue_count - approaching_count
+            escalation_count = sum(1 for opp in all_opportunities if opp.escalation_level > 0)
+
+            # 按状态统计
+            status_stats = {}
+            for opp in all_opportunities:
+                status = str(opp.order_status)
+                if status not in status_stats:
+                    status_stats[status] = {"total": 0, "overdue": 0, "approaching": 0, "normal": 0}
+
+                status_stats[status]["total"] += 1
+                if opp.is_overdue:
+                    status_stats[status]["overdue"] += 1
+                elif opp.is_approaching_overdue:
+                    status_stats[status]["approaching"] += 1
+                else:
+                    status_stats[status]["normal"] += 1
+
+            # 按组织统计
+            org_stats = {}
+            for opp in all_opportunities:
+                org = opp.org_name
+                if org not in org_stats:
+                    org_stats[org] = {"total": 0, "overdue": 0, "approaching": 0, "normal": 0}
+
+                org_stats[org]["total"] += 1
+                if opp.is_overdue:
+                    org_stats[org]["overdue"] += 1
+                elif opp.is_approaching_overdue:
+                    org_stats[org]["approaching"] += 1
+                else:
+                    org_stats[org]["normal"] += 1
+
+            statistics = {
+                "total_opportunities": len(all_opportunities),
+                "overdue_count": overdue_count,
+                "approaching_overdue_count": approaching_count,
+                "normal_count": normal_count,
+                "escalation_count": escalation_count,
+                "overdue_rate": round(overdue_count / len(all_opportunities) * 100, 2) if all_opportunities else 0,
+                "approaching_rate": round(approaching_count / len(all_opportunities) * 100, 2) if all_opportunities else 0,
+                "status_breakdown": status_stats,
+                "organization_breakdown": org_stats,
+                "last_updated": datetime.now()
+            }
+
+            logger.info(f"Generated opportunity statistics: {statistics['total_opportunities']} total, "
+                       f"{statistics['overdue_count']} overdue, {statistics['approaching_overdue_count']} approaching")
+            return statistics
+
+        except Exception as e:
+            logger.error(f"Failed to get opportunity statistics: {e}")
             raise
     
     @log_function_call
@@ -241,10 +331,19 @@ class BusinessDataStrategy:
     def clear_cache(self) -> int:
         """清理缓存"""
         try:
-            # 这里简化实现，实际需要删除缓存记录
-            logger.info("Cache cleared")
-            return 0
-            
+            # 获取当前缓存数量
+            cached_opportunities = self.db_manager.get_cached_opportunities(24 * 7)  # 7天内
+            count = len(cached_opportunities)
+
+            # 删除缓存记录
+            from ...data.database import OpportunityCacheTable
+            with self.db_manager.get_session() as session:
+                deleted = session.query(OpportunityCacheTable).delete()
+                session.commit()
+
+            logger.info(f"Cache cleared: {deleted} records deleted")
+            return deleted
+
         except Exception as e:
             logger.error(f"Failed to clear cache: {e}")
             return 0
