@@ -7,12 +7,13 @@
 import requests
 import json
 from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 from ..utils.logger import get_logger
 from ..utils.config import get_config
+from ..config.wechat_config import get_wechat_config_manager
 
 logger = get_logger(__name__)
 
@@ -24,22 +25,27 @@ class WeChatError(Exception):
 
 class WeChatClient:
     """企业微信客户端"""
-    
+
     def __init__(self):
         self.config = get_config()
+        self.wechat_config = get_wechat_config_manager()
         self.webhook_urls = self._parse_webhook_urls()
+        self.org_webhook_mapping = self.wechat_config.get_org_webhook_mapping()
+        self.internal_ops_webhook = self.wechat_config.get_internal_ops_webhook()
         self.session = self._create_session()
-    
+
     def _parse_webhook_urls(self) -> Dict[str, str]:
         """解析Webhook URL配置"""
         webhook_urls = {}
         urls = self.config.wechat_webhook_list
-        
+
         for i, url in enumerate(urls):
             group_id = f"group_{i+1:03d}"
             webhook_urls[group_id] = url
-        
+
         return webhook_urls
+
+
     
     def _create_session(self) -> requests.Session:
         """创建HTTP会话"""
@@ -113,7 +119,50 @@ class WeChatClient:
         
         return self._send_message(webhook_url, message_data)
     
-    def send_card_message(self, group_id: str, title: str, description: str, 
+    def send_notification_to_org(self, org_name: str, content: str,
+                                is_escalation: bool = False,
+                                mention_users: List[str] = None) -> bool:
+        """
+        发送通知到指定组织的企微群
+
+        Args:
+            org_name: 组织名称
+            content: 通知内容
+            is_escalation: 是否为升级通知
+            mention_users: 需要@的用户列表
+
+        Returns:
+            是否发送成功
+        """
+        if is_escalation:
+            # 升级通知发送到内部运营群
+            webhook_url = self.internal_ops_webhook
+            if mention_users:
+                # 添加@用户到消息内容
+                mentions = " ".join([f"@{user}" for user in mention_users])
+                content = f"{content}\n\n{mentions}"
+        else:
+            # 标准通知发送到对应组织群
+            webhook_url = self.org_webhook_mapping.get(org_name)
+            if not webhook_url:
+                logger.warning(f"No webhook configured for org: {org_name}")
+                # 降级到内部运营群
+                webhook_url = self.internal_ops_webhook
+
+        if not webhook_url:
+            logger.error(f"No webhook URL available for org {org_name}")
+            return False
+
+        message_data = {
+            "msgtype": "text",
+            "text": {
+                "content": content
+            }
+        }
+
+        return self._send_message(webhook_url, message_data)
+
+    def send_card_message(self, group_id: str, title: str, description: str,
                          url: Optional[str] = None, btn_text: str = "查看详情") -> bool:
         """
         发送卡片消息
@@ -184,6 +233,34 @@ class WeChatClient:
     def get_available_groups(self) -> Dict[str, str]:
         """获取可用的群组列表"""
         return self.webhook_urls.copy()
+
+    def get_org_webhook_mapping(self) -> Dict[str, str]:
+        """获取组织到webhook的映射"""
+        return self.org_webhook_mapping.copy()
+
+    def update_org_webhook_mapping(self, org_name: str, webhook_url: str) -> bool:
+        """更新组织webhook映射"""
+        try:
+            success = self.wechat_config.set_org_webhook(org_name, webhook_url)
+            if success:
+                self.org_webhook_mapping[org_name] = webhook_url
+                logger.info(f"Updated webhook mapping for org: {org_name}")
+            return success
+        except Exception as e:
+            logger.error(f"Failed to update org webhook mapping: {e}")
+            return False
+
+    def remove_org_webhook_mapping(self, org_name: str) -> bool:
+        """删除组织webhook映射"""
+        try:
+            success = self.wechat_config.remove_org_webhook(org_name)
+            if success and org_name in self.org_webhook_mapping:
+                del self.org_webhook_mapping[org_name]
+                logger.info(f"Removed webhook mapping for org: {org_name}")
+            return success
+        except Exception as e:
+            logger.error(f"Failed to remove org webhook mapping: {e}")
+            return False
 
 
 # 全局客户端实例

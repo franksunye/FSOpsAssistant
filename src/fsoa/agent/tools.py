@@ -9,10 +9,11 @@ from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any
 from functools import wraps
 
-from ..data.models import TaskInfo, NotificationInfo, NotificationStatus, Priority
+from ..data.models import TaskInfo, NotificationInfo, NotificationStatus, Priority, OpportunityInfo
 from ..data.database import get_db_manager
 from ..data.metabase import get_metabase_client, MetabaseError
-from ..notification.wechat import send_wechat_message, WeChatError
+from ..notification.wechat import send_wechat_message, get_wechat_client, WeChatError
+from ..notification.business_formatter import BusinessNotificationFormatter
 from ..utils.logger import get_logger, log_function_call
 from ..utils.config import get_config
 
@@ -60,30 +61,57 @@ def retry_on_failure(max_retries: int = 3, delay: float = 1.0):
 def fetch_overdue_tasks() -> List[TaskInfo]:
     """
     从Metabase获取超时任务列表
-    
+
     Returns:
         超时任务列表
-        
+
     Raises:
         ToolError: 当获取数据失败时
     """
     try:
         metabase_client = get_metabase_client()
         tasks = metabase_client.get_overdue_tasks()
-        
+
         # 保存任务到本地数据库
         db_manager = get_db_manager()
         for task in tasks:
             db_manager.save_task(task)
-        
+
         logger.info(f"Successfully fetched {len(tasks)} overdue tasks")
         return tasks
-        
+
     except MetabaseError as e:
         logger.error(f"Metabase error while fetching tasks: {e}")
         raise ToolError(f"Failed to fetch tasks from Metabase: {e}")
     except Exception as e:
         logger.error(f"Unexpected error while fetching tasks: {e}")
+        raise ToolError(f"Unexpected error: {e}")
+
+
+@log_function_call
+@retry_on_failure(max_retries=3)
+def fetch_overdue_opportunities() -> List[OpportunityInfo]:
+    """
+    从Metabase获取逾期商机列表
+
+    Returns:
+        逾期商机列表
+
+    Raises:
+        ToolError: 当获取数据失败时
+    """
+    try:
+        metabase_client = get_metabase_client()
+        opportunities = metabase_client.get_overdue_opportunities()
+
+        logger.info(f"Successfully fetched {len(opportunities)} overdue opportunities")
+        return opportunities
+
+    except MetabaseError as e:
+        logger.error(f"Metabase error while fetching opportunities: {e}")
+        raise ToolError(f"Failed to fetch opportunities from Metabase: {e}")
+    except Exception as e:
+        logger.error(f"Unexpected error while fetching opportunities: {e}")
         raise ToolError(f"Unexpected error: {e}")
 
 
@@ -357,3 +385,106 @@ def get_system_health() -> Dict[str, Any]:
         logger.error(f"System health check failed: {e}")
         health_status["error"] = str(e)
         return health_status
+
+
+@log_function_call
+def send_business_notifications(opportunities: List[OpportunityInfo]) -> Dict[str, Any]:
+    """
+    发送业务通知到对应的企微群
+
+    Args:
+        opportunities: 逾期商机列表
+
+    Returns:
+        发送结果统计
+    """
+    if not opportunities:
+        logger.info("No opportunities to notify")
+        return {"total": 0, "sent": 0, "failed": 0, "escalated": 0}
+
+    # 按组织分组
+    org_opportunities = {}
+    escalation_opportunities = {}
+
+    for opp in opportunities:
+        org_name = opp.org_name
+        if org_name not in org_opportunities:
+            org_opportunities[org_name] = []
+        org_opportunities[org_name].append(opp)
+
+        # 检查是否需要升级
+        if opp.escalation_level > 0:
+            if org_name not in escalation_opportunities:
+                escalation_opportunities[org_name] = []
+            escalation_opportunities[org_name].append(opp)
+
+    wechat_client = get_wechat_client()
+    formatter = BusinessNotificationFormatter()
+
+    sent_count = 0
+    failed_count = 0
+    escalated_count = 0
+
+    # 发送标准通知
+    for org_name, org_opps in org_opportunities.items():
+        try:
+            # 格式化通知内容
+            message = formatter.format_org_overdue_notification(org_name, org_opps)
+
+            if message:
+                # 发送到组织对应的企微群
+                success = wechat_client.send_notification_to_org(
+                    org_name=org_name,
+                    content=message,
+                    is_escalation=False
+                )
+
+                if success:
+                    sent_count += len(org_opps)
+                    logger.info(f"Sent notification to {org_name} for {len(org_opps)} opportunities")
+                else:
+                    failed_count += len(org_opps)
+                    logger.error(f"Failed to send notification to {org_name}")
+
+        except Exception as e:
+            logger.error(f"Error sending notification to {org_name}: {e}")
+            failed_count += len(org_opps)
+
+    # 发送升级通知
+    for org_name, escalation_opps in escalation_opportunities.items():
+        try:
+            # 格式化升级通知内容
+            message = formatter.format_escalation_notification(
+                org_name=org_name,
+                opportunities=escalation_opps,
+                mention_users=["运营负责人", "区域经理"]  # 可配置
+            )
+
+            if message:
+                # 发送到内部运营群
+                success = wechat_client.send_notification_to_org(
+                    org_name=org_name,
+                    content=message,
+                    is_escalation=True,
+                    mention_users=["运营负责人", "区域经理"]
+                )
+
+                if success:
+                    escalated_count += len(escalation_opps)
+                    logger.info(f"Sent escalation notification for {org_name} with {len(escalation_opps)} opportunities")
+                else:
+                    logger.error(f"Failed to send escalation notification for {org_name}")
+
+        except Exception as e:
+            logger.error(f"Error sending escalation notification for {org_name}: {e}")
+
+    result = {
+        "total": len(opportunities),
+        "sent": sent_count,
+        "failed": failed_count,
+        "escalated": escalated_count,
+        "organizations": len(org_opportunities)
+    }
+
+    logger.info(f"Notification summary: {result}")
+    return result

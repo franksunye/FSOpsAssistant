@@ -30,14 +30,16 @@ sys.path.insert(0, str(project_root))
 # 导入模块
 try:
     from src.fsoa.agent.tools import (
-        fetch_overdue_tasks, test_metabase_connection,
-        test_wechat_webhook, test_deepseek_connection, get_system_health
+        fetch_overdue_tasks, fetch_overdue_opportunities, test_metabase_connection,
+        test_wechat_webhook, test_deepseek_connection, get_system_health, send_business_notifications
     )
     from src.fsoa.agent.orchestrator import AgentOrchestrator
     from src.fsoa.utils.scheduler import get_scheduler, setup_agent_scheduler, start_scheduler, stop_scheduler
     from src.fsoa.data.database import get_db_manager
-    from src.fsoa.data.models import TaskStatus, Priority
+    from src.fsoa.data.models import TaskStatus, Priority, OpportunityInfo, OpportunityStatus
+    from src.fsoa.data.metabase import get_metabase_client
     from src.fsoa.notification.wechat import get_wechat_client
+    from src.fsoa.analytics.business_metrics import BusinessMetricsCalculator
     from src.fsoa.utils.config import get_config
     from src.fsoa.utils.logger import get_logger
 
@@ -63,30 +65,37 @@ def main():
         st.header("📋 导航菜单")
         page = st.selectbox(
             "选择页面",
-            ["📊 仪表板", "🤖 Agent控制", "📋 任务列表", "🔔 通知历史", "⚙️ 系统设置", "🔧 系统测试"]
+            ["📊 运营仪表板", "📈 业务分析", "🤖 Agent控制", "📋 商机列表", "🔔 通知历史", "🔧 企微群配置", "⚙️ 系统设置", "🧪 系统测试"]
         )
     
     # 根据选择显示不同页面
-    if page == "📊 仪表板":
+    if page == "📊 运营仪表板":
         show_dashboard()
+    elif page == "📈 业务分析":
+        show_business_analytics()
     elif page == "🤖 Agent控制":
         show_agent_control()
-    elif page == "📋 任务列表":
-        show_task_list()
+    elif page == "📋 商机列表":
+        show_opportunity_list()
     elif page == "🔔 通知历史":
         show_notification_history()
+    elif page == "🔧 企微群配置":
+        show_wechat_config()
     elif page == "⚙️ 系统设置":
         show_system_settings()
-    elif page == "🔧 系统测试":
+    elif page == "🧪 系统测试":
         show_system_test()
 
 
 def show_dashboard():
-    """显示仪表板"""
-    st.header("📊 系统仪表板")
+    """显示运营仪表板"""
+    st.header("📊 运营仪表板")
 
     # 获取实时数据
     try:
+        # 获取逾期商机数据
+        opportunities = fetch_overdue_opportunities()
+
         # 获取系统健康状态
         health = get_system_health()
 
@@ -98,15 +107,33 @@ def show_dashboard():
         agent_status = "运行中" if jobs_info["is_running"] else "已停止"
         agent_delta = "正常" if health.get("overall_status") == "healthy" else "异常"
 
-        # 模拟统计数据（实际应从数据库获取）
-        db_manager = get_db_manager()
+        # 计算业务指标
+        calculator = BusinessMetricsCalculator()
+
+        # 按组织分组统计
+        org_stats = {}
+        escalation_count = 0
+        for opp in opportunities:
+            org_name = opp.org_name
+            if org_name not in org_stats:
+                org_stats[org_name] = {"total": 0, "overdue": 0, "escalation": 0}
+
+            org_stats[org_name]["total"] += 1
+            if opp.is_overdue:
+                org_stats[org_name]["overdue"] += 1
+            if opp.escalation_level > 0:
+                org_stats[org_name]["escalation"] += 1
+                escalation_count += 1
 
     except Exception as e:
         st.error(f"获取系统数据失败: {e}")
+        opportunities = []
         health = {}
         jobs_info = {"is_running": False, "total_jobs": 0}
         agent_status = "未知"
         agent_delta = "错误"
+        org_stats = {}
+        escalation_count = 0
 
     # 系统状态卡片
     col1, col2, col3, col4 = st.columns(4)
@@ -120,25 +147,25 @@ def show_dashboard():
         )
 
     with col2:
-        # 这里应该从数据库获取实际数据
         st.metric(
-            label="今日处理任务",
-            value="0",  # 实际应查询数据库
-            delta="0"
+            label="逾期商机总数",
+            value=str(len(opportunities)),
+            delta=f"+{len([opp for opp in opportunities if opp.elapsed_hours < 48])}" if opportunities else "0"
         )
 
     with col3:
         st.metric(
-            label="发送通知",
-            value="0",  # 实际应查询数据库
-            delta="0"
+            label="需要升级处理",
+            value=str(escalation_count),
+            delta="紧急" if escalation_count > 0 else "正常",
+            delta_color="inverse" if escalation_count > 0 else "normal"
         )
 
     with col4:
         st.metric(
-            label="活跃任务",
-            value=str(jobs_info.get("total_jobs", 0)),
-            delta="0"
+            label="涉及组织数",
+            value=str(len(org_stats)),
+            delta=f"{len([org for org, stats in org_stats.items() if stats['escalation'] > 0])}个需关注"
         )
     
     st.markdown("---")
@@ -697,6 +724,179 @@ def show_system_test():
             
         except Exception as e:
             st.error(f"获取系统信息失败: {e}")
+
+
+def show_business_analytics():
+    """显示业务分析页面"""
+    st.header("📈 业务分析")
+
+    try:
+        # 获取逾期商机数据
+        opportunities = fetch_overdue_opportunities()
+
+        if not opportunities:
+            st.info("暂无逾期商机数据")
+            return
+
+        calculator = BusinessMetricsCalculator()
+
+        # 生成综合报告
+        report = calculator.generate_summary_report(opportunities)
+
+        # 基础统计
+        st.subheader("📊 基础统计")
+        col1, col2, col3, col4 = st.columns(4)
+
+        with col1:
+            st.metric("总商机数", report["基础统计"]["总商机数"])
+        with col2:
+            st.metric("逾期商机数", report["基础统计"]["逾期商机数"])
+        with col3:
+            st.metric("升级商机数", report["基础统计"]["升级商机数"])
+        with col4:
+            st.metric("涉及组织数", report["基础统计"]["涉及组织数"])
+
+        st.markdown("---")
+
+        # 逾期率分析
+        st.subheader("📈 逾期率分析")
+        overdue_rates = report["逾期率分析"]
+        if overdue_rates:
+            df_overdue = pd.DataFrame(list(overdue_rates.items()), columns=["状态", "逾期率(%)"])
+            st.bar_chart(df_overdue.set_index("状态"))
+
+        # 组织绩效对比
+        st.subheader("🏢 组织绩效对比")
+        org_performance = report["组织绩效"]
+        if org_performance:
+            df_org = pd.DataFrame.from_dict(org_performance, orient='index')
+            st.dataframe(df_org, use_container_width=True)
+
+            # 绩效排名图表
+            if "SLA达成率" in df_org.columns:
+                st.subheader("SLA达成率排名")
+                df_sorted = df_org.sort_values("SLA达成率", ascending=False)
+                st.bar_chart(df_sorted["SLA达成率"])
+
+        # 时长分布
+        st.subheader("⏱️ 逾期时长分布")
+        time_distribution = report["时长分布"]
+        if time_distribution:
+            df_time = pd.DataFrame(list(time_distribution.items()), columns=["时长区间", "数量"])
+            st.bar_chart(df_time.set_index("时长区间"))
+
+    except Exception as e:
+        st.error(f"获取业务分析数据失败: {e}")
+
+
+def show_opportunity_list():
+    """显示商机列表页面"""
+    st.header("📋 商机列表")
+
+    try:
+        # 获取逾期商机数据
+        opportunities = fetch_overdue_opportunities()
+
+        if not opportunities:
+            st.info("暂无逾期商机数据")
+            return
+
+        # 筛选器
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            status_filter = st.selectbox(
+                "状态筛选",
+                ["全部"] + list(set(opp.order_status for opp in opportunities))
+            )
+
+        with col2:
+            org_filter = st.selectbox(
+                "组织筛选",
+                ["全部"] + list(set(opp.org_name for opp in opportunities))
+            )
+
+        with col3:
+            escalation_filter = st.selectbox(
+                "升级筛选",
+                ["全部", "需要升级", "标准处理"]
+            )
+
+        # 应用筛选
+        filtered_opportunities = opportunities
+
+        if status_filter != "全部":
+            filtered_opportunities = [opp for opp in filtered_opportunities if opp.order_status == status_filter]
+
+        if org_filter != "全部":
+            filtered_opportunities = [opp for opp in filtered_opportunities if opp.org_name == org_filter]
+
+        if escalation_filter == "需要升级":
+            filtered_opportunities = [opp for opp in filtered_opportunities if opp.escalation_level > 0]
+        elif escalation_filter == "标准处理":
+            filtered_opportunities = [opp for opp in filtered_opportunities if opp.escalation_level == 0]
+
+        # 显示商机表格
+        if filtered_opportunities:
+            # 转换为DataFrame
+            data = []
+            for opp in filtered_opportunities:
+                data.append({
+                    "工单号": opp.order_num,
+                    "客户": opp.name,
+                    "地址": opp.address,
+                    "负责人": opp.supervisor_name,
+                    "组织": opp.org_name,
+                    "状态": opp.order_status,
+                    "创建时间": opp.create_time.strftime("%Y-%m-%d %H:%M"),
+                    "已过时长(小时)": f"{opp.elapsed_hours:.1f}",
+                    "是否逾期": "是" if opp.is_overdue else "否",
+                    "升级级别": opp.escalation_level
+                })
+
+            df = pd.DataFrame(data)
+            st.dataframe(df, use_container_width=True, hide_index=True)
+
+            # 操作按钮
+            col1, col2, col3 = st.columns(3)
+
+            with col1:
+                if st.button("📤 导出数据"):
+                    csv = df.to_csv(index=False)
+                    st.download_button(
+                        label="下载CSV文件",
+                        data=csv,
+                        file_name=f"opportunities_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                        mime="text/csv"
+                    )
+
+            with col2:
+                if st.button("🔔 发送通知"):
+                    with st.spinner("发送通知中..."):
+                        try:
+                            result = send_business_notifications(filtered_opportunities)
+                            st.success(f"通知发送完成: 成功{result['sent']}个，失败{result['failed']}个")
+                        except Exception as e:
+                            st.error(f"发送通知失败: {e}")
+
+            with col3:
+                if st.button("🔄 刷新数据"):
+                    st.rerun()
+        else:
+            st.info("没有找到符合条件的商机")
+
+    except Exception as e:
+        st.error(f"获取商机列表失败: {e}")
+
+
+def show_wechat_config():
+    """显示企微群配置页面"""
+    try:
+        from .pages.wechat_config import show_wechat_config_page
+        show_wechat_config_page()
+    except ImportError as e:
+        st.error(f"无法加载企微群配置页面: {e}")
+        st.info("请检查页面模块是否正确安装")
 
 
 if __name__ == "__main__":

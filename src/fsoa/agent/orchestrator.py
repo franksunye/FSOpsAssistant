@@ -16,7 +16,7 @@ from ..data.models import (
 from ..data.database import get_db_manager
 from ..utils.logger import get_logger, log_agent_step
 from ..utils.config import get_config
-from .tools import fetch_overdue_tasks, send_notification, update_task_status
+from .tools import fetch_overdue_tasks, fetch_overdue_opportunities, send_notification, send_business_notifications, update_task_status
 from .decision import create_decision_engine
 from .llm import get_deepseek_client
 
@@ -145,22 +145,46 @@ class AgentOrchestrator:
     def _fetch_tasks_node(self, state: AgentState) -> AgentState:
         """获取任务节点"""
         log_agent_step("fetch_tasks", {"execution_id": state["execution_id"]})
-        
+
         try:
+            # 获取传统任务（向后兼容）
             tasks = fetch_overdue_tasks()
             state["tasks"] = tasks
             state["context"]["total_tasks"] = len(tasks)
-            
+
+            # 获取逾期商机（新业务流程）
+            try:
+                opportunities = fetch_overdue_opportunities()
+                state["context"]["opportunities"] = opportunities
+                state["context"]["total_opportunities"] = len(opportunities)
+
+                # 如果有商机数据，优先使用新的业务流程
+                if opportunities:
+                    state["context"]["use_business_flow"] = True
+                    logger.info(f"Using business flow with {len(opportunities)} opportunities")
+                else:
+                    state["context"]["use_business_flow"] = False
+                    logger.info("Using legacy task flow")
+
+            except Exception as e:
+                logger.warning(f"Failed to fetch opportunities, falling back to legacy flow: {e}")
+                state["context"]["use_business_flow"] = False
+                state["context"]["opportunities"] = []
+
             log_agent_step(
-                "fetch_tasks", 
-                output_data={"task_count": len(tasks)}
+                "fetch_tasks",
+                output_data={
+                    "task_count": len(tasks),
+                    "opportunity_count": len(state["context"].get("opportunities", [])),
+                    "use_business_flow": state["context"].get("use_business_flow", False)
+                }
             )
-            
+
         except Exception as e:
             error_msg = f"Failed to fetch tasks: {e}"
             state["errors"].append(error_msg)
             log_agent_step("fetch_tasks", error=error_msg)
-        
+
         return state
     
     def _process_task_node(self, state: AgentState) -> AgentState:
@@ -235,12 +259,17 @@ class AgentOrchestrator:
     
     def _send_notification_node(self, state: AgentState) -> AgentState:
         """发送通知节点"""
+        # 检查是否使用新的业务流程
+        if state["context"].get("use_business_flow", False):
+            return self._send_business_notifications(state)
+
+        # 传统任务通知流程
         current_task = state["current_task"]
         decision = state["decision_result"]
-        
+
         if not current_task or not decision:
             return state
-        
+
         # 只有决策为notify或escalate时才发送通知
         if decision.action not in ["notify", "escalate"]:
             log_agent_step(
@@ -370,3 +399,59 @@ class AgentOrchestrator:
             "next_execution": None,
             "total_executions": 0
         }
+
+    def _send_business_notifications(self, state: AgentState) -> AgentState:
+        """发送业务通知（新流程）"""
+        opportunities = state["context"].get("opportunities", [])
+
+        if not opportunities:
+            log_agent_step(
+                "send_business_notifications",
+                output_data={"message": "No opportunities to notify"}
+            )
+            return state
+
+        log_agent_step(
+            "send_business_notifications",
+            input_data={"opportunity_count": len(opportunities)}
+        )
+
+        try:
+            # 检查是否为试运行
+            if state["context"].get("dry_run", False):
+                logger.info(f"DRY RUN: Would send business notifications for {len(opportunities)} opportunities")
+                result = {
+                    "total": len(opportunities),
+                    "sent": len(opportunities),
+                    "failed": 0,
+                    "escalated": sum(1 for opp in opportunities if opp.escalation_level > 0)
+                }
+            else:
+                # 发送业务通知
+                result = send_business_notifications(opportunities)
+
+            # 更新状态
+            state["notifications_sent"] += result["sent"]
+            state["context"]["notification_result"] = result
+
+            log_agent_step(
+                "send_business_notifications",
+                output_data={
+                    "success": True,
+                    "total": result["total"],
+                    "sent": result["sent"],
+                    "failed": result["failed"],
+                    "escalated": result["escalated"]
+                }
+            )
+
+            if result["failed"] > 0:
+                error_msg = f"Failed to send {result['failed']} notifications"
+                state["errors"].append(error_msg)
+
+        except Exception as e:
+            error_msg = f"Business notification sending failed: {e}"
+            state["errors"].append(error_msg)
+            log_agent_step("send_business_notifications", error=error_msg)
+
+        return state
