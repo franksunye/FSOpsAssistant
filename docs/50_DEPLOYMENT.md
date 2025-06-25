@@ -68,7 +68,8 @@ METABASE_PASSWORD=your_password
 METABASE_DATABASE_ID=1
 
 # 企业微信通知配置
-WECHAT_WEBHOOK_URLS=https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=your_webhook_key
+# 注意：企微配置已迁移到Web界面管理
+# 请在部署后通过 [系统管理 → 企微群配置] 进行配置
 
 # 数据库配置
 DATABASE_URL=sqlite:///data/fsoa.db

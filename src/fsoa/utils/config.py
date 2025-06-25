@@ -27,8 +27,8 @@ class Config(BaseSettings):
     metabase_password: str = Field(..., env="METABASE_PASSWORD")
     metabase_database_id: int = Field(1, env="METABASE_DATABASE_ID")
     
-    # 企微配置
-    wechat_webhook_urls: str = Field(..., env="WECHAT_WEBHOOK_URLS")
+    # 企微配置已迁移到 config/wechat_groups.json
+    # 请使用 [系统管理 → 企微群配置] 进行配置
     
     # 数据库配置
     database_url: str = Field("sqlite:///fsoa.db", env="DATABASE_URL")
@@ -56,31 +56,10 @@ class Config(BaseSettings):
     debug: bool = Field(False, env="DEBUG")
     testing: bool = Field(False, env="TESTING")
     
-    @property
-    def wechat_webhook_list(self) -> List[str]:
-        """获取企微Webhook URL列表 - 兼容性方法，建议使用新配置管理器"""
-        # 优先使用新配置管理器
-        try:
-            from ..config.wechat_config import get_wechat_config_manager
-            config_manager = get_wechat_config_manager()
-            org_mapping = config_manager.get_org_webhook_mapping()
-            # 返回所有配置的webhook URL
-            webhook_urls = [url for url in org_mapping.values() if url]
-            if webhook_urls:
-                return webhook_urls
-        except Exception:
-            pass
-
-        # 回退到旧配置方式
-        return [url.strip() for url in self.wechat_webhook_urls.split(',') if url.strip()]
-
     def get_wechat_config_manager(self):
-        """获取企微配置管理器"""
-        try:
-            from ..config.wechat_config import get_wechat_config_manager
-            return get_wechat_config_manager()
-        except ImportError:
-            return None
+        """获取企微配置管理器 - PoC项目统一配置入口"""
+        from ..config.wechat_config import get_wechat_config_manager
+        return get_wechat_config_manager()
     
     @property
     def is_development(self) -> bool:

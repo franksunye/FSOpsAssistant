@@ -86,9 +86,11 @@ METABASE_URL=http://metabase.fsgo365.cn:3000
 METABASE_USERNAME=your_username
 METABASE_PASSWORD=your_password
 METABASE_DATABASE_ID=1712  # 真实业务数据源
-WECHAT_WEBHOOK_URLS=webhook1,webhook2,webhook3
 DATABASE_URL=sqlite:///fsoa.db
 LOG_LEVEL=INFO
+
+# 企微配置已迁移到Web界面
+# 请使用 [系统管理 → 企微群配置] 进行配置
 ```
 
 ### 业务功能亮点

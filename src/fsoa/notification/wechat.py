@@ -35,36 +35,17 @@ class WeChatClient:
         self.session = self._create_session()
 
     def _parse_webhook_urls(self) -> Dict[str, str]:
-        """解析Webhook URL配置 - 智能使用新旧配置"""
-        webhook_urls = {}
-
-        # 优先使用新配置管理器的组织映射
+        """解析Webhook URL配置 - PoC项目使用统一配置管理器"""
+        # 直接使用新配置管理器的组织映射
         org_mapping = self.wechat_config.get_org_webhook_mapping()
-        configured_webhooks = {org: url for org, url in org_mapping.items() if url}
+        webhook_urls = {org: url for org, url in org_mapping.items() if url}
 
-        if configured_webhooks:
-            # 使用组织名称作为group_id
-            webhook_urls.update(configured_webhooks)
-            logger.info(f"Using new config: {len(configured_webhooks)} org webhooks")
+        logger.info(f"Loaded {len(webhook_urls)} webhook configurations from wechat_config")
 
-        # 如果新配置为空或不足，补充旧配置（向后兼容）
         if not webhook_urls:
-            urls = self.config.wechat_webhook_list
-            for i, url in enumerate(urls):
-                group_id = f"group_{i+1:03d}"
-                webhook_urls[group_id] = url
-            logger.info(f"Fallback to old config: {len(urls)} webhook URLs")
-        else:
-            # 新配置存在，但可能需要补充旧配置作为备用
-            urls = self.config.wechat_webhook_list
-            if urls and len(urls) > len(configured_webhooks):
-                for i, url in enumerate(urls):
-                    backup_id = f"backup_{i+1:03d}"
-                    if backup_id not in webhook_urls:
-                        webhook_urls[backup_id] = url
-                logger.info(f"Added {len(urls)} backup webhooks from old config")
+            logger.warning("No webhook URLs configured in wechat_groups.json")
+            logger.info("Please configure webhooks in [系统管理 → 企微群配置]")
 
-        logger.info(f"Total loaded: {len(webhook_urls)} webhook configurations")
         return webhook_urls
 
 

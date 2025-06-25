@@ -64,7 +64,7 @@ DEEPSEEK_API_KEY=your_deepseek_api_key
 METABASE_URL=your_metabase_url
 METABASE_USERNAME=your_username
 METABASE_PASSWORD=your_password
-WECHAT_WEBHOOK_URLS=webhook1,webhook2,webhook3
+# 企微配置已迁移到Web界面：[系统管理 → 企微群配置]
 DATABASE_URL=sqlite:///fsoa.db
 LOG_LEVEL=INFO
 ```
