@@ -152,9 +152,13 @@ def show_dashboard():
         scheduler = get_scheduler()
         jobs_info = scheduler.get_jobs()
 
-        # 获取Agent状态
-        agent_status = "运行中" if jobs_info["is_running"] else "已停止"
-        agent_delta = "正常" if health.get("overall_status") == "healthy" else "异常"
+        # 获取Agent状态 - 区分Web模式和完整模式
+        if jobs_info["is_running"]:
+            agent_status = "运行中"
+            agent_delta = "正常" if health.get("overall_status") == "healthy" else "异常"
+        else:
+            agent_status = "Web模式"
+            agent_delta = "仅Web界面"
 
         # 使用新的数据统计
         total_opportunities = data_stats.get("total_opportunities", 0)
@@ -206,6 +210,9 @@ def show_dashboard():
         )
         if agent_status == "运行中":
             st.success("✅ 智能监控运行中")
+        elif agent_status == "Web模式":
+            st.info("🌐 Web界面模式")
+            st.caption("使用 `python scripts/start_full_app.py` 启动完整Agent")
         else:
             st.error("❌ 需要启动Agent")
 
@@ -213,12 +220,13 @@ def show_dashboard():
         st.metric(
             label="⚠️ 逾期商机",
             value=str(overdue_opportunities),
-            delta=f"总计{total_opportunities}个商机" if total_opportunities > 0 else "0"
+            delta=f"监控{total_opportunities}个" if total_opportunities > 0 else "0"
         )
         if overdue_opportunities > 0:
             st.warning(f"🔔 {overdue_opportunities}个商机需要关注")
         else:
             st.success("✅ 暂无逾期商机")
+        st.caption("仅监控'待预约'和'暂不上门'状态")
 
     with col3:
         st.metric(
@@ -361,38 +369,8 @@ def show_dashboard():
         except Exception as e:
             st.error(f"获取系统状态失败: {e}")
 
-    # 添加系统性能图表
-    st.markdown("---")
-    st.subheader("📈 系统性能趋势")
-
-    # 创建示例数据（实际应从数据库获取）
-    import pandas as pd
-    import numpy as np
-    from datetime import datetime, timedelta
-
-    # 生成最近7天的示例数据
-    dates = [datetime.now() - timedelta(days=i) for i in range(6, -1, -1)]
-
-    performance_data = pd.DataFrame({
-        '日期': dates,
-        '处理任务数': np.random.randint(10, 50, 7),
-        '发送通知数': np.random.randint(5, 25, 7),
-        '超时任务数': np.random.randint(0, 10, 7),
-        '响应时间(秒)': np.random.uniform(1, 5, 7)
-    })
-
-    # 显示图表
-    col_chart1, col_chart2 = st.columns(2)
-
-    with col_chart1:
-        st.subheader("📊 任务处理统计")
-        chart_data = performance_data.set_index('日期')[['处理任务数', '发送通知数', '超时任务数']]
-        st.line_chart(chart_data)
-
-    with col_chart2:
-        st.subheader("⚡ 系统响应时间")
-        response_data = performance_data.set_index('日期')[['响应时间(秒)']]
-        st.area_chart(response_data)
+    # PoC阶段暂时移除性能趋势图表
+    # 未来可以添加真实的系统性能监控
 
 
 def show_agent_control():
@@ -915,12 +893,8 @@ def show_business_analytics():
 
         st.markdown("---")
 
-        # 逾期率分析
-        st.subheader("📈 逾期率分析")
-        overdue_rates = report["逾期率分析"]
-        if overdue_rates:
-            df_overdue = pd.DataFrame(list(overdue_rates.items()), columns=["状态", "逾期率(%)"])
-            st.bar_chart(df_overdue.set_index("状态"))
+        # PoC阶段暂时移除逾期率分析
+        # 未来可以添加更完善的业务分析功能
 
         # 组织绩效对比
         st.subheader("🏢 组织绩效对比")
@@ -1373,6 +1347,69 @@ def show_wechat_config():
                 st.session_state.show_detailed_config = True
                 st.rerun()
 
+        # 新增组织群配置
+        st.markdown("---")
+        st.subheader("➕ 新增组织群配置")
+
+        with st.form("add_org_config"):
+            col_form1, col_form2 = st.columns(2)
+
+            with col_form1:
+                new_org_name = st.text_input(
+                    "组织名称 (orgName)",
+                    placeholder="例如: 北京分公司",
+                    help="必须与Metabase数据中的orgName完全一致"
+                )
+
+            with col_form2:
+                new_webhook_url = st.text_input(
+                    "企微群Webhook地址",
+                    placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=...",
+                    help="从企微群机器人获取的Webhook URL"
+                )
+
+            col_submit1, col_submit2, col_submit3 = st.columns([1, 1, 2])
+
+            with col_submit1:
+                submitted = st.form_submit_button("✅ 添加配置", type="primary")
+
+            with col_submit2:
+                if st.form_submit_button("🧪 测试URL"):
+                    if new_webhook_url:
+                        if new_webhook_url.startswith("https://qyapi.weixin.qq.com/"):
+                            st.success("✅ Webhook URL格式正确")
+                        else:
+                            st.error("❌ Webhook URL格式无效")
+                    else:
+                        st.warning("请输入Webhook URL")
+
+            if submitted:
+                if new_org_name and new_webhook_url:
+                    try:
+                        # 检查是否已存在
+                        existing_configs = db_manager.get_group_configs()
+                        if any(gc.group_id == new_org_name for gc in existing_configs):
+                            st.error(f"❌ 组织 '{new_org_name}' 已存在，请使用不同的名称")
+                        elif not new_webhook_url.startswith("https://qyapi.weixin.qq.com/"):
+                            st.error("❌ Webhook URL格式无效，必须以 https://qyapi.weixin.qq.com/ 开头")
+                        else:
+                            # 创建新配置
+                            new_config = db_manager.create_or_update_group_config(
+                                group_id=new_org_name,
+                                name=new_org_name,
+                                webhook_url=new_webhook_url,
+                                enabled=True
+                            )
+                            if new_config:
+                                st.success(f"✅ 成功添加组织群配置: {new_org_name}")
+                                st.rerun()
+                            else:
+                                st.error("❌ 添加配置失败，请检查数据库连接")
+                    except Exception as e:
+                        st.error(f"❌ 添加配置时发生错误: {e}")
+                else:
+                    st.warning("⚠️ 请填写完整的组织名称和Webhook地址")
+
         with col_b:
             if st.button("🧪 测试通知", use_container_width=True):
                 st.session_state.test_notification = True
@@ -1468,14 +1505,80 @@ def show_detailed_config(db_manager, config):
     group_configs = db_manager.get_group_configs()
 
     if group_configs:
-        for gc in group_configs:
+        for i, gc in enumerate(group_configs):
             with st.expander(f"{'✅' if gc.enabled else '❌'} {gc.name} ({gc.group_id})"):
-                st.write(f"**Webhook URL:** {gc.webhook_url or '未配置'}")
-                st.write(f"**状态:** {'启用' if gc.enabled else '禁用'}")
-                st.write(f"**冷却时间:** {gc.notification_cooldown_minutes} 分钟")
-                st.write(f"**最大通知数/小时:** {gc.max_notifications_per_hour}")
+                col_info, col_actions = st.columns([3, 1])
+
+                with col_info:
+                    st.write(f"**Webhook URL:** {gc.webhook_url or '未配置'}")
+                    st.write(f"**状态:** {'启用' if gc.enabled else '禁用'}")
+                    st.write(f"**冷却时间:** {gc.notification_cooldown_minutes} 分钟")
+                    st.write(f"**最大通知数/小时:** {gc.max_notifications_per_hour}")
+
+                with col_actions:
+                    # 启用/禁用按钮
+                    if gc.enabled:
+                        if st.button(f"🔴 禁用", key=f"disable_{gc.group_id}"):
+                            try:
+                                db_manager.create_or_update_group_config(
+                                    group_id=gc.group_id,
+                                    name=gc.name,
+                                    webhook_url=gc.webhook_url,
+                                    enabled=False
+                                )
+                                st.success(f"已禁用 {gc.name}")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"禁用失败: {e}")
+                    else:
+                        if st.button(f"🟢 启用", key=f"enable_{gc.group_id}"):
+                            try:
+                                db_manager.create_or_update_group_config(
+                                    group_id=gc.group_id,
+                                    name=gc.name,
+                                    webhook_url=gc.webhook_url,
+                                    enabled=True
+                                )
+                                st.success(f"已启用 {gc.name}")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"启用失败: {e}")
+
+                    # 删除按钮
+                    if st.button(f"🗑️ 删除", key=f"delete_{gc.group_id}"):
+                        try:
+                            if db_manager.delete_group_config(gc.group_id):
+                                st.success(f"已删除 {gc.name}")
+                                st.rerun()
+                            else:
+                                st.error("删除失败")
+                        except Exception as e:
+                            st.error(f"删除失败: {e}")
+
+                # 编辑Webhook URL
+                with st.form(f"edit_webhook_{gc.group_id}"):
+                    new_webhook = st.text_input(
+                        "更新Webhook URL",
+                        value=gc.webhook_url or "",
+                        key=f"webhook_input_{gc.group_id}"
+                    )
+                    if st.form_submit_button("💾 更新"):
+                        if new_webhook and new_webhook.startswith("https://qyapi.weixin.qq.com/"):
+                            try:
+                                db_manager.create_or_update_group_config(
+                                    group_id=gc.group_id,
+                                    name=gc.name,
+                                    webhook_url=new_webhook,
+                                    enabled=gc.enabled
+                                )
+                                st.success(f"已更新 {gc.name} 的Webhook")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"更新失败: {e}")
+                        else:
+                            st.error("请输入有效的企微Webhook URL")
     else:
-        st.info("暂无组织群配置")
+        st.info("暂无组织群配置，请使用上方的'新增组织群配置'功能添加")
 
     # 内部运营群配置
     st.markdown("### 内部运营群配置")
