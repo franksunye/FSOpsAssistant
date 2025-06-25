@@ -274,6 +274,16 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Failed to get system config {key}: {e}")
             return None
+
+    def get_all_system_configs(self) -> Dict[str, str]:
+        """获取所有系统配置"""
+        try:
+            with self.get_session() as session:
+                configs = session.query(SystemConfigTable).all()
+                return {config.key: config.value for config in configs}
+        except Exception as e:
+            logger.error(f"Failed to get all system configs: {e}")
+            return {}
     
     def set_system_config(self, key: str, value: str, description: str = None) -> bool:
         """设置系统配置"""

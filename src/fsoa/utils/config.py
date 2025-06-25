@@ -40,6 +40,11 @@ class Config(BaseSettings):
     agent_execution_interval: int = Field(60, env="AGENT_EXECUTION_INTERVAL")
     agent_max_retries: int = Field(3, env="AGENT_MAX_RETRIES")
     agent_timeout: int = Field(300, env="AGENT_TIMEOUT")
+
+    # LLM配置
+    use_llm_optimization: bool = Field(True, env="USE_LLM_OPTIMIZATION")
+    llm_temperature: float = Field(0.1, env="LLM_TEMPERATURE")
+    llm_max_tokens: int = Field(1000, env="LLM_MAX_TOKENS")
     
     # 通知配置
     notification_cooldown: int = Field(30, env="NOTIFICATION_COOLDOWN")

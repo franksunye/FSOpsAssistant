@@ -256,6 +256,23 @@ def test_metabase_connection() -> bool:
 
 
 @log_function_call
+def test_deepseek_connection() -> bool:
+    """
+    测试DeepSeek LLM连接
+
+    Returns:
+        连接是否成功
+    """
+    try:
+        from .llm import get_deepseek_client
+        deepseek_client = get_deepseek_client()
+        return deepseek_client.test_connection()
+    except Exception as e:
+        logger.error(f"DeepSeek connection test failed: {e}")
+        return False
+
+
+@log_function_call
 def test_wechat_webhook(group_id: str = None) -> bool:
     """
     测试企微Webhook连接
@@ -308,10 +325,13 @@ def get_system_health() -> Dict[str, Any]:
     try:
         # 测试Metabase连接
         health_status["metabase_connection"] = test_metabase_connection()
-        
+
         # 测试企微Webhook
         health_status["wechat_webhook"] = test_wechat_webhook()
-        
+
+        # 测试DeepSeek连接
+        health_status["deepseek_connection"] = test_deepseek_connection()
+
         # 测试数据库连接
         db_manager = get_db_manager()
         health_status["database_connection"] = True  # 如果能获取到manager说明连接正常
@@ -319,7 +339,8 @@ def get_system_health() -> Dict[str, Any]:
         # 计算整体状态
         if all([
             health_status["metabase_connection"],
-            health_status["wechat_webhook"], 
+            health_status["wechat_webhook"],
+            health_status["deepseek_connection"],
             health_status["database_connection"]
         ]):
             health_status["overall_status"] = "healthy"

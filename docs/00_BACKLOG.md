@@ -32,29 +32,29 @@ Field Service Operations Assistant - 开发Backlog
 ## Sprint 2: Agent核心功能 (Week 3-4)
 
 ### 高优先级 (Must Have)
-- [ ] **Agent引擎**
-  - [ ] LangGraph DAG设计和实现
-  - [ ] 定时任务调度（APScheduler）
-  - [ ] Agent状态管理
-  - [ ] 基础决策引擎（规则驱动）
+- [x] **Agent引擎**
+  - [x] LangGraph DAG设计和实现
+  - [x] 定时任务调度（APScheduler）
+  - [x] Agent状态管理
+  - [x] 基础决策引擎（规则驱动）
 
-- [ ] **核心业务流程**
-  - [ ] 超时检测逻辑
-  - [ ] 消息发送流程
-  - [ ] 状态更新机制
-  - [ ] 错误处理和重试
+- [x] **核心业务流程**
+  - [x] 超时检测逻辑
+  - [x] 消息发送流程
+  - [x] 状态更新机制
+  - [x] 错误处理和重试
 
-- [ ] **LLM集成**
-  - [ ] DeepSeek API集成
-  - [ ] Prompt模板设计
-  - [ ] LLM决策函数实现
-  - [ ] 混合决策机制（规则+LLM）
+- [x] **LLM集成**
+  - [x] DeepSeek API集成
+  - [x] Prompt模板设计
+  - [x] LLM决策函数实现
+  - [x] 混合决策机制（规则+LLM）
 
 ### 中优先级 (Should Have)
-- [ ] **监控和日志**
-  - [ ] Agent执行日志记录
-  - [ ] 性能监控指标
-  - [ ] 错误告警机制
+- [x] **监控和日志**
+  - [x] Agent执行日志记录
+  - [x] 性能监控指标
+  - [x] 错误告警机制
 
 ## Sprint 3: 功能完善和测试 (Week 5-6)
 

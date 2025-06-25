@@ -20,9 +20,11 @@ st.set_page_config(
 # 导入模块
 try:
     from ..agent.tools import (
-        fetch_overdue_tasks, test_metabase_connection, 
-        test_wechat_webhook, get_system_health
+        fetch_overdue_tasks, test_metabase_connection,
+        test_wechat_webhook, test_deepseek_connection, get_system_health
     )
+    from ..agent.orchestrator import AgentOrchestrator
+    from ..utils.scheduler import get_scheduler, setup_agent_scheduler, start_scheduler, stop_scheduler
     from ..data.database import get_db_manager
     from ..data.models import TaskStatus, Priority
     from ..notification.wechat import get_wechat_client
@@ -50,12 +52,14 @@ def main():
         st.header("📋 导航菜单")
         page = st.selectbox(
             "选择页面",
-            ["📊 仪表板", "📋 任务列表", "🔔 通知历史", "⚙️ 系统设置", "🔧 系统测试"]
+            ["📊 仪表板", "🤖 Agent控制", "📋 任务列表", "🔔 通知历史", "⚙️ 系统设置", "🔧 系统测试"]
         )
     
     # 根据选择显示不同页面
     if page == "📊 仪表板":
         show_dashboard()
+    elif page == "🤖 Agent控制":
+        show_agent_control()
     elif page == "📋 任务列表":
         show_task_list()
     elif page == "🔔 通知历史":
@@ -115,8 +119,11 @@ def show_dashboard():
         if st.button("🚀 手动执行Agent", type="primary"):
             with st.spinner("正在执行Agent..."):
                 try:
-                    # 这里调用Agent执行逻辑
-                    st.success("Agent执行完成！")
+                    agent = AgentOrchestrator()
+                    result = agent.execute(dry_run=False)
+                    st.success(f"Agent执行完成！处理任务: {result.tasks_processed}, 发送通知: {result.notifications_sent}")
+                    if result.errors:
+                        st.warning(f"执行中出现 {len(result.errors)} 个错误")
                 except Exception as e:
                     st.error(f"Agent执行失败: {e}")
     
@@ -137,7 +144,12 @@ def show_dashboard():
                 st.success("✅ 企微Webhook正常")
             else:
                 st.error("❌ 企微Webhook异常")
-            
+
+            if health.get("deepseek_connection"):
+                st.success("✅ DeepSeek连接正常")
+            else:
+                st.error("❌ DeepSeek连接异常")
+
             if health.get("database_connection"):
                 st.success("✅ 数据库连接正常")
             else:
@@ -145,6 +157,129 @@ def show_dashboard():
                 
         except Exception as e:
             st.error(f"获取系统状态失败: {e}")
+
+
+def show_agent_control():
+    """显示Agent控制页面"""
+    st.header("🤖 Agent控制中心")
+
+    # Agent状态信息
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.subheader("📊 Agent状态")
+
+        try:
+            scheduler = get_scheduler()
+            jobs_info = scheduler.get_jobs()
+
+            if jobs_info["is_running"]:
+                st.success("🟢 调度器运行中")
+            else:
+                st.error("🔴 调度器已停止")
+
+            st.info(f"📋 活跃任务数: {jobs_info['total_jobs']}")
+
+            # 显示任务列表
+            if jobs_info["jobs"]:
+                st.write("**定时任务列表:**")
+                for job in jobs_info["jobs"]:
+                    with st.expander(f"📅 {job['id']}"):
+                        st.write(f"**函数**: {job['func']}")
+                        st.write(f"**触发器**: {job['trigger']}")
+                        st.write(f"**下次执行**: {job['next_run_time'] or '未知'}")
+
+        except Exception as e:
+            st.error(f"获取Agent状态失败: {e}")
+
+    with col2:
+        st.subheader("🎛️ 控制操作")
+
+        # 手动执行
+        if st.button("🚀 立即执行Agent", type="primary"):
+            with st.spinner("正在执行Agent..."):
+                try:
+                    agent = AgentOrchestrator()
+                    result = agent.execute(dry_run=False)
+
+                    st.success("✅ Agent执行完成！")
+
+                    # 显示执行结果
+                    col_a, col_b, col_c = st.columns(3)
+                    with col_a:
+                        st.metric("处理任务", result.tasks_processed)
+                    with col_b:
+                        st.metric("发送通知", result.notifications_sent)
+                    with col_c:
+                        st.metric("错误数量", len(result.errors))
+
+                    if result.errors:
+                        st.error("执行错误:")
+                        for error in result.errors:
+                            st.write(f"• {error}")
+
+                except Exception as e:
+                    st.error(f"Agent执行失败: {e}")
+
+        # 试运行
+        if st.button("🧪 试运行 (Dry Run)"):
+            with st.spinner("正在试运行..."):
+                try:
+                    agent = AgentOrchestrator()
+                    result = agent.execute(dry_run=True)
+
+                    st.info("🧪 试运行完成！")
+                    st.write(f"**模拟处理任务**: {result.tasks_processed}")
+                    st.write(f"**模拟发送通知**: {result.notifications_sent}")
+
+                    if result.errors:
+                        st.warning("发现问题:")
+                        for error in result.errors:
+                            st.write(f"• {error}")
+
+                except Exception as e:
+                    st.error(f"试运行失败: {e}")
+
+    st.markdown("---")
+
+    # 调度器控制
+    st.subheader("⏰ 调度器管理")
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        if st.button("▶️ 启动调度器"):
+            try:
+                start_scheduler()
+                setup_agent_scheduler()
+                st.success("调度器已启动")
+                st.rerun()
+            except Exception as e:
+                st.error(f"启动失败: {e}")
+
+    with col2:
+        if st.button("⏸️ 停止调度器"):
+            try:
+                stop_scheduler()
+                st.success("调度器已停止")
+                st.rerun()
+            except Exception as e:
+                st.error(f"停止失败: {e}")
+
+    with col3:
+        if st.button("🔄 重启调度器"):
+            try:
+                stop_scheduler()
+                start_scheduler()
+                setup_agent_scheduler()
+                st.success("调度器已重启")
+                st.rerun()
+            except Exception as e:
+                st.error(f"重启失败: {e}")
+
+    with col4:
+        if st.button("📊 刷新状态"):
+            st.rerun()
 
 
 def show_task_list():
@@ -445,6 +580,17 @@ def show_system_test():
                         st.success("✅ 企微Webhook正常")
                     else:
                         st.error("❌ 企微Webhook失败")
+                except Exception as e:
+                    st.error(f"❌ 测试失败: {e}")
+
+        if st.button("测试DeepSeek连接"):
+            with st.spinner("测试中..."):
+                try:
+                    result = test_deepseek_connection()
+                    if result:
+                        st.success("✅ DeepSeek连接正常")
+                    else:
+                        st.error("❌ DeepSeek连接失败")
                 except Exception as e:
                     st.error(f"❌ 测试失败: {e}")
     

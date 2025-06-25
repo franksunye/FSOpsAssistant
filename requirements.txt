@@ -3,20 +3,20 @@ python-dotenv>=1.0.0
 pydantic>=2.0.0
 sqlalchemy>=2.0.0
 
-# Agent framework (暂时注释，Sprint 2实现)
-# langgraph>=0.0.40
-# langchain>=0.1.0
-# langchain-community>=0.0.20
+# Agent framework
+langgraph>=0.0.40
+langchain>=0.1.0
+langchain-community>=0.0.20
 
-# LLM integration (暂时注释，Sprint 2实现)
-# openai>=1.0.0
+# LLM integration (DeepSeek compatible)
+openai>=1.0.0
 
 # Web framework
 streamlit>=1.28.0
 requests>=2.31.0
 
-# Task scheduling (暂时注释，Sprint 2实现)
-# apscheduler>=3.10.0
+# Task scheduling
+apscheduler>=3.10.0
 
 # Data processing
 pandas>=2.0.0
