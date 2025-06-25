@@ -65,7 +65,9 @@ def main():
         st.header("📋 导航菜单")
         page = st.selectbox(
             "选择页面",
-            ["📊 运营仪表板", "📈 业务分析", "🤖 Agent控制", "📋 商机列表", "🔔 通知历史", "🔧 企微群配置", "⚙️ 系统设置", "🧪 系统测试"]
+            ["📊 运营仪表板", "📈 业务分析", "🤖 Agent控制", "📋 商机列表",
+             "🔍 执行历史", "📬 通知管理", "💾 缓存管理", "🔔 通知历史",
+             "🔧 企微群配置", "⚙️ 系统设置", "🧪 系统测试"]
         )
     
     # 根据选择显示不同页面
@@ -77,6 +79,12 @@ def main():
         show_agent_control()
     elif page == "📋 商机列表":
         show_opportunity_list()
+    elif page == "🔍 执行历史":
+        show_execution_history()
+    elif page == "📬 通知管理":
+        show_notification_management()
+    elif page == "💾 缓存管理":
+        show_cache_management()
     elif page == "🔔 通知历史":
         show_notification_history()
     elif page == "🔧 企微群配置":
@@ -93,8 +101,15 @@ def show_dashboard():
 
     # 获取实时数据
     try:
-        # 获取逾期商机数据
-        opportunities = fetch_overdue_opportunities()
+        # 使用新的数据统计API
+        from ..agent.tools import get_data_statistics, get_data_strategy
+
+        # 获取综合数据统计
+        data_stats = get_data_statistics()
+
+        # 获取逾期商机数据（使用新的数据策略）
+        data_strategy = get_data_strategy()
+        opportunities = data_strategy.get_overdue_opportunities()
 
         # 获取系统健康状态
         health = get_system_health()
@@ -107,12 +122,17 @@ def show_dashboard():
         agent_status = "运行中" if jobs_info["is_running"] else "已停止"
         agent_delta = "正常" if health.get("overall_status") == "healthy" else "异常"
 
-        # 计算业务指标
-        calculator = BusinessMetricsCalculator()
+        # 使用新的数据统计
+        total_opportunities = data_stats.get("total_opportunities", 0)
+        overdue_opportunities = data_stats.get("overdue_opportunities", 0)
+        escalation_count = data_stats.get("escalation_opportunities", 0)
+        org_count = data_stats.get("organizations", 0)
 
-        # 按组织分组统计
+        # 获取缓存统计
+        cache_stats = data_stats.get("cache_statistics", {})
+
+        # 按组织分组统计（保持兼容性）
         org_stats = {}
-        escalation_count = 0
         for opp in opportunities:
             org_name = opp.org_name
             if org_name not in org_stats:
@@ -123,7 +143,6 @@ def show_dashboard():
                 org_stats[org_name]["overdue"] += 1
             if opp.escalation_level > 0:
                 org_stats[org_name]["escalation"] += 1
-                escalation_count += 1
 
     except Exception as e:
         st.error(f"获取系统数据失败: {e}")
@@ -134,6 +153,10 @@ def show_dashboard():
         agent_delta = "错误"
         org_stats = {}
         escalation_count = 0
+        total_opportunities = 0
+        overdue_opportunities = 0
+        org_count = 0
+        cache_stats = {}
 
     # 系统状态卡片
     col1, col2, col3, col4 = st.columns(4)
@@ -149,8 +172,8 @@ def show_dashboard():
     with col2:
         st.metric(
             label="逾期商机总数",
-            value=str(len(opportunities)),
-            delta=f"+{len([opp for opp in opportunities if opp.elapsed_hours < 48])}" if opportunities else "0"
+            value=str(overdue_opportunities),
+            delta=f"总计{total_opportunities}个商机" if total_opportunities > 0 else "0"
         )
 
     with col3:
@@ -164,8 +187,8 @@ def show_dashboard():
     with col4:
         st.metric(
             label="涉及组织数",
-            value=str(len(org_stats)),
-            delta=f"{len([org for org, stats in org_stats.items() if stats['escalation'] > 0])}个需关注"
+            value=str(org_count),
+            delta=f"缓存命中率{cache_stats.get('cache_hit_ratio', 0):.1%}" if cache_stats else "无缓存数据"
         )
     
     st.markdown("---")
@@ -309,50 +332,94 @@ def show_agent_control():
     with col2:
         st.subheader("🎛️ 控制操作")
 
-        # 手动执行
+        # 手动执行 - 使用新的执行追踪
         if st.button("🚀 立即执行Agent", type="primary"):
             with st.spinner("正在执行Agent..."):
                 try:
-                    agent = AgentOrchestrator()
-                    result = agent.execute(dry_run=False)
+                    from ..agent.tools import (
+                        start_agent_execution, get_all_opportunities,
+                        create_notification_tasks, execute_notification_tasks,
+                        complete_agent_execution
+                    )
+
+                    # 使用新的执行流程
+                    context = {"manual_execution": True, "ui_triggered": True}
+                    run_id = start_agent_execution(context)
+
+                    # 获取商机数据
+                    opportunities = get_all_opportunities(force_refresh=True)
+                    overdue_opportunities = [opp for opp in opportunities if opp.is_overdue]
+
+                    # 创建和执行通知任务
+                    notification_result = {"sent_count": 0, "failed_count": 0}
+                    if overdue_opportunities:
+                        tasks = create_notification_tasks(overdue_opportunities, run_id)
+                        notification_result = execute_notification_tasks(run_id)
+
+                    # 完成执行
+                    final_stats = {
+                        "opportunities_processed": len(opportunities),
+                        "notifications_sent": notification_result.get("sent_count", 0),
+                        "context": {"ui_execution_completed": True}
+                    }
+                    complete_agent_execution(run_id, final_stats)
 
                     st.success("✅ Agent执行完成！")
 
                     # 显示执行结果
-                    col_a, col_b, col_c = st.columns(3)
+                    col_a, col_b, col_c, col_d = st.columns(4)
                     with col_a:
-                        st.metric("处理任务", result.tasks_processed)
+                        st.metric("执行ID", run_id)
                     with col_b:
-                        st.metric("发送通知", result.notifications_sent)
+                        st.metric("处理商机", final_stats["opportunities_processed"])
                     with col_c:
-                        st.metric("错误数量", len(result.errors))
+                        st.metric("发送通知", final_stats["notifications_sent"])
+                    with col_d:
+                        st.metric("失败通知", notification_result.get("failed_count", 0))
 
-                    if result.errors:
+                    if notification_result.get("errors"):
                         st.error("执行错误:")
-                        for error in result.errors:
+                        for error in notification_result["errors"]:
                             st.write(f"• {error}")
 
                 except Exception as e:
                     st.error(f"Agent执行失败: {e}")
+                    import traceback
+                    st.code(traceback.format_exc())
 
-        # 试运行
+        # 试运行 - 使用新的执行追踪
         if st.button("🧪 试运行 (Dry Run)"):
             with st.spinner("正在试运行..."):
                 try:
-                    agent = AgentOrchestrator()
-                    result = agent.execute(dry_run=True)
+                    from ..agent.tools import get_data_statistics, get_data_strategy
+
+                    # 获取数据统计进行模拟
+                    stats = get_data_statistics()
+                    data_strategy = get_data_strategy()
 
                     st.info("🧪 试运行完成！")
-                    st.write(f"**模拟处理任务**: {result.tasks_processed}")
-                    st.write(f"**模拟发送通知**: {result.notifications_sent}")
 
-                    if result.errors:
-                        st.warning("发现问题:")
-                        for error in result.errors:
-                            st.write(f"• {error}")
+                    # 显示模拟结果
+                    col_a, col_b, col_c = st.columns(3)
+                    with col_a:
+                        st.metric("模拟处理商机", stats.get("total_opportunities", 0))
+                    with col_b:
+                        st.metric("模拟发送通知", stats.get("overdue_opportunities", 0))
+                    with col_c:
+                        st.metric("缓存状态", "启用" if data_strategy.cache_enabled else "禁用")
+
+                    # 显示缓存统计
+                    cache_stats = stats.get("cache_statistics", {})
+                    if cache_stats:
+                        st.write("**缓存统计:**")
+                        st.write(f"• 缓存条目: {cache_stats.get('total_cached', 0)}")
+                        st.write(f"• 有效缓存: {cache_stats.get('valid_cached', 0)}")
+                        st.write(f"• 命中率: {cache_stats.get('cache_hit_ratio', 0):.1%}")
 
                 except Exception as e:
                     st.error(f"试运行失败: {e}")
+                    import traceback
+                    st.code(traceback.format_exc())
 
     st.markdown("---")
 
@@ -887,6 +954,201 @@ def show_opportunity_list():
 
     except Exception as e:
         st.error(f"获取商机列表失败: {e}")
+
+
+def show_execution_history():
+    """显示Agent执行历史页面"""
+    st.header("🔍 Agent执行历史")
+
+    try:
+        from ..agent.tools import get_execution_tracker
+
+        tracker = get_execution_tracker()
+
+        # 获取执行统计
+        stats = tracker.get_run_statistics()
+
+        # 显示统计信息
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("总运行次数", stats.get("total_runs", 0))
+        with col2:
+            st.metric("成功运行", stats.get("successful_runs", 0))
+        with col3:
+            st.metric("失败运行", stats.get("failed_runs", 0))
+        with col4:
+            st.metric("平均耗时", f"{stats.get('average_duration_seconds', 0):.1f}秒")
+
+        st.markdown("---")
+
+        # 步骤性能分析
+        st.subheader("📊 步骤性能分析")
+
+        steps = ["fetch_opportunities", "process_opportunities", "send_notifications"]
+        for step in steps:
+            step_perf = tracker.get_step_performance(step)
+
+            with st.expander(f"📈 {step} 性能"):
+                col_a, col_b, col_c = st.columns(3)
+                with col_a:
+                    st.metric("执行次数", step_perf.get("total_executions", 0))
+                with col_b:
+                    st.metric("成功次数", step_perf.get("successful_executions", 0))
+                with col_c:
+                    st.metric("平均耗时", f"{step_perf.get('average_duration_seconds', 0):.2f}秒")
+
+        # 刷新按钮
+        if st.button("🔄 刷新执行历史"):
+            st.rerun()
+
+    except Exception as e:
+        st.error(f"获取执行历史失败: {e}")
+        st.info("💡 提示: 执行历史功能需要Agent运行后才会有数据")
+
+
+def show_notification_management():
+    """显示通知任务管理页面"""
+    st.header("📬 通知任务管理")
+
+    try:
+        from ..agent.tools import get_notification_manager
+
+        manager = get_notification_manager()
+
+        # 获取通知统计
+        stats = manager.get_notification_statistics()
+
+        # 显示统计信息
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("总任务数", stats.get("total_tasks", 0))
+        with col2:
+            st.metric("已发送", stats.get("sent_count", 0))
+        with col3:
+            st.metric("发送失败", stats.get("failed_count", 0))
+        with col4:
+            st.metric("待处理", stats.get("pending_count", 0))
+
+        st.markdown("---")
+
+        # 待处理任务列表
+        st.subheader("📋 待处理任务")
+
+        pending_tasks = manager.db_manager.get_pending_notification_tasks()
+
+        if pending_tasks:
+            for task in pending_tasks:
+                with st.expander(f"📬 任务 {task.id} - {task.order_num}"):
+                    col_a, col_b = st.columns(2)
+                    with col_a:
+                        st.write(f"**工单号**: {task.order_num}")
+                        st.write(f"**组织**: {task.org_name}")
+                        st.write(f"**类型**: {task.notification_type.value}")
+                    with col_b:
+                        st.write(f"**状态**: {task.status.value}")
+                        st.write(f"**应发送时间**: {task.due_time}")
+                        st.write(f"**重试次数**: {task.retry_count}")
+
+                    if task.message:
+                        st.write(f"**消息内容**: {task.message}")
+        else:
+            st.info("📭 当前没有待处理的通知任务")
+
+        # 操作按钮
+        col_x, col_y = st.columns(2)
+        with col_x:
+            if st.button("🔄 刷新任务列表"):
+                st.rerun()
+        with col_y:
+            if st.button("🧹 清理旧任务"):
+                try:
+                    cleaned = manager.cleanup_old_tasks()
+                    st.success(f"✅ 已清理 {cleaned} 个旧任务")
+                except Exception as e:
+                    st.error(f"清理失败: {e}")
+
+    except Exception as e:
+        st.error(f"获取通知管理数据失败: {e}")
+
+
+def show_cache_management():
+    """显示缓存管理页面"""
+    st.header("💾 缓存管理")
+
+    try:
+        from ..agent.tools import get_data_strategy
+
+        data_strategy = get_data_strategy()
+
+        # 获取缓存统计
+        cache_stats = data_strategy.get_cache_statistics()
+
+        # 显示缓存状态
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("缓存状态", "启用" if cache_stats.get("cache_enabled", False) else "禁用")
+        with col2:
+            st.metric("缓存条目", cache_stats.get("total_cached", 0))
+        with col3:
+            st.metric("有效缓存", cache_stats.get("valid_cached", 0))
+        with col4:
+            st.metric("命中率", f"{cache_stats.get('cache_hit_ratio', 0):.1%}")
+
+        st.markdown("---")
+
+        # 缓存详情
+        st.subheader("📊 缓存详情")
+
+        col_a, col_b = st.columns(2)
+        with col_a:
+            st.write(f"**TTL设置**: {cache_stats.get('cache_ttl_hours', 0)} 小时")
+            st.write(f"**逾期缓存**: {cache_stats.get('overdue_cached', 0)} 个")
+        with col_b:
+            st.write(f"**涉及组织**: {cache_stats.get('organizations', 0)} 个")
+            st.write(f"**缓存启用**: {'是' if data_strategy.cache_enabled else '否'}")
+
+        st.markdown("---")
+
+        # 缓存操作
+        st.subheader("🔧 缓存操作")
+
+        col_x, col_y, col_z = st.columns(3)
+
+        with col_x:
+            if st.button("🔄 刷新缓存"):
+                try:
+                    with st.spinner("正在刷新缓存..."):
+                        old_count, new_count = data_strategy.refresh_cache()
+                        st.success(f"✅ 缓存已刷新: {old_count} → {new_count}")
+                except Exception as e:
+                    st.error(f"刷新缓存失败: {e}")
+
+        with col_y:
+            if st.button("🧹 清理缓存"):
+                try:
+                    with st.spinner("正在清理缓存..."):
+                        cleared = data_strategy.clear_cache()
+                        st.success(f"✅ 已清理 {cleared} 个缓存条目")
+                except Exception as e:
+                    st.error(f"清理缓存失败: {e}")
+
+        with col_z:
+            if st.button("🔍 验证一致性"):
+                try:
+                    with st.spinner("正在验证数据一致性..."):
+                        consistency = data_strategy.validate_data_consistency()
+                        if consistency.get("data_consistent", False):
+                            st.success("✅ 数据一致性验证通过")
+                        else:
+                            st.warning("⚠️ 发现数据不一致")
+
+                        st.write(f"缓存数据: {consistency.get('cached_count', 0)}")
+                        st.write(f"源数据: {consistency.get('fresh_count', 0)}")
+                except Exception as e:
+                    st.error(f"一致性验证失败: {e}")
+
+    except Exception as e:
+        st.error(f"获取缓存管理数据失败: {e}")
 
 
 def show_wechat_config():
