@@ -11,6 +11,8 @@
 
 FSOA是一个具备**主动性、自主决策、目标导向**特性的AI Agent系统，专为现场服务运营场景设计。通过智能监控、自动决策和及时通知，大幅提升运营效率，减少人工干预。
 
+**🚀 当前状态**: 已完成真实业务集成，正在生产环境中监控47条商机数据，识别出31个逾期商机。
+
 ### 核心特性
 
 - 🔄 **主动监控**：7x24小时自动监控现场服务时效
@@ -80,13 +82,22 @@ python scripts/test_services.py
 ```bash
 # .env 配置示例
 DEEPSEEK_API_KEY=your_deepseek_api_key
-METABASE_URL=your_metabase_url
+METABASE_URL=http://metabase.fsgo365.cn:3000
 METABASE_USERNAME=your_username
 METABASE_PASSWORD=your_password
+METABASE_DATABASE_ID=1712  # 真实业务数据源
 WECHAT_WEBHOOK_URLS=webhook1,webhook2,webhook3
 DATABASE_URL=sqlite:///fsoa.db
 LOG_LEVEL=INFO
 ```
+
+### 真实业务数据
+
+FSOA已成功集成真实的Metabase数据源：
+- **数据源**: Card 1712 - 现场服务商机数据
+- **监控范围**: 47条商机记录
+- **逾期检测**: 自动识别31个逾期商机
+- **业务覆盖**: 10个不同组织的商机管理
 
 ## 🏗️ 系统架构
 
