@@ -1256,36 +1256,36 @@ def show_cache_management():
 
 
 def show_wechat_config():
-    """显示企微群配置页面 - 重新设计为系统核心配置"""
+    """显示企微群配置页面 - 数据库+.env混合配置管理"""
     st.title("🔧 企微群配置管理")
-    st.markdown("**通知渠道配置 • Agent通知的基础设施 • 确保通知能够正确发送**")
+    st.markdown("**组织群配置(数据库) • 运营群配置(.env) • 通知渠道基础设施**")
     st.markdown("---")
 
     # 配置状态概览
     st.subheader("📊 配置状态概览")
 
     try:
-        from ..config.wechat_config import get_wechat_config_manager
+        from ..data.database import get_database_manager
+        from ..utils.config import get_config
 
-        config_manager = get_wechat_config_manager()
+        db_manager = get_database_manager()
+        config = get_config()
 
         # 获取配置状态
-        org_mapping = config_manager.get_org_webhook_mapping()
-        internal_webhook = config_manager.get_internal_ops_webhook()
-        escalation_users = config_manager.get_mention_users("escalation")
-        settings = config_manager.get_notification_settings()
+        group_configs = db_manager.get_enabled_group_configs()
+        internal_webhook = config.internal_ops_webhook_url
 
         # 状态指标
         col1, col2, col3, col4 = st.columns(4)
 
         with col1:
-            configured_orgs = len([url for url in org_mapping.values() if url])
-            total_orgs = len(org_mapping)
+            enabled_orgs = len(group_configs)
+            total_orgs = len(db_manager.get_group_configs())
             st.metric(
                 "组织群配置",
-                f"{configured_orgs}/{total_orgs}",
-                delta="完整" if configured_orgs == total_orgs else f"缺少{total_orgs - configured_orgs}个",
-                delta_color="normal" if configured_orgs == total_orgs else "inverse"
+                f"{enabled_orgs}/{total_orgs}",
+                delta="完整" if enabled_orgs == total_orgs else f"{total_orgs - enabled_orgs}个禁用",
+                delta_color="normal" if enabled_orgs == total_orgs else "inverse"
             )
 
         with col2:
@@ -1297,20 +1297,21 @@ def show_wechat_config():
             )
 
         with col3:
+            total_webhooks = len([gc for gc in group_configs if gc.webhook_url])
             st.metric(
-                "升级@用户",
-                f"{len(escalation_users)}个",
-                delta="已配置" if escalation_users else "未配置",
-                delta_color="normal" if escalation_users else "inverse"
+                "有效Webhook",
+                f"{total_webhooks}个",
+                delta="已配置" if total_webhooks > 0 else "未配置",
+                delta_color="normal" if total_webhooks > 0 else "inverse"
             )
 
         with col4:
-            notifications_enabled = settings.get("enable_standard_notifications", True)
+            avg_cooldown = sum(gc.notification_cooldown_minutes for gc in group_configs) / len(group_configs) if group_configs else 0
             st.metric(
-                "通知开关",
-                "启用" if notifications_enabled else "禁用",
-                delta="正常" if notifications_enabled else "已禁用",
-                delta_color="normal" if notifications_enabled else "inverse"
+                "平均冷却时间",
+                f"{avg_cooldown:.0f}分钟",
+                delta="正常" if 15 <= avg_cooldown <= 60 else "需调整",
+                delta_color="normal" if 15 <= avg_cooldown <= 60 else "inverse"
             )
 
         # 配置完整性检查

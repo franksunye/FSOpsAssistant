@@ -27,8 +27,11 @@ class Config(BaseSettings):
     metabase_password: str = Field(..., env="METABASE_PASSWORD")
     metabase_database_id: int = Field(1, env="METABASE_DATABASE_ID")
     
-    # 企微配置已迁移到 config/wechat_groups.json
-    # 请使用 [系统管理 → 企微群配置] 进行配置
+    # 内部运营群配置 - 开发人员配置，用于升级通知
+    internal_ops_webhook: str = Field(..., env="INTERNAL_OPS_WEBHOOK")
+
+    # 组织群配置已迁移到数据库 group_config 表
+    # 请使用 [系统管理 → 企微群配置] 进行管理
     
     # 数据库配置
     database_url: str = Field("sqlite:///fsoa.db", env="DATABASE_URL")
@@ -56,10 +59,10 @@ class Config(BaseSettings):
     debug: bool = Field(False, env="DEBUG")
     testing: bool = Field(False, env="TESTING")
     
-    def get_wechat_config_manager(self):
-        """获取企微配置管理器 - PoC项目统一配置入口"""
-        from ..config.wechat_config import get_wechat_config_manager
-        return get_wechat_config_manager()
+    @property
+    def internal_ops_webhook_url(self) -> str:
+        """获取内部运营群Webhook URL"""
+        return self.internal_ops_webhook
     
     @property
     def is_development(self) -> bool:

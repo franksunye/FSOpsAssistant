@@ -638,6 +638,78 @@ class DatabaseManager:
             logger.error(f"Failed to get cached opportunities: {e}")
             return []
 
+    # ==================== 群组配置管理 ====================
+
+    def get_group_configs(self) -> List[GroupConfigTable]:
+        """获取所有群组配置"""
+        with self.get_session() as session:
+            return session.query(GroupConfigTable).all()
+
+    def get_enabled_group_configs(self) -> List[GroupConfigTable]:
+        """获取启用的群组配置"""
+        with self.get_session() as session:
+            return session.query(GroupConfigTable).filter(
+                GroupConfigTable.enabled == True
+            ).all()
+
+    def get_group_config_by_id(self, group_id: str) -> Optional[GroupConfigTable]:
+        """根据群组ID获取配置"""
+        with self.get_session() as session:
+            return session.query(GroupConfigTable).filter(
+                GroupConfigTable.group_id == group_id
+            ).first()
+
+    def create_or_update_group_config(self, group_id: str, name: str, webhook_url: str,
+                                    enabled: bool = True, max_notifications_per_hour: int = 10,
+                                    notification_cooldown_minutes: int = 30) -> GroupConfigTable:
+        """创建或更新群组配置"""
+        with self.get_session() as session:
+            # 查找现有配置
+            existing = session.query(GroupConfigTable).filter(
+                GroupConfigTable.group_id == group_id
+            ).first()
+
+            now = datetime.now()
+
+            if existing:
+                # 更新现有配置
+                existing.name = name
+                existing.webhook_url = webhook_url
+                existing.enabled = enabled
+                existing.max_notifications_per_hour = max_notifications_per_hour
+                existing.notification_cooldown_minutes = notification_cooldown_minutes
+                existing.updated_at = now
+                config = existing
+            else:
+                # 创建新配置
+                config = GroupConfigTable(
+                    group_id=group_id,
+                    name=name,
+                    webhook_url=webhook_url,
+                    enabled=enabled,
+                    max_notifications_per_hour=max_notifications_per_hour,
+                    notification_cooldown_minutes=notification_cooldown_minutes,
+                    created_at=now,
+                    updated_at=now
+                )
+                session.add(config)
+
+            session.commit()
+            return config
+
+    def delete_group_config(self, group_id: str) -> bool:
+        """删除群组配置"""
+        with self.get_session() as session:
+            config = session.query(GroupConfigTable).filter(
+                GroupConfigTable.group_id == group_id
+            ).first()
+
+            if config:
+                session.delete(config)
+                session.commit()
+                return True
+            return False
+
 
 # 全局数据库管理器实例
 db_manager = None
@@ -650,3 +722,6 @@ def get_db_manager() -> DatabaseManager:
         config = get_config()
         db_manager = DatabaseManager(config.database_url)
     return db_manager
+
+# 别名，保持兼容性
+get_database_manager = get_db_manager

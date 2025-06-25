@@ -24,29 +24,48 @@ class WeChatError(Exception):
 
 
 class WeChatClient:
-    """企业微信客户端"""
+    """企业微信客户端 - 使用数据库+.env混合配置"""
 
     def __init__(self):
         self.config = get_config()
-        self.wechat_config = get_wechat_config_manager()
-        self.webhook_urls = self._parse_webhook_urls()
-        self.org_webhook_mapping = self.wechat_config.get_org_webhook_mapping()
-        self.internal_ops_webhook = self.wechat_config.get_internal_ops_webhook()
+        self.db_manager = None
+        self._init_db_manager()
+        self.org_webhook_mapping = self._load_org_webhooks()
+        self.internal_ops_webhook = self.config.internal_ops_webhook_url
         self.session = self._create_session()
 
-    def _parse_webhook_urls(self) -> Dict[str, str]:
-        """解析Webhook URL配置 - PoC项目使用统一配置管理器"""
-        # 直接使用新配置管理器的组织映射
-        org_mapping = self.wechat_config.get_org_webhook_mapping()
-        webhook_urls = {org: url for org, url in org_mapping.items() if url}
+    def _init_db_manager(self):
+        """初始化数据库管理器"""
+        try:
+            from ..data.database import get_database_manager
+            self.db_manager = get_database_manager()
+        except Exception as e:
+            logger.error(f"Failed to initialize database manager: {e}")
+            self.db_manager = None
 
-        logger.info(f"Loaded {len(webhook_urls)} webhook configurations from wechat_config")
+    def _load_org_webhooks(self) -> Dict[str, str]:
+        """从数据库加载组织群Webhook配置"""
+        org_webhooks = {}
 
-        if not webhook_urls:
-            logger.warning("No webhook URLs configured in wechat_groups.json")
+        if self.db_manager:
+            try:
+                # 从数据库加载组织群配置
+                group_configs = self.db_manager.get_group_configs()
+                for config in group_configs:
+                    if config.enabled and config.webhook_url:
+                        # 使用group_id作为组织名称
+                        org_webhooks[config.group_id] = config.webhook_url
+
+                logger.info(f"Loaded {len(org_webhooks)} organization webhooks from database")
+
+            except Exception as e:
+                logger.error(f"Failed to load organization webhooks from database: {e}")
+
+        if not org_webhooks:
+            logger.warning("No organization webhooks configured in database")
             logger.info("Please configure webhooks in [系统管理 → 企微群配置]")
 
-        return webhook_urls
+        return org_webhooks
 
 
     
@@ -83,7 +102,7 @@ class WeChatClient:
         Returns:
             是否发送成功
         """
-        webhook_url = self.webhook_urls.get(group_id)
+        webhook_url = self.org_webhook_mapping.get(group_id)
         if not webhook_url:
             logger.error(f"No webhook URL configured for group {group_id}")
             return False
@@ -108,7 +127,7 @@ class WeChatClient:
         Returns:
             是否发送成功
         """
-        webhook_url = self.webhook_urls.get(group_id)
+        webhook_url = self.org_webhook_mapping.get(group_id)
         if not webhook_url:
             logger.error(f"No webhook URL configured for group {group_id}")
             return False
@@ -180,7 +199,7 @@ class WeChatClient:
         Returns:
             是否发送成功
         """
-        webhook_url = self.webhook_urls.get(group_id)
+        webhook_url = self.org_webhook_mapping.get(group_id)
         if not webhook_url:
             logger.error(f"No webhook URL configured for group {group_id}")
             return False
@@ -235,11 +254,15 @@ class WeChatClient:
     
     def get_available_groups(self) -> Dict[str, str]:
         """获取可用的群组列表"""
-        return self.webhook_urls.copy()
+        return self.org_webhook_mapping.copy()
 
     def get_org_webhook_mapping(self) -> Dict[str, str]:
         """获取组织到webhook的映射"""
         return self.org_webhook_mapping.copy()
+
+    def get_internal_ops_webhook(self) -> str:
+        """获取内部运营群Webhook"""
+        return self.internal_ops_webhook
 
     def update_org_webhook_mapping(self, org_name: str, webhook_url: str) -> bool:
         """更新组织webhook映射"""
