@@ -125,7 +125,7 @@ def fetch_overdue_tasks() -> List[TaskInfo]:
                 id=hash(opp.order_num) % 1000000,  # 生成伪ID
                 title=f"商机跟进 - {opp.name}",
                 description=f"地址: {opp.address}",
-                status=TaskInfo.TaskStatus.OVERDUE,
+                status=TaskStatus.OVERDUE,
                 priority=Priority.HIGH if opp.escalation_level > 0 else Priority.NORMAL,
                 sla_hours=opp.sla_threshold_hours or 24,
                 elapsed_hours=opp.elapsed_hours or 0,
