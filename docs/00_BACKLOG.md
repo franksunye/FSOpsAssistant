@@ -85,7 +85,59 @@ Field Service Operations Assistant - 开发Backlog
 - **Web界面**: 运营仪表板、业务分析、商机管理
 - **测试验证**: 完整的功能测试和演示脚本
 
-## 🚀 下一阶段规划
+## 🔄 架构重构计划 (当前阶段)
+
+### Sprint 5: 数据架构重构 (进行中)
+**目标**: 清理架构混淆，实现业务数据与Agent数据的正确分离
+
+#### 🏗️ 数据模型重构 (高优先级)
+- [ ] **数据库表结构优化**
+  - [ ] 重新设计agent_runs表 (Agent执行记录)
+  - [ ] 重新设计agent_history表 (Agent执行明细)
+  - [ ] 新增notification_tasks表 (通知任务管理)
+  - [ ] 可选：opportunity_cache表 (业务数据缓存)
+
+- [ ] **数据模型清理**
+  - [ ] 移除TaskInfo相关的冗余代码
+  - [ ] 优化OpportunityInfo模型
+  - [ ] 新增NotificationTask模型
+  - [ ] 新增AgentRun和AgentHistory模型
+
+#### 🔧 Agent系统重构 (高优先级)
+- [ ] **Agent工具层重构**
+  - [ ] 移除fetch_overdue_tasks()函数
+  - [ ] 优化fetch_overdue_opportunities()函数
+  - [ ] 新增NotificationTaskManager类
+  - [ ] 新增AgentExecutionTracker类
+
+- [ ] **数据访问层重构**
+  - [ ] 重构DatabaseManager类
+  - [ ] 实现业务数据缓存策略 (可选)
+  - [ ] 优化Metabase客户端
+
+#### 📊 业务逻辑优化 (中优先级)
+- [ ] **通知任务管理**
+  - [ ] 实现通知去重机制
+  - [ ] 实现通知状态追踪
+  - [ ] 优化通知频率控制
+
+- [ ] **Agent执行追踪**
+  - [ ] 完善Agent运行记录
+  - [ ] 实现执行步骤追踪
+  - [ ] 优化错误处理和恢复
+
+#### 🧪 测试和验证 (中优先级)
+- [ ] **重构验证**
+  - [ ] 更新所有测试用例
+  - [ ] 验证数据迁移脚本
+  - [ ] 确保功能向后兼容
+
+- [ ] **性能测试**
+  - [ ] 测试缓存策略效果
+  - [ ] 验证数据库性能
+  - [ ] 压力测试通知系统
+
+## 🚀 后续规划
 
 ### 优化和扩展 (可选)
 - [ ] **智能优化**

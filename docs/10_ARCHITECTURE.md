@@ -134,13 +134,19 @@ graph TB
 
 ### 3.2 Tool Layer
 ```python
-# 核心工具集
-- fetch_overdue_tasks()     # 从Metabase获取超时任务
-- analyze_task_priority()   # 分析任务优先级（规则+LLM）
-- send_wechat_message()     # 发送企微通知
-- update_task_status()      # 更新任务状态
-- log_agent_action()        # 记录Agent行为
+# 核心工具集 (重构后)
+- fetch_overdue_opportunities()    # 从Metabase获取逾期商机
+- send_business_notifications()    # 发送分级业务通知
+- NotificationTaskManager         # 通知任务管理器
+- AgentExecutionTracker          # Agent执行追踪器
+- BusinessDataStrategy           # 业务数据处理策略
 ```
+
+#### 重构说明
+- **移除**: `fetch_overdue_tasks()` - 概念混淆，已用`fetch_overdue_opportunities()`替代
+- **移除**: `TaskInfo`相关代码 - 与业务数据模型重复
+- **新增**: 通知任务管理和Agent执行追踪功能
+- **优化**: 业务数据与Agent数据的清晰分离
 
 ### 3.3 Decision Engine
 - **规则引擎**：基于SLA时间的硬规则判断
@@ -148,18 +154,82 @@ graph TB
 - **混合决策**：规则触发 + LLM优化的决策模式
 
 ### 3.4 Data Layer
+
+#### 数据架构设计原则
+- **业务数据与Agent数据分离**: Metabase作为只读业务数据源，本地数据库存储Agent执行和通知管理
+- **最小化持久化**: PoC阶段只持久化必要的执行记录和通知任务
+- **可选缓存策略**: 根据性能需求决定是否启用业务数据缓存
+
+#### 数据库表结构
 ```sql
--- Agent运行记录
-agent_runs: id, trigger_time, status, context
+-- 1. Agent运行记录 (Agent执行周期)
+CREATE TABLE agent_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    trigger_time TIMESTAMP NOT NULL,
+    end_time TIMESTAMP,
+    status TEXT NOT NULL,  -- 'running', 'completed', 'failed'
+    context JSON,          -- 执行上下文和结果统计
+    opportunities_processed INTEGER DEFAULT 0,
+    notifications_sent INTEGER DEFAULT 0,
+    errors JSON
+);
 
--- 任务处理历史
-task_actions: id, task_id, action_type, content, timestamp
+-- 2. Agent执行明细 (Agent内部步骤追踪)
+CREATE TABLE agent_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id INTEGER NOT NULL,
+    step_name TEXT NOT NULL,  -- 'fetch_data', 'analyze', 'send_notifications'
+    input_data JSON,
+    output_data JSON,
+    timestamp TIMESTAMP NOT NULL,
+    duration_seconds FLOAT,
+    error_message TEXT,
+    FOREIGN KEY (run_id) REFERENCES agent_runs(id)
+);
 
--- 通知记录
-notifications: id, task_id, group_id, message, status
+-- 3. 通知任务记录 (业务通知管理)
+CREATE TABLE notification_tasks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_num TEXT NOT NULL,           -- 关联的工单号
+    org_name TEXT NOT NULL,            -- 组织名称
+    notification_type TEXT NOT NULL,   -- 'standard', 'escalation'
+    due_time TIMESTAMP NOT NULL,       -- 应该通知的时间
+    status TEXT DEFAULT 'pending',     -- 'pending', 'sent', 'failed', 'confirmed'
+    message TEXT,                      -- 通知内容
+    sent_at TIMESTAMP,                 -- 实际发送时间
+    created_run_id INTEGER,            -- 创建此任务的Agent运行ID
+    sent_run_id INTEGER,               -- 发送此通知的Agent运行ID
+    retry_count INTEGER DEFAULT 0,
+    FOREIGN KEY (created_run_id) REFERENCES agent_runs(id),
+    FOREIGN KEY (sent_run_id) REFERENCES agent_runs(id)
+);
 
--- 配置管理
-configs: key, value, description
+-- 4. 业务数据缓存 (可选，用于性能优化)
+CREATE TABLE opportunity_cache (
+    order_num TEXT PRIMARY KEY,
+    customer_name TEXT,
+    address TEXT,
+    supervisor_name TEXT,
+    create_time TIMESTAMP,
+    org_name TEXT,
+    status TEXT,
+
+    -- 计算字段
+    elapsed_hours FLOAT,
+    is_overdue BOOLEAN,
+    escalation_level INTEGER,
+
+    -- 缓存管理
+    last_updated TIMESTAMP,
+    source_hash TEXT  -- 用于检测数据变化
+);
+```
+
+#### 数据流设计
+```
+Metabase (只读) → Agent Engine → 本地数据库 (Agent记录 + 通知任务)
+     ↓                ↓                    ↓
+  业务数据源    →    Agent处理逻辑    →    执行记录存储
 ```
 
 ## 4. Agentic特性实现
