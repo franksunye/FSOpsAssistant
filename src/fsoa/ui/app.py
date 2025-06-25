@@ -73,41 +73,84 @@ def main():
 def show_dashboard():
     """显示仪表板"""
     st.header("📊 系统仪表板")
-    
+
+    # 获取实时数据
+    try:
+        # 获取系统健康状态
+        health = get_system_health()
+
+        # 获取调度器状态
+        scheduler = get_scheduler()
+        jobs_info = scheduler.get_jobs()
+
+        # 获取Agent状态
+        agent_status = "运行中" if jobs_info["is_running"] else "已停止"
+        agent_delta = "正常" if health.get("overall_status") == "healthy" else "异常"
+
+        # 模拟统计数据（实际应从数据库获取）
+        db_manager = get_db_manager()
+
+    except Exception as e:
+        st.error(f"获取系统数据失败: {e}")
+        health = {}
+        jobs_info = {"is_running": False, "total_jobs": 0}
+        agent_status = "未知"
+        agent_delta = "错误"
+
     # 系统状态卡片
     col1, col2, col3, col4 = st.columns(4)
-    
+
     with col1:
         st.metric(
             label="Agent状态",
-            value="运行中",
-            delta="正常"
+            value=agent_status,
+            delta=agent_delta,
+            delta_color="normal" if agent_delta == "正常" else "inverse"
         )
-    
+
     with col2:
+        # 这里应该从数据库获取实际数据
         st.metric(
             label="今日处理任务",
-            value="25",
-            delta="5"
+            value="0",  # 实际应查询数据库
+            delta="0"
         )
-    
+
     with col3:
         st.metric(
             label="发送通知",
-            value="8",
-            delta="2"
+            value="0",  # 实际应查询数据库
+            delta="0"
         )
-    
+
     with col4:
         st.metric(
-            label="超时任务",
-            value="3",
-            delta="-1"
+            label="活跃任务",
+            value=str(jobs_info.get("total_jobs", 0)),
+            delta="0"
         )
     
     st.markdown("---")
-    
-    # Agent执行信息
+
+    # 实时刷新控制
+    col_refresh1, col_refresh2, col_refresh3 = st.columns([1, 1, 2])
+
+    with col_refresh1:
+        auto_refresh = st.checkbox("自动刷新", value=False)
+
+    with col_refresh2:
+        if st.button("🔄 手动刷新"):
+            st.rerun()
+
+    with col_refresh3:
+        if auto_refresh:
+            st.info("⏱️ 页面将每30秒自动刷新")
+            # 自动刷新（注意：这会导致页面重新加载）
+            import time
+            time.sleep(30)
+            st.rerun()
+
+    # Agent执行信息和系统状态
     col1, col2 = st.columns(2)
     
     with col1:
@@ -157,6 +200,39 @@ def show_dashboard():
                 
         except Exception as e:
             st.error(f"获取系统状态失败: {e}")
+
+    # 添加系统性能图表
+    st.markdown("---")
+    st.subheader("📈 系统性能趋势")
+
+    # 创建示例数据（实际应从数据库获取）
+    import pandas as pd
+    import numpy as np
+    from datetime import datetime, timedelta
+
+    # 生成最近7天的示例数据
+    dates = [datetime.now() - timedelta(days=i) for i in range(6, -1, -1)]
+
+    performance_data = pd.DataFrame({
+        '日期': dates,
+        '处理任务数': np.random.randint(10, 50, 7),
+        '发送通知数': np.random.randint(5, 25, 7),
+        '超时任务数': np.random.randint(0, 10, 7),
+        '响应时间(秒)': np.random.uniform(1, 5, 7)
+    })
+
+    # 显示图表
+    col_chart1, col_chart2 = st.columns(2)
+
+    with col_chart1:
+        st.subheader("📊 任务处理统计")
+        chart_data = performance_data.set_index('日期')[['处理任务数', '发送通知数', '超时任务数']]
+        st.line_chart(chart_data)
+
+    with col_chart2:
+        st.subheader("⚡ 系统响应时间")
+        response_data = performance_data.set_index('日期')[['响应时间(秒)']]
+        st.area_chart(response_data)
 
 
 def show_agent_control():

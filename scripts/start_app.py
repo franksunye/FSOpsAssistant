@@ -15,10 +15,38 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 
+def check_virtual_environment():
+    """检查虚拟环境"""
+    print("🐍 检查Python虚拟环境...")
+
+    # 检查是否在虚拟环境中
+    if hasattr(sys, 'real_prefix') or (hasattr(sys, 'base_prefix') and sys.base_prefix != sys.prefix):
+        print("✅ 检测到虚拟环境")
+        venv_path = sys.prefix
+        print(f"📁 虚拟环境路径: {venv_path}")
+        return True
+    else:
+        print("⚠️  未检测到虚拟环境")
+        print("💡 强烈建议使用虚拟环境以避免依赖冲突")
+        print("🔧 运行以下命令创建虚拟环境:")
+        print("   python scripts/setup_env.py")
+        print("   或手动创建:")
+        print("   python -m venv fsoa_env")
+        print("   source fsoa_env/bin/activate  # Linux/Mac")
+        print("   fsoa_env\\Scripts\\activate    # Windows")
+
+        response = input("\n是否继续启动？(y/N): ")
+        return response.lower() == 'y'
+
+
 def check_environment():
     """检查环境配置"""
     print("🔍 检查环境配置...")
-    
+
+    # 检查虚拟环境
+    if not check_virtual_environment():
+        return False
+
     # 检查.env文件
     env_file = project_root / ".env"
     if not env_file.exists():

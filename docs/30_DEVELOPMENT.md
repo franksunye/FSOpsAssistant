@@ -10,25 +10,78 @@ Field Service Operations Assistant - 开发规范和最佳实践
 - Git 2.x+
 
 ### 1.2 环境配置
+
+⚠️ **重要：必须使用Python虚拟环境**
+
+为避免Python库冲突和版本问题，开发环境必须使用虚拟环境。
+
+#### 快速设置（推荐）
+
+```bash
+# 克隆项目
+git clone https://github.com/franksunye/FSOpsAssistant.git
+cd FSOpsAssistant
+
+# 运行自动化设置脚本
+python scripts/setup_env.py
+
+# 激活虚拟环境
+source fsoa_env/bin/activate  # Linux/Mac
+fsoa_env\Scripts\activate     # Windows
+
+# 配置环境变量
+cp .env.example .env
+# 编辑 .env 文件，填入必要的配置
+
+# 初始化数据库
+python scripts/init_db.py
+```
+
+#### 手动设置
+
 ```bash
 # 克隆项目
 git clone https://github.com/franksunye/FSOpsAssistant.git
 cd FSOpsAssistant
 
 # 创建虚拟环境
-python -m venv venv
-source venv/bin/activate  # Linux/Mac
-# venv\Scripts\activate   # Windows
+python -m venv fsoa_env
+
+# 激活虚拟环境
+source fsoa_env/bin/activate  # Linux/Mac
+fsoa_env\Scripts\activate     # Windows
+
+# 升级pip
+pip install --upgrade pip
 
 # 安装依赖
 pip install -r requirements.txt
 
-# 初始化数据库
-python scripts/init_db.py
-
 # 配置环境变量
 cp .env.example .env
 # 编辑 .env 文件，填入必要的配置
+
+# 初始化数据库
+python scripts/init_db.py
+```
+
+#### 虚拟环境管理
+
+```bash
+# 激活虚拟环境（每次开发前必须执行）
+source fsoa_env/bin/activate  # Linux/Mac
+fsoa_env\Scripts\activate     # Windows
+
+# 验证虚拟环境
+which python  # 应该指向虚拟环境中的python
+pip list      # 查看已安装的包
+
+# 退出虚拟环境
+deactivate
+
+# 重建虚拟环境（如遇问题）
+rm -rf fsoa_env  # 删除现有环境
+python scripts/setup_env.py  # 重新创建
 ```
 
 ### 1.3 配置文件
