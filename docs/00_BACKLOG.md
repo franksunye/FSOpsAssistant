@@ -5,29 +5,29 @@ Field Service Operations Assistant - 开发Backlog
 ## Sprint 1: 基础架构搭建 (Week 1-2)
 
 ### 高优先级 (Must Have)
-- [ ] **项目初始化**
-  - [ ] 创建Python项目结构
-  - [ ] 配置开发环境（requirements.txt）
-  - [ ] 设置SQLite数据库schema
-  - [ ] 基础配置管理模块
+- [x] **项目初始化**
+  - [x] 创建Python项目结构
+  - [x] 配置开发环境（requirements.txt）
+  - [x] 设置SQLite数据库schema
+  - [x] 基础配置管理模块
 
-- [ ] **数据层实现**
-  - [ ] SQLite数据库设计和初始化
-  - [ ] 数据模型定义（Pydantic）
-  - [ ] 基础CRUD操作
-  - [ ] Metabase API连接测试
+- [x] **数据层实现**
+  - [x] SQLite数据库设计和初始化
+  - [x] 数据模型定义（Pydantic）
+  - [x] 基础CRUD操作
+  - [x] Metabase API连接测试
 
-- [ ] **工具层开发**
-  - [ ] `fetch_overdue_tasks()` - Metabase数据获取
-  - [ ] `send_wechat_message()` - 企微Webhook集成
-  - [ ] `update_task_status()` - 本地状态更新
-  - [ ] 工具函数单元测试
+- [x] **工具层开发**
+  - [x] `fetch_overdue_tasks()` - Metabase数据获取
+  - [x] `send_wechat_message()` - 企微Webhook集成
+  - [x] `update_task_status()` - 本地状态更新
+  - [x] 工具函数单元测试
 
 ### 中优先级 (Should Have)
-- [ ] **基础UI界面**
-  - [ ] Streamlit基础框架
-  - [ ] 任务列表展示页面
-  - [ ] 配置管理页面
+- [x] **基础UI界面**
+  - [x] Streamlit基础框架
+  - [x] 任务列表展示页面
+  - [x] 配置管理页面
 
 ## Sprint 2: Agent核心功能 (Week 3-4)
 
