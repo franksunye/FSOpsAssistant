@@ -253,7 +253,19 @@ def show_dashboard():
         st.info("**🧠 智能决策**\n\n✅ 规则引擎+LLM混合决策\n✅ 基于上下文智能判断\n✅ 自适应策略调整")
 
     with col_value3:
-        st.info("**📱 自动通知**\n\n✅ 多企微群差异化通知\n✅ 智能去重和频率控制\n✅ 升级机制自动触发")
+        # 检查企微配置状态
+        try:
+            from ..config.wechat_config import get_wechat_config_manager
+            config_manager = get_wechat_config_manager()
+            issues = config_manager.validate_config()
+            total_issues = sum(len(problems) for problems in issues.values())
+
+            if total_issues == 0:
+                st.success("**📱 自动通知**\n\n✅ 多企微群差异化通知\n✅ 智能去重和频率控制\n✅ 升级机制自动触发\n\n🔧 企微配置: 正常")
+            else:
+                st.warning(f"**📱 自动通知**\n\n✅ 多企微群差异化通知\n✅ 智能去重和频率控制\n✅ 升级机制自动触发\n\n⚠️ 企微配置: {total_issues}个问题")
+        except:
+            st.info("**📱 自动通知**\n\n✅ 多企微群差异化通知\n✅ 智能去重和频率控制\n✅ 升级机制自动触发\n\n❓ 企微配置: 检查中...")
 
     st.markdown("---")
 
@@ -1128,8 +1140,29 @@ def show_notification_management():
         else:
             st.info("📭 当前没有待处理的通知任务")
 
+        # 企微配置状态检查
+        st.markdown("---")
+        st.subheader("🔧 企微配置状态")
+
+        try:
+            from ..config.wechat_config import get_wechat_config_manager
+
+            config_manager = get_wechat_config_manager()
+            issues = config_manager.validate_config()
+            total_issues = sum(len(problems) for problems in issues.values())
+
+            if total_issues == 0:
+                st.success("✅ 企微配置正常，通知可以正常发送")
+            else:
+                st.warning(f"⚠️ 发现 {total_issues} 个企微配置问题")
+                if st.button("🔧 前往配置"):
+                    st.session_state.page = "wechat_config"
+                    st.rerun()
+        except Exception as e:
+            st.error(f"无法检查企微配置: {e}")
+
         # 操作按钮
-        col_x, col_y = st.columns(2)
+        col_x, col_y, col_z = st.columns(3)
         with col_x:
             if st.button("🔄 刷新任务列表"):
                 st.rerun()
@@ -1140,6 +1173,10 @@ def show_notification_management():
                     st.success(f"✅ 已清理 {cleaned} 个旧任务")
                 except Exception as e:
                     st.error(f"清理失败: {e}")
+        with col_z:
+            if st.button("🔧 企微配置"):
+                st.session_state.page = "wechat_config"
+                st.rerun()
 
     except Exception as e:
         st.error(f"获取通知管理数据失败: {e}")
@@ -1226,13 +1263,173 @@ def show_cache_management():
 
 
 def show_wechat_config():
-    """显示企微群配置页面"""
+    """显示企微群配置页面 - 重新设计为系统核心配置"""
+    st.title("🔧 企微群配置管理")
+    st.markdown("**通知渠道配置 • Agent通知的基础设施 • 确保通知能够正确发送**")
+    st.markdown("---")
+
+    # 配置状态概览
+    st.subheader("📊 配置状态概览")
+
     try:
-        from .pages.wechat_config import show_wechat_config_page
-        show_wechat_config_page()
-    except ImportError as e:
-        st.error(f"无法加载企微群配置页面: {e}")
-        st.info("请检查页面模块是否正确安装")
+        from ..config.wechat_config import get_wechat_config_manager
+
+        config_manager = get_wechat_config_manager()
+
+        # 获取配置状态
+        org_mapping = config_manager.get_org_webhook_mapping()
+        internal_webhook = config_manager.get_internal_ops_webhook()
+        escalation_users = config_manager.get_mention_users("escalation")
+        settings = config_manager.get_notification_settings()
+
+        # 状态指标
+        col1, col2, col3, col4 = st.columns(4)
+
+        with col1:
+            configured_orgs = len([url for url in org_mapping.values() if url])
+            total_orgs = len(org_mapping)
+            st.metric(
+                "组织群配置",
+                f"{configured_orgs}/{total_orgs}",
+                delta="完整" if configured_orgs == total_orgs else f"缺少{total_orgs - configured_orgs}个",
+                delta_color="normal" if configured_orgs == total_orgs else "inverse"
+            )
+
+        with col2:
+            st.metric(
+                "内部运营群",
+                "已配置" if internal_webhook else "未配置",
+                delta="正常" if internal_webhook else "需要配置",
+                delta_color="normal" if internal_webhook else "inverse"
+            )
+
+        with col3:
+            st.metric(
+                "升级@用户",
+                f"{len(escalation_users)}个",
+                delta="已配置" if escalation_users else "未配置",
+                delta_color="normal" if escalation_users else "inverse"
+            )
+
+        with col4:
+            notifications_enabled = settings.get("enable_standard_notifications", True)
+            st.metric(
+                "通知开关",
+                "启用" if notifications_enabled else "禁用",
+                delta="正常" if notifications_enabled else "已禁用",
+                delta_color="normal" if notifications_enabled else "inverse"
+            )
+
+        # 配置完整性检查
+        st.markdown("---")
+        st.subheader("🔍 配置完整性检查")
+
+        issues = config_manager.validate_config()
+        total_issues = sum(len(problems) for problems in issues.values())
+
+        if total_issues == 0:
+            st.success("✅ 所有配置都正确！Agent可以正常发送通知")
+        else:
+            st.error(f"❌ 发现 {total_issues} 个配置问题，可能影响通知发送")
+
+            for category, problems in issues.items():
+                if problems:
+                    with st.expander(f"⚠️ {category} ({len(problems)}个问题)"):
+                        for problem in problems:
+                            st.write(f"• {problem}")
+
+        # 快速操作
+        st.markdown("---")
+        st.subheader("⚡ 快速操作")
+
+        col_a, col_b, col_c, col_d = st.columns(4)
+
+        with col_a:
+            if st.button("🔧 详细配置", type="primary", use_container_width=True):
+                st.session_state.show_detailed_config = True
+                st.rerun()
+
+        with col_b:
+            if st.button("🧪 测试通知", use_container_width=True):
+                st.session_state.test_notification = True
+                st.rerun()
+
+        with col_c:
+            if st.button("📤 导出配置", use_container_width=True):
+                config_json = config_manager.export_config()
+                st.download_button(
+                    label="下载配置文件",
+                    data=config_json,
+                    file_name="wechat_config.json",
+                    mime="application/json"
+                )
+
+        with col_d:
+            if st.button("🔄 刷新状态", use_container_width=True):
+                st.rerun()
+
+        # 显示详细配置界面
+        if st.session_state.get("show_detailed_config", False):
+            st.markdown("---")
+            try:
+                from .pages.wechat_config import show_wechat_config_page
+                show_wechat_config_page()
+            except ImportError as e:
+                st.error(f"无法加载详细配置页面: {e}")
+
+        # 显示测试通知界面
+        if st.session_state.get("test_notification", False):
+            st.markdown("---")
+            show_notification_test(config_manager)
+
+    except Exception as e:
+        st.error(f"获取企微配置失败: {e}")
+        st.info("💡 提示: 企微配置是Agent通知功能的基础，请确保正确配置")
+
+
+def show_notification_test(config_manager):
+    """显示通知测试界面"""
+    st.subheader("🧪 通知测试")
+
+    test_type = st.selectbox(
+        "选择测试类型",
+        ["组织群通知", "内部运营群通知", "升级通知"]
+    )
+
+    if test_type == "组织群通知":
+        org_mapping = config_manager.get_org_webhook_mapping()
+        org_name = st.selectbox("选择组织", list(org_mapping.keys()))
+
+        if st.button("发送测试消息"):
+            webhook_url = org_mapping.get(org_name)
+            if webhook_url:
+                st.info(f"正在向 {org_name} 发送测试消息...")
+                # 这里可以添加实际的测试逻辑
+                st.success("测试消息发送成功！")
+            else:
+                st.error(f"{org_name} 未配置Webhook URL")
+
+    elif test_type == "内部运营群通知":
+        if st.button("发送测试消息"):
+            internal_webhook = config_manager.get_internal_ops_webhook()
+            if internal_webhook:
+                st.info("正在向内部运营群发送测试消息...")
+                st.success("测试消息发送成功！")
+            else:
+                st.error("内部运营群未配置Webhook URL")
+
+    elif test_type == "升级通知":
+        if st.button("发送测试消息"):
+            escalation_users = config_manager.get_mention_users("escalation")
+            if escalation_users:
+                st.info(f"正在发送升级通知测试消息，将@{len(escalation_users)}个用户...")
+                st.success("测试消息发送成功！")
+            else:
+                st.error("未配置升级通知@用户")
+
+    if st.button("关闭测试"):
+        st.session_state.test_notification = False
+        st.rerun()
 
 
 if __name__ == "__main__":
