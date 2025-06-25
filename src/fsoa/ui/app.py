@@ -94,6 +94,8 @@ def main():
             st.session_state.page = "cache_management"
         if st.button("🔧 企微群配置", use_container_width=True):
             st.session_state.page = "wechat_config"
+        if st.button("⚙️ 系统设置", use_container_width=True):
+            st.session_state.page = "system_settings"
         if st.button("🧪 系统测试", use_container_width=True):
             st.session_state.page = "system_test"
 
@@ -119,6 +121,8 @@ def main():
         show_wechat_config()
     elif page == "system_test":
         show_system_test()
+    elif page == "system_settings":
+        show_system_settings()
     else:
         show_dashboard()  # 默认页面
 
@@ -720,9 +724,14 @@ def show_notification_history():
 def show_system_settings():
     """显示系统设置"""
     st.header("⚙️ 系统设置")
-    
-    # 设置选项卡
-    tab1, tab2, tab3 = st.tabs(["Agent设置", "通知设置", "群组管理"])
+    st.markdown("**Agent运行参数 • 通知策略配置 • 系统行为调优**")
+    st.markdown("---")
+
+    # 企微配置状态提示
+    st.info("💡 **企微群配置**: 请前往 [系统管理 → 企微群配置] 进行完整的企微通知配置")
+
+    # 设置选项卡 - 移除群组管理，专注于系统参数
+    tab1, tab2 = st.tabs(["Agent设置", "通知设置"])
     
     with tab1:
         st.subheader("🤖 Agent配置")
@@ -783,38 +792,22 @@ def show_system_settings():
         
         if st.button("💾 保存通知设置"):
             st.success("通知设置已保存")
-    
-    with tab3:
-        st.subheader("👥 群组管理")
-        
-        # 群组列表
-        sample_groups = [
-            {"群组ID": "group_001", "名称": "运维组A", "状态": "启用"},
-            {"群组ID": "group_002", "名称": "运维组B", "状态": "启用"},
-            {"群组ID": "group_003", "名称": "运维组C", "状态": "禁用"}
-        ]
-        
-        df_groups = pd.DataFrame(sample_groups)
-        st.dataframe(df_groups, use_container_width=True, hide_index=True)
-        
-        # 添加新群组
-        st.markdown("---")
-        st.subheader("➕ 添加新群组")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            new_group_name = st.text_input("群组名称")
-            new_webhook_url = st.text_input("Webhook URL")
-        
-        with col2:
-            new_group_enabled = st.checkbox("启用群组", value=True)
-            
-            if st.button("➕ 添加群组"):
-                if new_group_name and new_webhook_url:
-                    st.success(f"群组 {new_group_name} 添加成功")
-                else:
-                    st.error("请填写完整的群组信息")
+
+    # 添加企微配置快速跳转
+    st.markdown("---")
+    st.subheader("🔧 相关配置")
+
+    col_config1, col_config2 = st.columns(2)
+
+    with col_config1:
+        if st.button("🔧 企微群配置", type="primary", use_container_width=True):
+            st.session_state.page = "wechat_config"
+            st.rerun()
+
+    with col_config2:
+        if st.button("💾 缓存管理", use_container_width=True):
+            st.session_state.page = "cache_management"
+            st.rerun()
 
 
 def show_system_test():
