@@ -68,7 +68,41 @@ class Config(BaseSettings):
     def is_development(self) -> bool:
         """是否为开发环境"""
         return self.debug or self.testing
-    
+
+    @property
+    def wechat_webhook_list(self) -> List[str]:
+        """兼容性属性：获取企微Webhook列表"""
+        try:
+            # 使用数据库+.env混合方案
+            webhooks = []
+
+            # 添加内部运营群webhook
+            if self.internal_ops_webhook:
+                webhooks.append(self.internal_ops_webhook)
+
+            # 从数据库获取组织群webhooks
+            try:
+                from ..data.database import get_database_manager
+                db_manager = get_database_manager()
+                group_configs = db_manager.get_enabled_group_configs()
+
+                for config in group_configs:
+                    if config.webhook_url and config.webhook_url not in webhooks:
+                        webhooks.append(config.webhook_url)
+            except Exception as e:
+                # 延迟导入避免循环导入
+                try:
+                    from .logger import get_logger
+                    logger = get_logger(__name__)
+                    logger.warning(f"Failed to load org webhooks from database: {e}")
+                except:
+                    pass  # 忽略日志错误
+
+            return webhooks
+        except Exception:
+            # 最后的降级方案
+            return [self.internal_ops_webhook] if self.internal_ops_webhook else []
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

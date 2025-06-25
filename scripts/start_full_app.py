@@ -61,7 +61,19 @@ def check_environment():
         print(f"✅ 配置加载成功")
         print(f"📊 数据库: {config.database_url}")
         print(f"🔗 Metabase: {config.metabase_url}")
-        print(f"📱 企微Webhook数量: {len(config.wechat_webhook_list)}")
+
+        # 获取企微配置数量
+        try:
+            from src.fsoa.data.database import get_database_manager
+            db_manager = get_database_manager()
+            group_configs = db_manager.get_enabled_group_configs()
+            org_webhook_count = len([gc for gc in group_configs if gc.webhook_url])
+            internal_webhook_count = 1 if config.internal_ops_webhook else 0
+            total_webhook_count = org_webhook_count + internal_webhook_count
+            print(f"📱 企微Webhook数量: {total_webhook_count} (组织群:{org_webhook_count}, 运营群:{internal_webhook_count})")
+        except Exception as e:
+            print(f"📱 企微Webhook数量: 检查中... ({e})")
+
         print(f"⏰ Agent执行间隔: {config.agent_execution_interval} 分钟")
         return True
     except Exception as e:

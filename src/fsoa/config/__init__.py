@@ -4,9 +4,8 @@
 提供各种配置管理功能
 """
 
-from .wechat_config import WeChatConfigManager, get_wechat_config_manager
+# 企微配置已迁移到数据库+.env混合方案
+# 组织群配置：数据库 group_config 表
+# 内部运营群配置：.env INTERNAL_OPS_WEBHOOK
 
-__all__ = [
-    'WeChatConfigManager',
-    'get_wechat_config_manager'
-]
+__all__ = []

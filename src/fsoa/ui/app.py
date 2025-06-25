@@ -136,7 +136,7 @@ def show_dashboard():
     # 获取实时数据
     try:
         # 使用新的数据统计API
-        from ..agent.tools import get_data_statistics, get_data_strategy
+        from src.fsoa.agent.tools import get_data_statistics, get_data_strategy
 
         # 获取综合数据统计
         data_stats = get_data_statistics()
@@ -259,15 +259,28 @@ def show_dashboard():
     with col_value3:
         # 检查企微配置状态
         try:
-            from ..config.wechat_config import get_wechat_config_manager
-            config_manager = get_wechat_config_manager()
-            issues = config_manager.validate_config()
-            total_issues = sum(len(problems) for problems in issues.values())
+            from src.fsoa.data.database import get_database_manager
+            from src.fsoa.utils.config import get_config
 
-            if total_issues == 0:
+            db_manager = get_database_manager()
+            config = get_config()
+
+            # 检查配置状态
+            group_configs = db_manager.get_enabled_group_configs()
+            internal_webhook = config.internal_ops_webhook_url
+
+            total_webhooks = len([gc for gc in group_configs if gc.webhook_url])
+            has_internal = bool(internal_webhook)
+
+            if total_webhooks > 0 and has_internal:
                 st.success("**📱 自动通知**\n\n✅ 多企微群差异化通知\n✅ 智能去重和频率控制\n✅ 升级机制自动触发\n\n🔧 企微配置: 正常")
             else:
-                st.warning(f"**📱 自动通知**\n\n✅ 多企微群差异化通知\n✅ 智能去重和频率控制\n✅ 升级机制自动触发\n\n⚠️ 企微配置: {total_issues}个问题")
+                missing = []
+                if not has_internal:
+                    missing.append("内部运营群")
+                if total_webhooks == 0:
+                    missing.append("组织群")
+                st.warning(f"**📱 自动通知**\n\n✅ 多企微群差异化通知\n✅ 智能去重和频率控制\n✅ 升级机制自动触发\n\n⚠️ 企微配置: 缺少{'/'.join(missing)}")
         except:
             st.info("**📱 自动通知**\n\n✅ 多企微群差异化通知\n✅ 智能去重和频率控制\n✅ 升级机制自动触发\n\n❓ 企微配置: 检查中...")
 
@@ -424,7 +437,7 @@ def show_agent_control():
         if st.button("🚀 立即执行Agent", type="primary"):
             with st.spinner("正在执行Agent..."):
                 try:
-                    from ..agent.tools import (
+                    from src.fsoa.agent.tools import (
                         start_agent_execution, get_all_opportunities,
                         create_notification_tasks, execute_notification_tasks,
                         complete_agent_execution
@@ -479,7 +492,7 @@ def show_agent_control():
         if st.button("🧪 试运行 (Dry Run)"):
             with st.spinner("正在试运行..."):
                 try:
-                    from ..agent.tools import get_data_statistics, get_data_strategy
+                    from src.fsoa.agent.tools import get_data_statistics, get_data_strategy
 
                     # 获取数据统计进行模拟
                     stats = get_data_statistics()
@@ -1040,7 +1053,7 @@ def show_execution_history():
     st.header("🔍 Agent执行历史")
 
     try:
-        from ..agent.tools import get_execution_tracker
+        from src.fsoa.agent.tools import get_execution_tracker
 
         tracker = get_execution_tracker()
 
@@ -1090,7 +1103,7 @@ def show_notification_management():
     st.header("📬 通知任务管理")
 
     try:
-        from ..agent.tools import get_notification_manager
+        from src.fsoa.agent.tools import get_notification_manager
 
         manager = get_notification_manager()
 
@@ -1138,16 +1151,28 @@ def show_notification_management():
         st.subheader("🔧 企微配置状态")
 
         try:
-            from ..config.wechat_config import get_wechat_config_manager
+            from src.fsoa.data.database import get_database_manager
+            from src.fsoa.utils.config import get_config
 
-            config_manager = get_wechat_config_manager()
-            issues = config_manager.validate_config()
-            total_issues = sum(len(problems) for problems in issues.values())
+            db_manager = get_database_manager()
+            config = get_config()
 
-            if total_issues == 0:
+            # 检查配置状态
+            group_configs = db_manager.get_enabled_group_configs()
+            internal_webhook = config.internal_ops_webhook_url
+
+            total_webhooks = len([gc for gc in group_configs if gc.webhook_url])
+            has_internal = bool(internal_webhook)
+
+            if total_webhooks > 0 and has_internal:
                 st.success("✅ 企微配置正常，通知可以正常发送")
             else:
-                st.warning(f"⚠️ 发现 {total_issues} 个企微配置问题")
+                missing = []
+                if not has_internal:
+                    missing.append("内部运营群")
+                if total_webhooks == 0:
+                    missing.append("组织群")
+                st.warning(f"⚠️ 企微配置缺少: {'/'.join(missing)}")
                 if st.button("🔧 前往配置"):
                     st.session_state.page = "wechat_config"
                     st.rerun()
@@ -1180,7 +1205,7 @@ def show_cache_management():
     st.header("💾 缓存管理")
 
     try:
-        from ..agent.tools import get_data_strategy
+        from src.fsoa.agent.tools import get_data_strategy
 
         data_strategy = get_data_strategy()
 
@@ -1265,8 +1290,8 @@ def show_wechat_config():
     st.subheader("📊 配置状态概览")
 
     try:
-        from ..data.database import get_database_manager
-        from ..utils.config import get_config
+        from src.fsoa.data.database import get_database_manager
+        from src.fsoa.utils.config import get_config
 
         db_manager = get_database_manager()
         config = get_config()
@@ -1318,19 +1343,24 @@ def show_wechat_config():
         st.markdown("---")
         st.subheader("🔍 配置完整性检查")
 
-        issues = config_manager.validate_config()
-        total_issues = sum(len(problems) for problems in issues.values())
+        # 检查配置问题
+        issues = []
+        if not internal_webhook:
+            issues.append("内部运营群Webhook未配置")
+        if total_webhooks == 0:
+            issues.append("没有配置任何组织群Webhook")
 
-        if total_issues == 0:
+        # 检查webhook格式
+        for gc in group_configs:
+            if gc.webhook_url and not gc.webhook_url.startswith("https://qyapi.weixin.qq.com/"):
+                issues.append(f"组织群 {gc.name} 的Webhook格式无效")
+
+        if len(issues) == 0:
             st.success("✅ 所有配置都正确！Agent可以正常发送通知")
         else:
-            st.error(f"❌ 发现 {total_issues} 个配置问题，可能影响通知发送")
-
-            for category, problems in issues.items():
-                if problems:
-                    with st.expander(f"⚠️ {category} ({len(problems)}个问题)"):
-                        for problem in problems:
-                            st.write(f"• {problem}")
+            st.error(f"❌ 发现 {len(issues)} 个配置问题，可能影响通知发送")
+            for issue in issues:
+                st.write(f"• {issue}")
 
         # 快速操作
         st.markdown("---")
@@ -1350,7 +1380,20 @@ def show_wechat_config():
 
         with col_c:
             if st.button("📤 导出配置", use_container_width=True):
-                config_json = config_manager.export_config()
+                # 导出当前配置
+                import json
+                export_data = {
+                    "internal_ops_webhook": internal_webhook,
+                    "group_configs": [
+                        {
+                            "group_id": gc.group_id,
+                            "name": gc.name,
+                            "webhook_url": gc.webhook_url,
+                            "enabled": gc.enabled
+                        } for gc in db_manager.get_group_configs()
+                    ]
+                }
+                config_json = json.dumps(export_data, ensure_ascii=False, indent=2)
                 st.download_button(
                     label="下载配置文件",
                     data=config_json,
@@ -1365,64 +1408,86 @@ def show_wechat_config():
         # 显示详细配置界面
         if st.session_state.get("show_detailed_config", False):
             st.markdown("---")
-            try:
-                from .pages.wechat_config import show_wechat_config_page
-                show_wechat_config_page()
-            except ImportError as e:
-                st.error(f"无法加载详细配置页面: {e}")
+            show_detailed_config(db_manager, config)
 
         # 显示测试通知界面
         if st.session_state.get("test_notification", False):
             st.markdown("---")
-            show_notification_test(config_manager)
+            show_notification_test(db_manager, config)
 
     except Exception as e:
         st.error(f"获取企微配置失败: {e}")
         st.info("💡 提示: 企微配置是Agent通知功能的基础，请确保正确配置")
 
 
-def show_notification_test(config_manager):
+def show_notification_test(db_manager, config):
     """显示通知测试界面"""
     st.subheader("🧪 通知测试")
 
     test_type = st.selectbox(
         "选择测试类型",
-        ["组织群通知", "内部运营群通知", "升级通知"]
+        ["组织群通知", "内部运营群通知"]
     )
 
     if test_type == "组织群通知":
-        org_mapping = config_manager.get_org_webhook_mapping()
-        org_name = st.selectbox("选择组织", list(org_mapping.keys()))
+        group_configs = db_manager.get_enabled_group_configs()
+        if group_configs:
+            org_options = {gc.name: gc for gc in group_configs if gc.webhook_url}
+            if org_options:
+                org_name = st.selectbox("选择组织", list(org_options.keys()))
 
-        if st.button("发送测试消息"):
-            webhook_url = org_mapping.get(org_name)
-            if webhook_url:
-                st.info(f"正在向 {org_name} 发送测试消息...")
-                # 这里可以添加实际的测试逻辑
-                st.success("测试消息发送成功！")
+                if st.button("发送测试消息"):
+                    selected_config = org_options[org_name]
+                    st.info(f"正在向 {org_name} 发送测试消息...")
+                    # 这里可以添加实际的测试逻辑
+                    st.success("测试消息发送成功！")
             else:
-                st.error(f"{org_name} 未配置Webhook URL")
+                st.warning("没有配置有效的组织群Webhook")
+        else:
+            st.warning("没有启用的组织群配置")
 
     elif test_type == "内部运营群通知":
         if st.button("发送测试消息"):
-            internal_webhook = config_manager.get_internal_ops_webhook()
+            internal_webhook = config.internal_ops_webhook_url
             if internal_webhook:
                 st.info("正在向内部运营群发送测试消息...")
                 st.success("测试消息发送成功！")
             else:
                 st.error("内部运营群未配置Webhook URL")
 
-    elif test_type == "升级通知":
-        if st.button("发送测试消息"):
-            escalation_users = config_manager.get_mention_users("escalation")
-            if escalation_users:
-                st.info(f"正在发送升级通知测试消息，将@{len(escalation_users)}个用户...")
-                st.success("测试消息发送成功！")
-            else:
-                st.error("未配置升级通知@用户")
-
     if st.button("关闭测试"):
         st.session_state.test_notification = False
+        st.rerun()
+
+def show_detailed_config(db_manager, config):
+    """显示详细配置界面"""
+    st.subheader("🔧 详细配置管理")
+
+    # 组织群配置
+    st.markdown("### 组织群配置")
+    group_configs = db_manager.get_group_configs()
+
+    if group_configs:
+        for gc in group_configs:
+            with st.expander(f"{'✅' if gc.enabled else '❌'} {gc.name} ({gc.group_id})"):
+                st.write(f"**Webhook URL:** {gc.webhook_url or '未配置'}")
+                st.write(f"**状态:** {'启用' if gc.enabled else '禁用'}")
+                st.write(f"**冷却时间:** {gc.notification_cooldown_minutes} 分钟")
+                st.write(f"**最大通知数/小时:** {gc.max_notifications_per_hour}")
+    else:
+        st.info("暂无组织群配置")
+
+    # 内部运营群配置
+    st.markdown("### 内部运营群配置")
+    internal_webhook = config.internal_ops_webhook_url
+    if internal_webhook:
+        st.success(f"✅ 已配置: {internal_webhook[:50]}...")
+    else:
+        st.error("❌ 未配置内部运营群Webhook")
+        st.info("请在 .env 文件中设置 INTERNAL_OPS_WEBHOOK")
+
+    if st.button("关闭详细配置"):
+        st.session_state.show_detailed_config = False
         st.rerun()
 
 

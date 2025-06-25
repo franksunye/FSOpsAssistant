@@ -13,7 +13,6 @@ from urllib3.util.retry import Retry
 
 from ..utils.logger import get_logger
 from ..utils.config import get_config
-from ..config.wechat_config import get_wechat_config_manager
 
 logger = get_logger(__name__)
 
@@ -267,11 +266,19 @@ class WeChatClient:
     def update_org_webhook_mapping(self, org_name: str, webhook_url: str) -> bool:
         """更新组织webhook映射"""
         try:
-            success = self.wechat_config.set_org_webhook(org_name, webhook_url)
-            if success:
-                self.org_webhook_mapping[org_name] = webhook_url
-                logger.info(f"Updated webhook mapping for org: {org_name}")
-            return success
+            if self.db_manager:
+                # 使用数据库更新配置
+                config = self.db_manager.create_or_update_group_config(
+                    group_id=org_name,
+                    name=org_name,
+                    webhook_url=webhook_url,
+                    enabled=True
+                )
+                if config:
+                    self.org_webhook_mapping[org_name] = webhook_url
+                    logger.info(f"Updated webhook mapping for org: {org_name}")
+                    return True
+            return False
         except Exception as e:
             logger.error(f"Failed to update org webhook mapping: {e}")
             return False
@@ -279,11 +286,13 @@ class WeChatClient:
     def remove_org_webhook_mapping(self, org_name: str) -> bool:
         """删除组织webhook映射"""
         try:
-            success = self.wechat_config.remove_org_webhook(org_name)
-            if success and org_name in self.org_webhook_mapping:
-                del self.org_webhook_mapping[org_name]
-                logger.info(f"Removed webhook mapping for org: {org_name}")
-            return success
+            if self.db_manager:
+                success = self.db_manager.delete_group_config(org_name)
+                if success and org_name in self.org_webhook_mapping:
+                    del self.org_webhook_mapping[org_name]
+                    logger.info(f"Removed webhook mapping for org: {org_name}")
+                return success
+            return False
         except Exception as e:
             logger.error(f"Failed to remove org webhook mapping: {e}")
             return False
