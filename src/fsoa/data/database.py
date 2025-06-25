@@ -6,7 +6,7 @@
 
 import os
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any
 from contextlib import contextmanager
 from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Boolean, Text, JSON
@@ -16,8 +16,11 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from ..utils.logger import get_logger
 from .models import (
-    TaskInfo, NotificationInfo, AgentExecution, AgentHistory,
-    SystemConfig, GroupConfig, TaskStatus, NotificationStatus, AgentStatus
+    OpportunityInfo, NotificationInfo, AgentExecution,
+    SystemConfig, GroupConfig, NotificationStatus, AgentStatus,
+    OpportunityStatus, AgentRun, AgentHistory, NotificationTask,
+    AgentRunStatus, NotificationTaskStatus, NotificationTaskType,
+    TaskInfo, TaskStatus  # 保留用于兼容性
 )
 
 logger = get_logger(__name__)
@@ -25,10 +28,94 @@ logger = get_logger(__name__)
 Base = declarative_base()
 
 
+# ============================================================================
+# 新的数据库表结构 - 重构后的设计
+# ============================================================================
+
+class AgentRunTable(Base):
+    """Agent执行记录表"""
+    __tablename__ = 'agent_runs'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    trigger_time = Column(DateTime, nullable=False)
+    end_time = Column(DateTime)
+    status = Column(String(50), nullable=False)  # 'running', 'completed', 'failed'
+    context = Column(JSON)  # 执行上下文和结果统计
+    opportunities_processed = Column(Integer, default=0)
+    notifications_sent = Column(Integer, default=0)
+    errors = Column(JSON)  # 错误信息列表
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class AgentHistoryTable(Base):
+    """Agent执行明细表"""
+    __tablename__ = 'agent_history'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    run_id = Column(Integer, nullable=False)  # 关联agent_runs.id
+    step_name = Column(String(100), nullable=False)  # 'fetch_data', 'analyze', 'send_notifications'
+    input_data = Column(JSON)  # 输入数据
+    output_data = Column(JSON)  # 输出数据
+    timestamp = Column(DateTime, nullable=False)
+    duration_seconds = Column(Float)  # 执行耗时
+    error_message = Column(Text)  # 错误信息
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class NotificationTaskTable(Base):
+    """通知任务记录表"""
+    __tablename__ = 'notification_tasks'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    order_num = Column(String(100), nullable=False)  # 关联的工单号
+    org_name = Column(String(255), nullable=False)  # 组织名称
+    notification_type = Column(String(100), nullable=False)  # 'standard', 'escalation'
+    due_time = Column(DateTime, nullable=False)  # 应该通知的时间
+    status = Column(String(50), default='pending')  # 'pending', 'sent', 'failed', 'confirmed'
+    message = Column(Text)  # 通知内容
+    sent_at = Column(DateTime)  # 实际发送时间
+    created_run_id = Column(Integer)  # 创建此任务的Agent运行ID
+    sent_run_id = Column(Integer)  # 发送此通知的Agent运行ID
+    retry_count = Column(Integer, default=0)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class OpportunityCacheTable(Base):
+    """业务数据缓存表 - Agent和业务系统关联的证明"""
+    __tablename__ = 'opportunity_cache'
+
+    order_num = Column(String(100), primary_key=True)  # 工单号作为主键
+    customer_name = Column(String(255))
+    address = Column(String(500))
+    supervisor_name = Column(String(100))
+    create_time = Column(DateTime)
+    org_name = Column(String(255))
+    status = Column(String(50))
+
+    # 计算字段
+    elapsed_hours = Column(Float)
+    is_overdue = Column(Boolean)
+    escalation_level = Column(Integer, default=0)
+
+    # 缓存管理字段
+    last_updated = Column(DateTime, nullable=False, default=datetime.utcnow)
+    source_hash = Column(String(64))  # 用于检测数据变化
+    cache_version = Column(Integer, default=1)  # 缓存版本
+
+    # 系统字段
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+# ============================================================================
+# 旧的表结构 - 待移除
+# ============================================================================
+
 class TaskTable(Base):
-    """任务表"""
-    __tablename__ = 'tasks'
-    
+    """任务表 - 已废弃，将被移除"""
+    __tablename__ = 'tasks_deprecated'
+
     id = Column(Integer, primary_key=True)
     title = Column(String(255), nullable=False)
     description = Column(Text)
@@ -47,9 +134,9 @@ class TaskTable(Base):
 
 
 class NotificationTable(Base):
-    """通知表"""
-    __tablename__ = 'notifications'
-    
+    """通知表 - 已废弃，保留用于历史数据"""
+    __tablename__ = 'notifications_deprecated'
+
     id = Column(Integer, primary_key=True, autoincrement=True)
     task_id = Column(Integer, nullable=False)
     type = Column(String(100), nullable=False)
@@ -64,9 +151,9 @@ class NotificationTable(Base):
 
 
 class AgentExecutionTable(Base):
-    """Agent执行记录表"""
-    __tablename__ = 'agent_executions'
-    
+    """Agent执行记录表 - 已废弃，被AgentRunTable替代"""
+    __tablename__ = 'agent_executions_deprecated'
+
     id = Column(String(100), primary_key=True)
     start_time = Column(DateTime, nullable=False)
     end_time = Column(DateTime)
@@ -78,18 +165,7 @@ class AgentExecutionTable(Base):
     execution_time_seconds = Column(Float)
 
 
-class AgentHistoryTable(Base):
-    """Agent执行历史表"""
-    __tablename__ = 'agent_history'
-    
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    run_id = Column(String(100), nullable=False)
-    step_name = Column(String(100), nullable=False)
-    input_data = Column(JSON)
-    output_data = Column(JSON)
-    timestamp = Column(DateTime, nullable=False)
-    duration_seconds = Column(Float)
-    error_message = Column(Text)
+# 旧的AgentHistoryTable已被新设计替代，见上面的新表结构
 
 
 class SystemConfigTable(Base):
@@ -174,7 +250,7 @@ class DatabaseManager:
         finally:
             session.close()
     
-    def save_task(self, task: TaskInfo) -> bool:
+    def save_task(self, task: 'TaskInfo') -> bool:
         """保存任务信息"""
         try:
             with self.get_session() as session:
@@ -203,7 +279,7 @@ class DatabaseManager:
             return False
     
     def get_tasks(self, status: Optional[TaskStatus] = None, 
-                  group_id: Optional[str] = None) -> List[TaskInfo]:
+                  group_id: Optional[str] = None) -> List['TaskInfo']:
         """获取任务列表"""
         try:
             with self.get_session() as session:
@@ -302,7 +378,7 @@ class DatabaseManager:
             logger.error(f"Failed to set system config {key}: {e}")
             return False
     
-    def _task_table_to_model(self, task_record: TaskTable) -> TaskInfo:
+    def _task_table_to_model(self, task_record: TaskTable) -> 'TaskInfo':
         """将数据库记录转换为模型"""
         return TaskInfo(
             id=task_record.id,
@@ -321,6 +397,246 @@ class DatabaseManager:
             updated_at=task_record.updated_at,
             last_notification=task_record.last_notification
         )
+
+    # ============================================================================
+    # 新的数据操作方法 - 重构后的设计
+    # ============================================================================
+
+    def save_agent_run(self, agent_run: 'AgentRun') -> int:
+        """保存Agent执行记录"""
+        try:
+            with self.get_session() as session:
+                run_record = AgentRunTable(
+                    trigger_time=agent_run.trigger_time,
+                    end_time=agent_run.end_time,
+                    status=agent_run.status.value,
+                    context=agent_run.context,
+                    opportunities_processed=agent_run.opportunities_processed,
+                    notifications_sent=agent_run.notifications_sent,
+                    errors=agent_run.errors,
+                    created_at=agent_run.created_at or datetime.utcnow()
+                )
+                session.add(run_record)
+                session.commit()
+                session.refresh(run_record)
+                return run_record.id
+        except Exception as e:
+            logger.error(f"Failed to save agent run: {e}")
+            raise
+
+    def update_agent_run(self, run_id: int, updates: Dict[str, Any]) -> bool:
+        """更新Agent执行记录"""
+        try:
+            with self.get_session() as session:
+                run_record = session.query(AgentRunTable).filter_by(id=run_id).first()
+                if run_record:
+                    for key, value in updates.items():
+                        if hasattr(run_record, key):
+                            setattr(run_record, key, value)
+                    session.commit()
+                    return True
+                return False
+        except Exception as e:
+            logger.error(f"Failed to update agent run {run_id}: {e}")
+            return False
+
+    def save_agent_history(self, history: 'AgentHistory') -> bool:
+        """保存Agent执行历史"""
+        try:
+            with self.get_session() as session:
+                history_record = AgentHistoryTable(
+                    run_id=history.run_id,
+                    step_name=history.step_name,
+                    input_data=history.input_data,
+                    output_data=history.output_data,
+                    timestamp=history.timestamp,
+                    duration_seconds=history.duration_seconds,
+                    error_message=history.error_message,
+                    created_at=history.created_at or datetime.utcnow()
+                )
+                session.add(history_record)
+                session.commit()
+                return True
+        except Exception as e:
+            logger.error(f"Failed to save agent history: {e}")
+            return False
+
+    def save_notification_task(self, task: 'NotificationTask') -> int:
+        """保存通知任务"""
+        try:
+            with self.get_session() as session:
+                task_record = NotificationTaskTable(
+                    order_num=task.order_num,
+                    org_name=task.org_name,
+                    notification_type=task.notification_type.value,
+                    due_time=task.due_time,
+                    status=task.status.value,
+                    message=task.message,
+                    sent_at=task.sent_at,
+                    created_run_id=task.created_run_id,
+                    sent_run_id=task.sent_run_id,
+                    retry_count=task.retry_count,
+                    created_at=task.created_at or datetime.utcnow(),
+                    updated_at=task.updated_at or datetime.utcnow()
+                )
+                session.add(task_record)
+                session.commit()
+                session.refresh(task_record)
+                return task_record.id
+        except Exception as e:
+            logger.error(f"Failed to save notification task: {e}")
+            raise
+
+    def get_pending_notification_tasks(self) -> List['NotificationTask']:
+        """获取待处理的通知任务"""
+        try:
+            with self.get_session() as session:
+                from .models import NotificationTask, NotificationTaskStatus, NotificationTaskType
+
+                records = session.query(NotificationTaskTable).filter_by(
+                    status=NotificationTaskStatus.PENDING.value
+                ).all()
+
+                tasks = []
+                for record in records:
+                    task = NotificationTask(
+                        id=record.id,
+                        order_num=record.order_num,
+                        org_name=record.org_name,
+                        notification_type=NotificationTaskType(record.notification_type),
+                        due_time=record.due_time,
+                        status=NotificationTaskStatus(record.status),
+                        message=record.message,
+                        sent_at=record.sent_at,
+                        created_run_id=record.created_run_id,
+                        sent_run_id=record.sent_run_id,
+                        retry_count=record.retry_count,
+                        created_at=record.created_at,
+                        updated_at=record.updated_at
+                    )
+                    tasks.append(task)
+
+                return tasks
+        except Exception as e:
+            logger.error(f"Failed to get pending notification tasks: {e}")
+            return []
+
+    def update_notification_task_status(self, task_id: int, status: 'NotificationTaskStatus',
+                                      sent_run_id: Optional[int] = None) -> bool:
+        """更新通知任务状态"""
+        try:
+            with self.get_session() as session:
+                task_record = session.query(NotificationTaskTable).filter_by(id=task_id).first()
+                if task_record:
+                    task_record.status = status.value
+                    task_record.updated_at = datetime.utcnow()
+                    if status.value == 'sent':
+                        task_record.sent_at = datetime.utcnow()
+                        if sent_run_id:
+                            task_record.sent_run_id = sent_run_id
+                    session.commit()
+                    return True
+                return False
+        except Exception as e:
+            logger.error(f"Failed to update notification task {task_id}: {e}")
+            return False
+
+    def save_opportunity_cache(self, opportunity: 'OpportunityInfo') -> bool:
+        """保存商机缓存"""
+        try:
+            with self.get_session() as session:
+                # 更新缓存信息
+                opportunity.update_cache_info()
+
+                cache_record = OpportunityCacheTable(
+                    order_num=opportunity.order_num,
+                    customer_name=opportunity.name,
+                    address=opportunity.address,
+                    supervisor_name=opportunity.supervisor_name,
+                    create_time=opportunity.create_time,
+                    org_name=opportunity.org_name,
+                    status=opportunity.order_status.value if hasattr(opportunity.order_status, 'value') else str(opportunity.order_status),
+                    elapsed_hours=opportunity.elapsed_hours,
+                    is_overdue=opportunity.is_overdue,
+                    escalation_level=opportunity.escalation_level,
+                    last_updated=opportunity.last_updated,
+                    source_hash=opportunity.source_hash,
+                    cache_version=opportunity.cache_version,
+                    created_at=datetime.utcnow(),
+                    updated_at=datetime.utcnow()
+                )
+                session.merge(cache_record)  # 使用merge支持更新
+                session.commit()
+                return True
+        except Exception as e:
+            logger.error(f"Failed to save opportunity cache {opportunity.order_num}: {e}")
+            return False
+
+    def get_opportunity_cache(self, order_num: str) -> Optional['OpportunityInfo']:
+        """获取商机缓存"""
+        try:
+            with self.get_session() as session:
+                from .models import OpportunityInfo, OpportunityStatus
+
+                record = session.query(OpportunityCacheTable).filter_by(order_num=order_num).first()
+                if record:
+                    opportunity = OpportunityInfo(
+                        order_num=record.order_num,
+                        name=record.customer_name,
+                        address=record.address,
+                        supervisor_name=record.supervisor_name,
+                        create_time=record.create_time,
+                        org_name=record.org_name,
+                        order_status=OpportunityStatus(record.status),
+                        elapsed_hours=record.elapsed_hours,
+                        is_overdue=record.is_overdue,
+                        escalation_level=record.escalation_level,
+                        last_updated=record.last_updated,
+                        source_hash=record.source_hash,
+                        cache_version=record.cache_version
+                    )
+                    return opportunity
+                return None
+        except Exception as e:
+            logger.error(f"Failed to get opportunity cache {order_num}: {e}")
+            return None
+
+    def get_cached_opportunities(self, cache_ttl_hours: int = 1) -> List['OpportunityInfo']:
+        """获取有效的缓存商机列表"""
+        try:
+            with self.get_session() as session:
+                from .models import OpportunityInfo, OpportunityStatus
+
+                # 计算缓存过期时间
+                cutoff_time = datetime.utcnow() - timedelta(hours=cache_ttl_hours)
+
+                records = session.query(OpportunityCacheTable).filter(
+                    OpportunityCacheTable.last_updated > cutoff_time
+                ).all()
+
+                opportunities = []
+                for record in records:
+                    opportunity = OpportunityInfo(
+                        order_num=record.order_num,
+                        name=record.customer_name,
+                        address=record.address,
+                        supervisor_name=record.supervisor_name,
+                        create_time=record.create_time,
+                        org_name=record.org_name,
+                        order_status=OpportunityStatus(record.status),
+                        elapsed_hours=record.elapsed_hours,
+                        is_overdue=record.is_overdue,
+                        escalation_level=record.escalation_level,
+                        last_updated=record.last_updated,
+                        source_hash=record.source_hash,
+                        cache_version=record.cache_version
+                    )
+                    opportunities.append(opportunity)
+
+                return opportunities
+        except Exception as e:
+            logger.error(f"Failed to get cached opportunities: {e}")
+            return []
 
 
 # 全局数据库管理器实例

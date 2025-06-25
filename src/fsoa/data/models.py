@@ -10,8 +10,49 @@ from enum import Enum
 from pydantic import BaseModel, Field, validator
 
 
+# ============================================================================
+# Agent相关的状态枚举
+# ============================================================================
+
+class AgentRunStatus(str, Enum):
+    """Agent运行状态枚举"""
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class NotificationTaskStatus(str, Enum):
+    """通知任务状态枚举"""
+    PENDING = "pending"
+    SENT = "sent"
+    FAILED = "failed"
+    CONFIRMED = "confirmed"
+
+
+class NotificationTaskType(str, Enum):
+    """通知任务类型枚举"""
+    STANDARD = "standard"
+    ESCALATION = "escalation"
+
+
+# ============================================================================
+# 业务相关的状态枚举
+# ============================================================================
+
+class OpportunityStatus(str, Enum):
+    """商机状态枚举"""
+    PENDING_APPOINTMENT = "待预约"
+    TEMPORARILY_NOT_VISITING = "暂不上门"
+    COMPLETED = "已完成"
+    CANCELLED = "已取消"
+
+
+# ============================================================================
+# 兼容性枚举 - 逐步废弃
+# ============================================================================
+
 class TaskStatus(str, Enum):
-    """任务状态枚举"""
+    """任务状态枚举 - 已废弃"""
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
     CANCELLED = "cancelled"
@@ -42,8 +83,81 @@ class Priority(str, Enum):
     URGENT = "urgent"
 
 
+# ============================================================================
+# 新的数据模型 - 重构后的设计
+# ============================================================================
+
+class AgentRun(BaseModel):
+    """Agent执行记录模型"""
+    id: Optional[int] = None
+    trigger_time: datetime
+    end_time: Optional[datetime] = None
+    status: AgentRunStatus
+    context: Optional[Dict[str, Any]] = None
+    opportunities_processed: int = 0
+    notifications_sent: int = 0
+    errors: Optional[List[str]] = None
+    created_at: Optional[datetime] = None
+
+    @property
+    def duration_seconds(self) -> Optional[float]:
+        """执行时长（秒）"""
+        if self.end_time and self.trigger_time:
+            return (self.end_time - self.trigger_time).total_seconds()
+        return None
+
+    @property
+    def is_running(self) -> bool:
+        """是否正在运行"""
+        return self.status == AgentRunStatus.RUNNING
+
+
+class AgentHistory(BaseModel):
+    """Agent执行历史模型"""
+    id: Optional[int] = None
+    run_id: int
+    step_name: str = Field(..., description="执行步骤名称")
+    input_data: Optional[Dict[str, Any]] = None
+    output_data: Optional[Dict[str, Any]] = None
+    timestamp: datetime
+    duration_seconds: Optional[float] = None
+    error_message: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+
+class NotificationTask(BaseModel):
+    """通知任务模型"""
+    id: Optional[int] = None
+    order_num: str = Field(..., description="工单号")
+    org_name: str = Field(..., description="组织名称")
+    notification_type: NotificationTaskType = Field(..., description="通知类型")
+    due_time: datetime = Field(..., description="应该通知的时间")
+    status: NotificationTaskStatus = NotificationTaskStatus.PENDING
+    message: Optional[str] = None
+    sent_at: Optional[datetime] = None
+    created_run_id: Optional[int] = None
+    sent_run_id: Optional[int] = None
+    retry_count: int = 0
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    @property
+    def is_pending(self) -> bool:
+        """是否待发送"""
+        return self.status == NotificationTaskStatus.PENDING
+
+    @property
+    def is_overdue(self) -> bool:
+        """是否逾期未发送"""
+        return self.is_pending and datetime.now() > self.due_time
+
+
+# ============================================================================
+# 废弃的模型 - 保留用于兼容性
+# ============================================================================
+
 class TaskInfo(BaseModel):
-    """任务信息模型"""
+    """任务信息模型 - 已废弃，请使用OpportunityInfo"""
     id: int
     title: str
     description: Optional[str] = None
@@ -117,16 +231,7 @@ class AgentExecution(BaseModel):
         return v
 
 
-class AgentHistory(BaseModel):
-    """Agent执行历史模型"""
-    id: Optional[int] = None
-    run_id: str
-    step_name: str
-    input_data: Dict[str, Any] = {}
-    output_data: Dict[str, Any] = {}
-    timestamp: datetime
-    duration_seconds: Optional[float] = None
-    error_message: Optional[str] = None
+# 旧的AgentHistory定义已被上面的新设计替代
 
 
 class SystemConfig(BaseModel):
@@ -200,6 +305,11 @@ class OpportunityInfo(BaseModel):
     overdue_hours: Optional[float] = Field(None, description="逾期时长(小时)")
     sla_threshold_hours: Optional[int] = Field(None, description="SLA阈值(小时)")
     escalation_level: Optional[int] = Field(0, description="升级级别 0=正常 1=升级")
+
+    # 缓存相关字段
+    last_updated: Optional[datetime] = Field(None, description="最后更新时间")
+    source_hash: Optional[str] = Field(None, description="数据源哈希值")
+    cache_version: Optional[int] = Field(1, description="缓存版本")
 
     @validator('create_time', pre=True)
     def parse_create_time(cls, v):
@@ -285,6 +395,39 @@ class OpportunityInfo(BaseModel):
         self.overdue_hours = overdue_hours
         self.escalation_level = escalation_level
         self.sla_threshold_hours = self.get_sla_threshold()
+
+    def generate_source_hash(self) -> str:
+        """生成数据源哈希值，用于检测数据变化"""
+        import hashlib
+
+        # 使用核心业务字段生成哈希
+        core_data = f"{self.order_num}|{self.name}|{self.address}|{self.supervisor_name}|{self.create_time}|{self.org_name}|{self.order_status}"
+        return hashlib.md5(core_data.encode()).hexdigest()
+
+    def update_cache_info(self):
+        """更新缓存相关信息"""
+        self.last_updated = datetime.now()
+        self.source_hash = self.generate_source_hash()
+
+    def is_cache_valid(self, cache_ttl_hours: int = 1) -> bool:
+        """检查缓存是否有效"""
+        if not self.last_updated:
+            return False
+
+        cache_age = datetime.now() - self.last_updated
+        return cache_age.total_seconds() < (cache_ttl_hours * 3600)
+
+    def should_cache(self) -> bool:
+        """判断是否应该缓存此商机"""
+        # 只缓存逾期或接近逾期的商机
+        if self.is_overdue:
+            return True
+
+        # 如果已经过了SLA阈值的80%，也进行缓存
+        if self.sla_threshold_hours and self.elapsed_hours:
+            return self.elapsed_hours > (self.sla_threshold_hours * 0.8)
+
+        return False
 
     class Config:
         """Pydantic配置"""
