@@ -25,35 +25,12 @@ def signal_handler(signum, frame):
     sys.exit(0)
 
 
-def check_virtual_environment():
-    """检查虚拟环境"""
-    print("🐍 检查Python虚拟环境...")
-
-    # 检查是否在虚拟环境中
-    if hasattr(sys, 'real_prefix') or (hasattr(sys, 'base_prefix') and sys.base_prefix != sys.prefix):
-        print("✅ 检测到虚拟环境")
-        venv_path = sys.prefix
-        print(f"📁 虚拟环境路径: {venv_path}")
-        return True
-    else:
-        print("⚠️  未检测到虚拟环境")
-        print("💡 强烈建议使用虚拟环境以避免依赖冲突")
-        print("🔧 运行以下命令创建虚拟环境:")
-        print("   python scripts/setup_env.py")
-
-        response = input("\n是否继续启动？(y/N): ")
-        return response.lower() == 'y'
-
-
 def main():
     """主函数"""
     print("🤖 FSOA Agent服务启动器")
     print("=" * 50)
 
     try:
-        # 检查虚拟环境
-        if not check_virtual_environment():
-            sys.exit(1)
 
         # 检查环境配置
         print("🔍 检查环境配置...")

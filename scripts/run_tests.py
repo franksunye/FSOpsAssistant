@@ -37,18 +37,19 @@ def run_command(cmd, cwd=None):
         return False, e.stderr
 
 
-def check_virtual_environment():
-    """检查虚拟环境"""
-    print("🐍 检查Python虚拟环境...")
-    
-    if hasattr(sys, 'real_prefix') or (hasattr(sys, 'base_prefix') and sys.base_prefix != sys.prefix):
-        print("✅ 检测到虚拟环境")
-        return True
-    else:
-        print("⚠️  未检测到虚拟环境")
-        print("💡 建议在虚拟环境中运行测试")
-        response = input("是否继续？(y/N): ")
-        return response.lower() == 'y'
+def check_python_environment():
+    """检查Python环境"""
+    print("🐍 检查Python环境...")
+
+    version = sys.version_info
+    print(f"Python版本: {version.major}.{version.minor}.{version.micro}")
+
+    if version.major != 3 or version.minor < 9:
+        print("❌ 错误: 需要Python 3.9或更高版本")
+        return False
+
+    print("✅ Python版本检查通过")
+    return True
 
 
 def install_test_dependencies():
@@ -283,9 +284,9 @@ def main():
     
     print("🤖 FSOA测试运行器")
     print("=" * 50)
-    
-    # 检查虚拟环境
-    if not check_virtual_environment():
+
+    # 检查Python环境
+    if not check_python_environment():
         sys.exit(1)
     
     # 安装测试依赖

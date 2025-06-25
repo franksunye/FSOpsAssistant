@@ -1,18 +1,17 @@
 # FSOA 部署指南
 
-Field Service Operations Assistant - 生产环境部署指南
+Field Service Operations Assistant - 轻量级本地部署指南
 
 ## 📋 部署概述
 
-本指南提供FSOA在生产环境中的完整部署方案，包括环境准备、安装配置、监控维护等。
+本指南提供FSOA的轻量级本地部署方案，适用于开发和小规模生产环境。
 
 ## 🔧 环境要求
 
 ### 系统要求
-- **操作系统**: Linux (Ubuntu 20.04+ / CentOS 8+ / RHEL 8+)
 - **Python版本**: 3.9+
-- **内存**: 最小2GB，推荐4GB+
-- **存储**: 最小10GB，推荐50GB+
+- **内存**: 最小1GB，推荐2GB+
+- **存储**: 最小2GB
 - **网络**: 稳定的互联网连接
 
 ### 依赖服务
@@ -20,46 +19,29 @@ Field Service Operations Assistant - 生产环境部署指南
 - **企业微信**: 通知渠道
 - **DeepSeek API**: LLM服务
 
-## 🚀 部署方式
+## 🚀 快速部署
 
-### 方式一：标准部署（推荐）
-
-#### 1. 环境准备
+### 1. 环境准备
 
 ```bash
-# 更新系统
-sudo apt update && sudo apt upgrade -y  # Ubuntu/Debian
-sudo yum update -y                      # CentOS/RHEL
+# 确保Python 3.9+已安装
+python --version
 
-# 安装Python 3.9+
-sudo apt install python3.9 python3.9-venv python3.9-dev -y  # Ubuntu
-sudo yum install python39 python39-devel -y                  # CentOS
-
-# 安装系统依赖
-sudo apt install git curl wget build-essential -y  # Ubuntu
-sudo yum groupinstall "Development Tools" -y       # CentOS
-
-# 创建部署用户
-sudo useradd -m -s /bin/bash fsoa
-sudo usermod -aG sudo fsoa  # 可选：添加sudo权限
+# 安装Git（如果未安装）
+# Ubuntu/Debian:
+sudo apt install git -y
+# CentOS/RHEL:
+sudo yum install git -y
+# macOS:
+brew install git
 ```
 
-#### 2. 项目部署
+### 2. 项目部署
 
 ```bash
-# 切换到部署用户
-sudo su - fsoa
-
 # 克隆项目
 git clone https://github.com/franksunye/FSOpsAssistant.git
 cd FSOpsAssistant
-
-# 创建虚拟环境
-python3.9 -m venv fsoa_env
-source fsoa_env/bin/activate
-
-# 升级pip
-pip install --upgrade pip
 
 # 安装依赖
 pip install -r requirements.txt
@@ -67,152 +49,67 @@ pip install -r requirements.txt
 # 配置环境变量
 cp .env.example .env
 # 编辑配置文件
-nano .env
+nano .env  # 或使用其他编辑器
 ```
 
-#### 3. 配置文件设置
+### 3. 配置文件设置
+
+编辑 `.env` 文件，填入实际配置：
 
 ```bash
-# .env 生产环境配置示例
-DEEPSEEK_API_KEY=your_production_deepseek_api_key
+# DeepSeek LLM配置
+DEEPSEEK_API_KEY=your_deepseek_api_key
 DEEPSEEK_BASE_URL=https://api.deepseek.com
 
+# Metabase数据源配置
 METABASE_URL=https://your-metabase-server.com
 METABASE_USERNAME=fsoa_user
-METABASE_PASSWORD=secure_password
+METABASE_PASSWORD=your_password
 METABASE_DATABASE_ID=1
 
-WECHAT_WEBHOOK_URLS=https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=webhook1,https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=webhook2
+# 企业微信通知配置
+WECHAT_WEBHOOK_URLS=https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=your_webhook_key
 
-DATABASE_URL=sqlite:///var/lib/fsoa/fsoa.db
+# 数据库配置
+DATABASE_URL=sqlite:///data/fsoa.db
+
+# 日志配置
 LOG_LEVEL=INFO
-LOG_FILE=/var/log/fsoa/fsoa.log
+LOG_FILE=logs/fsoa.log
 
+# Agent配置
 AGENT_EXECUTION_INTERVAL=60
 USE_LLM_OPTIMIZATION=true
 LLM_TEMPERATURE=0.1
 
+# 运行环境
 DEBUG=false
 TESTING=false
 ```
 
-#### 4. 初始化系统
+### 4. 初始化和启动
 
 ```bash
-# 创建必要目录
-sudo mkdir -p /var/lib/fsoa /var/log/fsoa
-sudo chown fsoa:fsoa /var/lib/fsoa /var/log/fsoa
-
 # 初始化数据库
 python scripts/init_db.py
 
-# 测试系统
-python scripts/start_app.py --test
+# 启动Web界面
+python scripts/start_app.py
+
+# 或启动Agent服务（另一个终端）
+python scripts/start_agent.py
 ```
 
-### 方式二：Docker部署
+## 🔧 系统配置
 
-#### 1. 创建Dockerfile
+### 后台服务配置（可选）
 
-```dockerfile
-# Dockerfile
-FROM python:3.9-slim
+如需将FSOA作为系统服务运行：
 
-# 设置工作目录
-WORKDIR /app
-
-# 安装系统依赖
-RUN apt-get update && apt-get install -y \
-    git \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
-
-# 复制项目文件
-COPY . .
-
-# 安装Python依赖
-RUN pip install --no-cache-dir -r requirements.txt
-
-# 创建非root用户
-RUN useradd -m -u 1000 fsoa && chown -R fsoa:fsoa /app
-USER fsoa
-
-# 暴露端口
-EXPOSE 8501
-
-# 启动命令
-CMD ["python", "scripts/start_app.py"]
-```
-
-#### 2. 创建docker-compose.yml
-
-```yaml
-# docker-compose.yml
-version: '3.8'
-
-services:
-  fsoa-app:
-    build: .
-    ports:
-      - "8501:8501"
-    environment:
-      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
-      - METABASE_URL=${METABASE_URL}
-      - METABASE_USERNAME=${METABASE_USERNAME}
-      - METABASE_PASSWORD=${METABASE_PASSWORD}
-      - WECHAT_WEBHOOK_URLS=${WECHAT_WEBHOOK_URLS}
-    volumes:
-      - fsoa_data:/app/data
-      - fsoa_logs:/app/logs
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8501"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-  fsoa-agent:
-    build: .
-    command: ["python", "scripts/start_agent.py"]
-    environment:
-      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
-      - METABASE_URL=${METABASE_URL}
-      - METABASE_USERNAME=${METABASE_USERNAME}
-      - METABASE_PASSWORD=${METABASE_PASSWORD}
-      - WECHAT_WEBHOOK_URLS=${WECHAT_WEBHOOK_URLS}
-    volumes:
-      - fsoa_data:/app/data
-      - fsoa_logs:/app/logs
-    restart: unless-stopped
-    depends_on:
-      - fsoa-app
-
-volumes:
-  fsoa_data:
-  fsoa_logs:
-```
-
-#### 3. Docker部署命令
+#### 创建systemd服务
 
 ```bash
-# 构建和启动
-docker-compose up -d
-
-# 查看日志
-docker-compose logs -f
-
-# 停止服务
-docker-compose down
-```
-
-## 🔧 系统服务配置
-
-### 创建systemd服务
-
-#### 1. FSOA Web服务
-
-```bash
-# 创建服务文件
+# 创建Web服务文件
 sudo nano /etc/systemd/system/fsoa-web.service
 ```
 
@@ -223,11 +120,9 @@ After=network.target
 
 [Service]
 Type=simple
-User=fsoa
-Group=fsoa
-WorkingDirectory=/home/fsoa/FSOpsAssistant
-Environment=PATH=/home/fsoa/FSOpsAssistant/fsoa_env/bin
-ExecStart=/home/fsoa/FSOpsAssistant/fsoa_env/bin/python scripts/start_app.py
+User=$USER
+WorkingDirectory=/path/to/FSOpsAssistant
+ExecStart=/usr/bin/python scripts/start_app.py
 Restart=always
 RestartSec=10
 
@@ -235,10 +130,8 @@ RestartSec=10
 WantedBy=multi-user.target
 ```
 
-#### 2. FSOA Agent服务
-
 ```bash
-# 创建服务文件
+# 创建Agent服务文件
 sudo nano /etc/systemd/system/fsoa-agent.service
 ```
 
@@ -249,11 +142,9 @@ After=network.target
 
 [Service]
 Type=simple
-User=fsoa
-Group=fsoa
-WorkingDirectory=/home/fsoa/FSOpsAssistant
-Environment=PATH=/home/fsoa/FSOpsAssistant/fsoa_env/bin
-ExecStart=/home/fsoa/FSOpsAssistant/fsoa_env/bin/python scripts/start_agent.py
+User=$USER
+WorkingDirectory=/path/to/FSOpsAssistant
+ExecStart=/usr/bin/python scripts/start_agent.py
 Restart=always
 RestartSec=30
 
@@ -261,7 +152,7 @@ RestartSec=30
 WantedBy=multi-user.target
 ```
 
-#### 3. 启用和管理服务
+#### 启用和管理服务
 
 ```bash
 # 重新加载systemd
@@ -295,52 +186,15 @@ sudo firewall-cmd --permanent --add-port=8501/tcp
 sudo firewall-cmd --reload
 ```
 
-### 2. SSL/TLS配置
-
-使用Nginx作为反向代理：
-
-```bash
-# 安装Nginx
-sudo apt install nginx -y  # Ubuntu
-sudo yum install nginx -y  # CentOS
-
-# 配置Nginx
-sudo nano /etc/nginx/sites-available/fsoa
-```
-
-```nginx
-server {
-    listen 80;
-    server_name your-domain.com;
-    return 301 https://$server_name$request_uri;
-}
-
-server {
-    listen 443 ssl http2;
-    server_name your-domain.com;
-
-    ssl_certificate /path/to/your/certificate.crt;
-    ssl_certificate_key /path/to/your/private.key;
-
-    location / {
-        proxy_pass http://127.0.0.1:8501;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
-```
-
-### 3. 环境变量安全
+### 2. 环境变量安全
 
 ```bash
 # 设置文件权限
 chmod 600 .env
-chown fsoa:fsoa .env
 
 # 使用系统环境变量（推荐）
-sudo nano /etc/environment
+export DEEPSEEK_API_KEY="your_api_key"
+export METABASE_PASSWORD="your_password"
 ```
 
 ## 📊 监控和维护
@@ -348,89 +202,45 @@ sudo nano /etc/environment
 ### 1. 日志管理
 
 ```bash
-# 配置logrotate
-sudo nano /etc/logrotate.d/fsoa
+# 查看应用日志
+tail -f logs/fsoa.log
+
+# 查看系统服务日志
+sudo journalctl -u fsoa-web -f
+sudo journalctl -u fsoa-agent -f
 ```
 
-```
-/var/log/fsoa/*.log {
-    daily
-    missingok
-    rotate 30
-    compress
-    delaycompress
-    notifempty
-    create 644 fsoa fsoa
-    postrotate
-        systemctl reload fsoa-web fsoa-agent
-    endscript
-}
-```
-
-### 2. 健康检查脚本
+### 2. 健康检查
 
 ```bash
-#!/bin/bash
-# health_check.sh
-
 # 检查Web服务
-if curl -f http://localhost:8501 > /dev/null 2>&1; then
-    echo "✅ Web服务正常"
-else
-    echo "❌ Web服务异常"
-    sudo systemctl restart fsoa-web
-fi
+curl -f http://localhost:8501
 
-# 检查Agent服务
-if systemctl is-active --quiet fsoa-agent; then
-    echo "✅ Agent服务正常"
-else
-    echo "❌ Agent服务异常"
-    sudo systemctl restart fsoa-agent
-fi
+# 检查进程状态
+ps aux | grep python | grep fsoa
 
-# 检查磁盘空间
-DISK_USAGE=$(df /var/lib/fsoa | awk 'NR==2 {print $5}' | sed 's/%//')
-if [ $DISK_USAGE -gt 80 ]; then
-    echo "⚠️ 磁盘使用率过高: ${DISK_USAGE}%"
-fi
+# 检查端口占用
+netstat -tlnp | grep 8501
 ```
 
 ### 3. 备份策略
 
 ```bash
-#!/bin/bash
-# backup.sh
-
-BACKUP_DIR="/backup/fsoa"
-DATE=$(date +%Y%m%d_%H%M%S)
-
-# 创建备份目录
-mkdir -p $BACKUP_DIR
-
 # 备份数据库
-cp /var/lib/fsoa/fsoa.db $BACKUP_DIR/fsoa_${DATE}.db
+cp data/fsoa.db backup/fsoa_$(date +%Y%m%d).db
 
 # 备份配置文件
-cp /home/fsoa/FSOpsAssistant/.env $BACKUP_DIR/env_${DATE}.backup
+cp .env backup/env_$(date +%Y%m%d).backup
 
-# 清理旧备份（保留30天）
-find $BACKUP_DIR -name "*.db" -mtime +30 -delete
-find $BACKUP_DIR -name "*.backup" -mtime +30 -delete
-
-echo "备份完成: $BACKUP_DIR"
+# 备份日志
+tar -czf backup/logs_$(date +%Y%m%d).tar.gz logs/
 ```
 
 ## 🔄 更新和升级
 
-### 1. 应用更新
+### 应用更新
 
 ```bash
-#!/bin/bash
-# update.sh
-
-cd /home/fsoa/FSOpsAssistant
-
 # 停止服务
 sudo systemctl stop fsoa-web fsoa-agent
 
@@ -440,46 +250,11 @@ cp -r . ../FSOpsAssistant_backup_$(date +%Y%m%d)
 # 拉取最新代码
 git pull origin main
 
-# 激活虚拟环境
-source fsoa_env/bin/activate
-
 # 更新依赖
 pip install -r requirements.txt
 
-# 数据库迁移（如有需要）
-python scripts/migrate_db.py
-
 # 重启服务
 sudo systemctl start fsoa-web fsoa-agent
-
-echo "更新完成"
-```
-
-### 2. 回滚策略
-
-```bash
-#!/bin/bash
-# rollback.sh
-
-BACKUP_DIR="../FSOpsAssistant_backup_$1"
-
-if [ -d "$BACKUP_DIR" ]; then
-    sudo systemctl stop fsoa-web fsoa-agent
-    
-    # 备份当前版本
-    mv FSOpsAssistant FSOpsAssistant_failed_$(date +%Y%m%d)
-    
-    # 恢复备份版本
-    cp -r $BACKUP_DIR FSOpsAssistant
-    cd FSOpsAssistant
-    
-    # 重启服务
-    sudo systemctl start fsoa-web fsoa-agent
-    
-    echo "回滚完成"
-else
-    echo "备份目录不存在: $BACKUP_DIR"
-fi
 ```
 
 ## 🚨 故障排除
@@ -492,16 +267,16 @@ fi
    sudo journalctl -u fsoa-web -n 50
    
    # 检查配置
-   python scripts/init_db.py --check
+   python scripts/init_db.py
    ```
 
 2. **数据库连接问题**
    ```bash
-   # 检查数据库文件权限
-   ls -la /var/lib/fsoa/
+   # 检查数据库文件
+   ls -la data/
    
    # 重新初始化数据库
-   python scripts/init_db.py --reset
+   python scripts/init_db.py
    ```
 
 3. **网络连接问题**
@@ -511,32 +286,87 @@ fi
    curl -I $METABASE_URL
    ```
 
+4. **端口占用问题**
+   ```bash
+   # 查看端口占用
+   netstat -tlnp | grep 8501
+   
+   # 杀死占用进程
+   sudo kill -9 <PID>
+   ```
+
 ### 性能优化
 
-1. **数据库优化**
-   - 定期清理旧数据
-   - 添加适当索引
-   - 使用WAL模式
-
-2. **内存优化**
+1. **内存优化**
+   - 监控内存使用: `htop` 或 `top`
    - 调整Python GC参数
-   - 监控内存使用
-   - 设置合适的worker数量
+   - 定期重启服务
+
+2. **数据库优化**
+   - 定期清理旧数据
+   - 使用WAL模式: `PRAGMA journal_mode=WAL;`
 
 3. **网络优化**
-   - 使用连接池
    - 设置合适的超时时间
-   - 启用HTTP/2
-
----
+   - 使用连接池
+   - 启用HTTP缓存
 
 ## 📞 技术支持
 
+### 使用帮助
+
+1. **Web界面**: http://localhost:8501
+2. **系统测试**: 在Web界面的"系统测试"页面
+3. **Agent控制**: 在Web界面的"Agent控制"页面
+
+### 故障排查步骤
+
+1. 检查系统日志
+2. 验证配置文件
+3. 测试网络连接
+4. 重启相关服务
+
+### 联系方式
+
 如遇部署问题，请：
+- 查看项目文档
+- 检查GitHub Issues
+- 联系技术支持: franksunye@hotmail.com
 
-1. 查看系统日志
-2. 检查配置文件
-3. 运行健康检查
-4. 联系技术支持
+---
 
-**联系方式**: franksunye@hotmail.com
+## 📝 快速参考
+
+### 常用命令
+
+```bash
+# 启动应用
+python scripts/start_app.py
+
+# 启动Agent
+python scripts/start_agent.py
+
+# 初始化数据库
+python scripts/init_db.py
+
+# 运行测试
+python scripts/run_tests.py --all
+
+# 查看日志
+tail -f logs/fsoa.log
+
+# 检查服务状态
+sudo systemctl status fsoa-web fsoa-agent
+```
+
+### 重要文件
+
+- **配置文件**: `.env`
+- **数据库**: `data/fsoa.db`
+- **日志文件**: `logs/fsoa.log`
+- **启动脚本**: `scripts/start_*.py`
+
+### 默认端口
+
+- **Web界面**: 8501
+- **Agent服务**: 后台运行，无端口

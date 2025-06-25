@@ -39,54 +39,23 @@ FSOA是一个具备**主动性、自主决策、目标导向**特性的AI Agent�
 
 ### 安装部署
 
-⚠️ **重要提示：强烈建议使用Python虚拟环境**
-
-为避免Python库冲突和版本问题，请务必使用虚拟环境：
-
 ```bash
 # 1. 克隆项目
 git clone https://github.com/franksunye/FSOpsAssistant.git
 cd FSOpsAssistant
 
-# 2. 创建虚拟环境（必须步骤）
-python -m venv fsoa_env
-
-# 3. 激活虚拟环境
-# Linux/Mac:
-source fsoa_env/bin/activate
-# Windows:
-fsoa_env\Scripts\activate
-
-# 4. 升级pip（推荐）
-pip install --upgrade pip
-
-# 5. 安装依赖
+# 2. 安装依赖
 pip install -r requirements.txt
 
-# 6. 配置环境变量
+# 3. 配置环境变量
 cp .env.example .env
 # 编辑 .env 文件，填入必要配置
 
-# 7. 初始化数据库
+# 4. 初始化数据库
 python scripts/init_db.py
 
-# 8. 启动应用
-streamlit run src/fsoa/ui/app.py
-```
-
-### 虚拟环境管理
-
-```bash
-# 激活虚拟环境
-source fsoa_env/bin/activate  # Linux/Mac
-fsoa_env\Scripts\activate     # Windows
-
-# 退出虚拟环境
-deactivate
-
-# 删除虚拟环境（如需重建）
-rm -rf fsoa_env  # Linux/Mac
-rmdir /s fsoa_env  # Windows
+# 5. 启动应用
+python scripts/start_app.py
 ```
 
 ### 配置说明
