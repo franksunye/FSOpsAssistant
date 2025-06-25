@@ -172,3 +172,123 @@ class DecisionResult(BaseModel):
     reasoning: Optional[str] = None
     confidence: float = Field(ge=0, le=1, default=1.0)
     llm_used: bool = False
+
+
+class OpportunityStatus(str, Enum):
+    """商机状态枚举"""
+    PENDING_APPOINTMENT = "待预约"
+    TEMPORARILY_NOT_VISITING = "暂不上门"
+    APPOINTED = "已预约"
+    COMPLETED = "已完成"
+    CANCELLED = "已取消"
+
+
+class OpportunityInfo(BaseModel):
+    """商机信息模型 - 基于真实的 Metabase Card 1712 数据结构"""
+
+    order_num: str = Field(..., description="工单号")
+    name: str = Field(..., description="客户姓名")
+    address: str = Field(..., description="客户地址")
+    supervisor_name: str = Field(..., description="负责销售人员")
+    create_time: datetime = Field(..., description="创建时间")
+    org_name: str = Field(..., description="所属组织")
+    order_status: OpportunityStatus = Field(..., description="商机状态")
+
+    # 计算字段
+    elapsed_hours: Optional[float] = Field(None, description="已经过时长(小时)")
+    is_overdue: Optional[bool] = Field(None, description="是否逾期")
+    overdue_hours: Optional[float] = Field(None, description="逾期时长(小时)")
+    sla_threshold_hours: Optional[int] = Field(None, description="SLA阈值(小时)")
+    escalation_level: Optional[int] = Field(0, description="升级级别 0=正常 1=升级")
+
+    @validator('create_time', pre=True)
+    def parse_create_time(cls, v):
+        """解析创建时间字符串"""
+        if isinstance(v, str):
+            # 处理各种可能的时间格式
+            try:
+                # 处理 ISO 格式带时区的时间 "2025-06-14T16:33:00.144+08:00"
+                if 'T' in v and '+' in v:
+                    # 移除毫秒和时区信息
+                    v_clean = v.split('.')[0] if '.' in v else v.split('+')[0]
+                    return datetime.strptime(v_clean, "%Y-%m-%dT%H:%M:%S")
+                # 处理 "2025-6-14, 16:33" 格式
+                elif ', ' in v:
+                    return datetime.strptime(v, "%Y-%m-%d, %H:%M")
+                # 处理标准 ISO 格式
+                elif 'T' in v:
+                    v_clean = v.split('.')[0] if '.' in v else v
+                    return datetime.strptime(v_clean, "%Y-%m-%dT%H:%M:%S")
+                # 处理日期时间格式
+                elif ' ' in v:
+                    return datetime.strptime(v, "%Y-%m-%d %H:%M:%S")
+                # 处理纯日期格式
+                else:
+                    return datetime.strptime(v, "%Y-%m-%d")
+            except ValueError:
+                # 如果都失败，返回当前时间并记录警告
+                import logging
+                logging.warning(f"Failed to parse create_time: {v}, using current time")
+                return datetime.now()
+        return v
+
+    def calculate_elapsed_hours(self) -> float:
+        """计算已经过时长"""
+        if not self.elapsed_hours:
+            now = datetime.now()
+            delta = now - self.create_time
+            self.elapsed_hours = delta.total_seconds() / 3600
+        return self.elapsed_hours
+
+    def get_sla_threshold(self) -> int:
+        """获取SLA阈值"""
+        if self.order_status == OpportunityStatus.PENDING_APPOINTMENT:
+            return 24  # 待预约：24小时
+        elif self.order_status == OpportunityStatus.TEMPORARILY_NOT_VISITING:
+            return 48  # 暂不上门：48小时
+        else:
+            return 0  # 其他状态不需要监控
+
+    def check_overdue_status(self) -> tuple[bool, float, int]:
+        """检查逾期状态
+
+        Returns:
+            tuple: (是否逾期, 逾期时长, 升级级别)
+        """
+        elapsed = self.calculate_elapsed_hours()
+        threshold = self.get_sla_threshold()
+
+        if threshold == 0:
+            return False, 0, 0
+
+        if elapsed > threshold:
+            overdue_hours = elapsed - threshold
+
+            # 判断升级级别
+            if self.order_status == OpportunityStatus.PENDING_APPOINTMENT:
+                # 待预约：超过48小时升级
+                escalation_level = 1 if elapsed > 48 else 0
+            elif self.order_status == OpportunityStatus.TEMPORARILY_NOT_VISITING:
+                # 暂不上门：超过72小时升级
+                escalation_level = 1 if elapsed > 72 else 0
+            else:
+                escalation_level = 0
+
+            return True, overdue_hours, escalation_level
+
+        return False, 0, 0
+
+    def update_overdue_info(self):
+        """更新逾期相关信息"""
+        is_overdue, overdue_hours, escalation_level = self.check_overdue_status()
+        self.is_overdue = is_overdue
+        self.overdue_hours = overdue_hours
+        self.escalation_level = escalation_level
+        self.sla_threshold_hours = self.get_sla_threshold()
+
+    class Config:
+        """Pydantic配置"""
+        use_enum_values = True
+        json_encoders = {
+            datetime: lambda v: v.isoformat()
+        }

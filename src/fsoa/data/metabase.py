@@ -13,7 +13,7 @@ from urllib3.util.retry import Retry
 
 from ..utils.logger import get_logger
 from ..utils.config import get_config
-from .models import TaskInfo, TaskStatus, Priority
+from .models import TaskInfo, TaskStatus, Priority, OpportunityInfo, OpportunityStatus
 
 logger = get_logger(__name__)
 
@@ -124,59 +124,172 @@ class MetabaseClient:
             logger.error(f"Unexpected error during Metabase query: {e}")
             raise MetabaseError(f"Unexpected query error: {e}")
     
-    def get_field_service_tasks(self, hours_back: int = 24) -> List[Dict[str, Any]]:
-        """获取现场服务任务数据"""
-        # 示例查询 - 实际使用时需要根据具体的数据库结构调整
-        query = """
-        SELECT 
-            task_id as id,
-            task_title as title,
-            task_description as description,
-            task_status as status,
-            priority_level as priority,
-            sla_hours,
-            ROUND((JULIANDAY('now') - JULIANDAY(created_at)) * 24, 2) as elapsed_hours,
-            assigned_group as group_id,
-            assignee_name as assignee,
-            customer_name as customer,
-            service_location as location,
-            created_at,
-            updated_at,
-            last_notification_time as last_notification
-        FROM field_service_tasks 
-        WHERE created_at >= datetime('now', '-{hours} hours')
-        AND task_status IN ('in_progress', 'assigned', 'pending')
-        ORDER BY created_at DESC
-        """.format(hours=hours_back)
-        
+    def query_card(self, card_id: int) -> List[Dict[str, Any]]:
+        """查询指定的 Metabase Card 数据"""
+        if not self.session_token:
+            if not self.authenticate():
+                raise MetabaseError("Failed to authenticate with Metabase")
+
         try:
-            return self.query_database(query)
+            card_url = f"{self.base_url}/api/card/{card_id}/query"
+
+            response = self.session.post(card_url, timeout=60)
+            response.raise_for_status()
+
+            result = response.json()
+
+            # 解析查询结果
+            if "data" in result:
+                columns = [col["name"] for col in result["data"]["cols"]]
+                rows = result["data"]["rows"]
+
+                # 转换为字典列表
+                data = [dict(zip(columns, row)) for row in rows]
+                logger.info(f"Successfully retrieved {len(data)} records from card {card_id}")
+                return data
+            else:
+                logger.warning(f"No data returned from Metabase card {card_id}")
+                return []
+
+        except requests.RequestException as e:
+            logger.error(f"Metabase card {card_id} query failed: {e}")
+            raise MetabaseError(f"Card query failed: {e}")
         except Exception as e:
-            logger.error(f"Failed to get field service tasks: {e}")
+            logger.error(f"Unexpected error during card {card_id} query: {e}")
+            raise MetabaseError(f"Unexpected card query error: {e}")
+
+    def get_field_service_opportunities(self) -> List[Dict[str, Any]]:
+        """获取现场服务商机数据 (Card 1712)"""
+        try:
+            # 使用 Card 1712 获取真实的商机数据
+            raw_data = self.query_card(1712)
+
+            # 数据验证和清理
+            validated_data = []
+            for record in raw_data:
+                try:
+                    # 验证必需字段 - 注意实际字段名可能有前缀
+                    required_fields = ['orderNum', 'name', 'address', 'createTime', 'orgName', 'orderstatus']
+                    supervisor_field = 'exts.supervisorName' if 'exts.supervisorName' in record else 'supervisorName'
+
+                    # 检查基础字段
+                    missing_fields = [f for f in required_fields if f not in record]
+                    if supervisor_field not in record:
+                        missing_fields.append('supervisorName')
+
+                    if not missing_fields:
+                        # 标准化字段名
+                        if 'exts.supervisorName' in record:
+                            record['supervisorName'] = record['exts.supervisorName']
+                        validated_data.append(record)
+                    else:
+                        logger.warning(f"Record missing required fields: {missing_fields}")
+
+                except Exception as e:
+                    logger.warning(f"Failed to validate record: {e}")
+                    continue
+
+            logger.info(f"Retrieved {len(validated_data)} valid opportunity records")
+            return validated_data
+
+        except Exception as e:
+            logger.error(f"Failed to get field service opportunities: {e}")
             return []
+
+    def get_overdue_opportunities(self) -> List[OpportunityInfo]:
+        """获取逾期的商机列表"""
+        try:
+            raw_opportunities = self.get_field_service_opportunities()
+            opportunities = []
+
+            for raw_opp in raw_opportunities:
+                try:
+                    # 转换为商机模型
+                    opportunity = self._convert_raw_opportunity_to_model(raw_opp)
+
+                    # 更新逾期信息
+                    opportunity.update_overdue_info()
+
+                    # 只返回逾期的商机
+                    if opportunity.is_overdue:
+                        opportunities.append(opportunity)
+
+                except Exception as e:
+                    logger.warning(f"Failed to convert opportunity {raw_opp.get('orderNum', 'unknown')}: {e}")
+                    continue
+
+            logger.info(f"Found {len(opportunities)} overdue opportunities")
+            return opportunities
+
+        except Exception as e:
+            logger.error(f"Failed to get overdue opportunities: {e}")
+            return []
+
+    def _convert_raw_opportunity_to_model(self, raw_opp: Dict[str, Any]) -> OpportunityInfo:
+        """将原始商机数据转换为OpportunityInfo模型"""
+        try:
+            # 状态映射
+            status_mapping = {
+                '待预约': OpportunityStatus.PENDING_APPOINTMENT,
+                '暂不上门': OpportunityStatus.TEMPORARILY_NOT_VISITING,
+                '已预约': OpportunityStatus.APPOINTED,
+                '已完成': OpportunityStatus.COMPLETED,
+                '已取消': OpportunityStatus.CANCELLED
+            }
+
+            # 获取状态，如果不在映射中则使用原值
+            order_status = status_mapping.get(
+                raw_opp.get('orderstatus', ''),
+                raw_opp.get('orderstatus', OpportunityStatus.PENDING_APPOINTMENT)
+            )
+
+            return OpportunityInfo(
+                order_num=str(raw_opp.get('orderNum', '')),
+                name=str(raw_opp.get('name', '')),
+                address=str(raw_opp.get('address', '')),
+                supervisor_name=str(raw_opp.get('supervisorName', '')),
+                create_time=raw_opp.get('createTime', ''),  # validator会处理字符串转换
+                org_name=str(raw_opp.get('orgName', '')),
+                order_status=order_status
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to convert raw opportunity data: {e}")
+            raise
     
     def get_overdue_tasks(self) -> List[TaskInfo]:
-        """获取超时任务列表"""
+        """获取超时任务列表 - 兼容性方法，实际使用商机数据"""
         try:
-            raw_tasks = self.get_field_service_tasks()
+            # 获取逾期商机
+            overdue_opportunities = self.get_overdue_opportunities()
+
+            # 转换为TaskInfo格式以保持向后兼容
             tasks = []
-            
-            for raw_task in raw_tasks:
+            for opp in overdue_opportunities:
                 try:
-                    # 数据转换和验证
-                    task = self._convert_raw_task_to_model(raw_task)
-                    
-                    # 只返回超时的任务
-                    if task.is_overdue:
-                        tasks.append(task)
-                        
+                    task = TaskInfo(
+                        id=hash(opp.order_num) % 1000000,  # 使用工单号生成ID
+                        title=f"商机跟进 - {opp.name}",
+                        description=f"地址: {opp.address}, 负责人: {opp.supervisor_name}",
+                        status=TaskStatus.OVERDUE,
+                        priority=Priority.HIGH if opp.escalation_level > 0 else Priority.NORMAL,
+                        sla_hours=opp.sla_threshold_hours or 24,
+                        elapsed_hours=opp.elapsed_hours or 0,
+                        group_id=opp.org_name,
+                        assignee=opp.supervisor_name,
+                        customer=opp.name,
+                        location=opp.address,
+                        created_at=opp.create_time,
+                        updated_at=opp.create_time
+                    )
+                    tasks.append(task)
                 except Exception as e:
-                    logger.warning(f"Failed to convert task {raw_task.get('id', 'unknown')}: {e}")
+                    logger.warning(f"Failed to convert opportunity to task: {e}")
                     continue
-            
-            logger.info(f"Found {len(tasks)} overdue tasks")
+
+            logger.info(f"Found {len(tasks)} overdue tasks (converted from opportunities)")
             return tasks
-            
+
         except Exception as e:
             logger.error(f"Failed to get overdue tasks: {e}")
             return []

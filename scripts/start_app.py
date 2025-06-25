@@ -25,11 +25,26 @@ def check_environment():
         print("⚠️  .env文件不存在")
         print("📝 请复制 .env.example 到 .env 并填入实际配置")
         return False
-    
-    # 检查必要的环境变量
-    from src.fsoa.utils.config import get_config
+
+    # 强制重新加载配置
     try:
+        # 清除所有相关的环境变量
+        for key in list(os.environ.keys()):
+            if key.startswith(('DEEPSEEK_', 'METABASE_', 'WECHAT_', 'AGENT_', 'NOTIFICATION_', 'LLM_', 'DATABASE_', 'LOG_', 'DEBUG', 'TESTING')):
+                del os.environ[key]
+
+        # 重新加载 .env 文件
+        from dotenv import load_dotenv
+        load_dotenv(override=True)
+
+        # 清除模块缓存
+        if 'src.fsoa.utils.config' in sys.modules:
+            del sys.modules['src.fsoa.utils.config']
+
+        # 重新导入配置
+        from src.fsoa.utils.config import get_config
         config = get_config()
+
         print(f"✅ 配置加载成功")
         print(f"📊 数据库: {config.database_url}")
         print(f"🔗 Metabase: {config.metabase_url}")

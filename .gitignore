@@ -62,9 +62,9 @@ Thumbs.db
 temp/
 tmp/
 
-# Test files (keep core test scripts)
-scripts/test_*.py
+# Test files (exclude temporary test scripts)
 scripts/force_reload_test.py
+scripts/temp_*.py
 
 # Jupyter Notebooks
 .ipynb_checkpoints
