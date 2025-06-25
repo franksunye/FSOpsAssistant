@@ -54,8 +54,25 @@ cp .env.example .env
 # 4. 初始化数据库
 python scripts/init_db.py
 
-# 5. 启动应用
+# 5. 启动Web界面（推荐用于测试）
+python scripts/start_web.py
+# 或直接运行：streamlit run src/fsoa/ui/app.py
+
+# 6. 启动完整应用（包含定时任务）
 python scripts/start_app.py
+```
+
+### 验证安装
+
+```bash
+# 检查环境配置
+python scripts/test_environment.py
+
+# 测试外部服务连接
+python scripts/test_services.py
+
+# 访问Web界面
+# 浏览器打开：http://localhost:8501
 ```
 
 ### 配置说明

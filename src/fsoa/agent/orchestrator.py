@@ -7,8 +7,7 @@ Agent编排器模块
 import uuid
 from datetime import datetime
 from typing import Dict, Any, List, Optional, TypedDict
-from langgraph import StateGraph, END
-from langgraph.graph import Graph
+from langgraph.graph import StateGraph, END
 
 from ..data.models import (
     TaskInfo, AgentExecution, AgentStatus, AgentHistory, 
@@ -46,7 +45,7 @@ class AgentOrchestrator:
         self.decision_engine = create_decision_engine()
         self.graph = self._build_graph()
         
-    def _build_graph(self) -> Graph:
+    def _build_graph(self):
         """构建Agent执行图"""
         # 创建状态图
         workflow = StateGraph(AgentState)

@@ -26,11 +26,38 @@ cp .env.example .env
 # 初始化数据库
 python scripts/init_db.py
 
-# 启动开发服务器
+# 启动Web界面（推荐用于开发测试）
+python scripts/start_web.py
+
+# 或启动完整应用（包含定时任务）
 python scripts/start_app.py
 ```
 
-### 1.3 配置文件
+### 1.3 环境验证
+
+```bash
+# 运行环境测试（验证所有组件是否正常）
+python scripts/test_environment.py
+
+# 预期输出：
+# ✅ 模块导入正常
+# ✅ 配置系统正常
+# ✅ 数据库连接正常
+# ✅ 日志系统正常
+# ✅ Agent组件正常
+# ✅ 通知系统正常
+
+# 测试外部服务连接
+python scripts/test_services.py
+
+# 预期输出：
+# ✅ DeepSeek API 连接成功
+# ✅ Metabase 连接成功
+# ✅ 企微 Webhook 配置成功
+# ✅ Agent 工作流测试成功
+```
+
+### 1.4 配置文件
 ```bash
 # .env 文件示例
 DEEPSEEK_API_KEY=your_deepseek_api_key

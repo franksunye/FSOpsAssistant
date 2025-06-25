@@ -6,7 +6,8 @@
 
 import os
 from typing import List, Optional
-from pydantic import BaseSettings, Field
+from pydantic_settings import BaseSettings
+from pydantic import Field
 from dotenv import load_dotenv
 
 # 加载.env文件
@@ -85,5 +86,12 @@ def get_config() -> Config:
 def reload_config():
     """重新加载配置"""
     global _config
+    # 清除环境变量缓存
+    import os
+    for key in list(os.environ.keys()):
+        if key.startswith(('DEEPSEEK_', 'METABASE_', 'WECHAT_', 'AGENT_', 'NOTIFICATION_', 'LLM_', 'DATABASE_', 'LOG_', 'DEBUG', 'TESTING')):
+            del os.environ[key]
+
+    # 重新加载 .env 文件
     load_dotenv(override=True)
-    _config = Config()
+    _config = None  # 强制重新创建配置实例

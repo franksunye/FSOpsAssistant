@@ -17,26 +17,37 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# 添加项目根目录到Python路径
+import sys
+import os
+from pathlib import Path
+
+# 获取项目根目录
+current_file = Path(__file__).resolve()
+project_root = current_file.parent.parent.parent.parent
+sys.path.insert(0, str(project_root))
+
 # 导入模块
 try:
-    from ..agent.tools import (
+    from src.fsoa.agent.tools import (
         fetch_overdue_tasks, test_metabase_connection,
         test_wechat_webhook, test_deepseek_connection, get_system_health
     )
-    from ..agent.orchestrator import AgentOrchestrator
-    from ..utils.scheduler import get_scheduler, setup_agent_scheduler, start_scheduler, stop_scheduler
-    from ..data.database import get_db_manager
-    from ..data.models import TaskStatus, Priority
-    from ..notification.wechat import get_wechat_client
-    from ..utils.config import get_config
-    from ..utils.logger import get_logger
-except ImportError:
-    # 开发环境下的导入
-    import sys
-    import os
-    sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-    
-    st.error("模块导入失败，请检查项目结构")
+    from src.fsoa.agent.orchestrator import AgentOrchestrator
+    from src.fsoa.utils.scheduler import get_scheduler, setup_agent_scheduler, start_scheduler, stop_scheduler
+    from src.fsoa.data.database import get_db_manager
+    from src.fsoa.data.models import TaskStatus, Priority
+    from src.fsoa.notification.wechat import get_wechat_client
+    from src.fsoa.utils.config import get_config
+    from src.fsoa.utils.logger import get_logger
+
+    # 强制重新加载配置
+    from dotenv import load_dotenv
+    load_dotenv(override=True)
+
+except ImportError as e:
+    st.error(f"模块导入失败: {e}")
+    st.error("请检查项目结构和Python路径配置")
     st.stop()
 
 logger = get_logger(__name__)

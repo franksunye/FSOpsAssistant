@@ -26,10 +26,24 @@ class DeepSeekClient:
     
     def __init__(self):
         self.config = get_config()
-        self.client = OpenAI(
-            api_key=self.config.deepseek_api_key,
-            base_url=self.config.deepseek_base_url
-        )
+        try:
+            # 尝试创建 OpenAI 客户端
+            self.client = OpenAI(
+                api_key=self.config.deepseek_api_key,
+                base_url=self.config.deepseek_base_url
+            )
+        except TypeError as e:
+            if "proxies" in str(e):
+                # 如果遇到 proxies 参数错误，尝试使用简化的初始化
+                import httpx
+                http_client = httpx.Client()
+                self.client = OpenAI(
+                    api_key=self.config.deepseek_api_key,
+                    base_url=self.config.deepseek_base_url,
+                    http_client=http_client
+                )
+            else:
+                raise
         
     def analyze_task_priority(self, task: TaskInfo, context: Dict[str, Any] = None) -> DecisionResult:
         """
