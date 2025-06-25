@@ -9,13 +9,19 @@ from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any
 from functools import wraps
 
-from ..data.models import TaskInfo, NotificationInfo, NotificationStatus, Priority, OpportunityInfo
+from ..data.models import (
+    TaskInfo, NotificationInfo, NotificationStatus, Priority, OpportunityInfo,
+    AgentRun, AgentHistory, NotificationTask
+)
 from ..data.database import get_db_manager
 from ..data.metabase import get_metabase_client, MetabaseError
 from ..notification.wechat import send_wechat_message, get_wechat_client, WeChatError
 from ..notification.business_formatter import BusinessNotificationFormatter
 from ..utils.logger import get_logger, log_function_call
 from ..utils.config import get_config
+
+# 导入新的管理器
+from .managers import NotificationTaskManager, AgentExecutionTracker, BusinessDataStrategy
 
 logger = get_logger(__name__)
 
@@ -56,11 +62,48 @@ def retry_on_failure(max_retries: int = 3, delay: float = 1.0):
     return decorator
 
 
+# ============================================================================
+# 重构后的Agent工具函数 - 使用新的管理器架构
+# ============================================================================
+
+# 全局管理器实例
+_data_strategy = None
+_notification_manager = None
+_execution_tracker = None
+
+def get_data_strategy() -> BusinessDataStrategy:
+    """获取业务数据策略实例"""
+    global _data_strategy
+    if _data_strategy is None:
+        _data_strategy = BusinessDataStrategy()
+    return _data_strategy
+
+def get_notification_manager() -> NotificationTaskManager:
+    """获取通知任务管理器实例"""
+    global _notification_manager
+    if _notification_manager is None:
+        _notification_manager = NotificationTaskManager()
+    return _notification_manager
+
+def get_execution_tracker() -> AgentExecutionTracker:
+    """获取执行追踪器实例"""
+    global _execution_tracker
+    if _execution_tracker is None:
+        _execution_tracker = AgentExecutionTracker()
+    return _execution_tracker
+
+
+# ============================================================================
+# 废弃的函数 - 保留用于向后兼容
+# ============================================================================
+
 @log_function_call
 @retry_on_failure(max_retries=3)
 def fetch_overdue_tasks() -> List[TaskInfo]:
     """
-    从Metabase获取超时任务列表
+    从Metabase获取超时任务列表 - 已废弃
+
+    请使用 get_data_strategy().get_opportunities() 替代
 
     Returns:
         超时任务列表
@@ -68,31 +111,54 @@ def fetch_overdue_tasks() -> List[TaskInfo]:
     Raises:
         ToolError: 当获取数据失败时
     """
+    logger.warning("fetch_overdue_tasks() is deprecated, use get_data_strategy().get_opportunities() instead")
+
     try:
-        metabase_client = get_metabase_client()
-        tasks = metabase_client.get_overdue_tasks()
+        # 使用新的数据策略获取商机，然后转换为TaskInfo格式
+        data_strategy = get_data_strategy()
+        opportunities = data_strategy.get_overdue_opportunities()
 
-        # 保存任务到本地数据库
-        db_manager = get_db_manager()
-        for task in tasks:
-            db_manager.save_task(task)
+        # 转换为TaskInfo格式以保持兼容性
+        tasks = []
+        for opp in opportunities:
+            task = TaskInfo(
+                id=hash(opp.order_num) % 1000000,  # 生成伪ID
+                title=f"商机跟进 - {opp.name}",
+                description=f"地址: {opp.address}",
+                status=TaskInfo.TaskStatus.OVERDUE,
+                priority=Priority.HIGH if opp.escalation_level > 0 else Priority.NORMAL,
+                sla_hours=opp.sla_threshold_hours or 24,
+                elapsed_hours=opp.elapsed_hours or 0,
+                overdue_hours=opp.overdue_hours or 0,
+                group_id=opp.org_name,
+                assignee=opp.supervisor_name,
+                customer=opp.name,
+                location=opp.address,
+                created_at=opp.create_time,
+                updated_at=datetime.now()
+            )
+            tasks.append(task)
 
-        logger.info(f"Successfully fetched {len(tasks)} overdue tasks")
+        logger.info(f"Successfully converted {len(opportunities)} opportunities to {len(tasks)} tasks")
         return tasks
 
-    except MetabaseError as e:
-        logger.error(f"Metabase error while fetching tasks: {e}")
-        raise ToolError(f"Failed to fetch tasks from Metabase: {e}")
     except Exception as e:
-        logger.error(f"Unexpected error while fetching tasks: {e}")
-        raise ToolError(f"Unexpected error: {e}")
+        logger.error(f"Failed to fetch overdue tasks: {e}")
+        raise ToolError(f"Failed to fetch overdue tasks: {e}")
 
+
+# ============================================================================
+# 重构后的核心工具函数
+# ============================================================================
 
 @log_function_call
 @retry_on_failure(max_retries=3)
-def fetch_overdue_opportunities() -> List[OpportunityInfo]:
+def fetch_overdue_opportunities(force_refresh: bool = False) -> List[OpportunityInfo]:
     """
-    从Metabase获取逾期商机列表
+    获取逾期商机列表 - 重构版本，使用新的数据策略
+
+    Args:
+        force_refresh: 是否强制刷新数据，忽略缓存
 
     Returns:
         逾期商机列表
@@ -101,18 +167,117 @@ def fetch_overdue_opportunities() -> List[OpportunityInfo]:
         ToolError: 当获取数据失败时
     """
     try:
-        metabase_client = get_metabase_client()
-        opportunities = metabase_client.get_overdue_opportunities()
+        data_strategy = get_data_strategy()
+        opportunities = data_strategy.get_overdue_opportunities(force_refresh)
 
         logger.info(f"Successfully fetched {len(opportunities)} overdue opportunities")
         return opportunities
 
-    except MetabaseError as e:
-        logger.error(f"Metabase error while fetching opportunities: {e}")
-        raise ToolError(f"Failed to fetch opportunities from Metabase: {e}")
     except Exception as e:
-        logger.error(f"Unexpected error while fetching opportunities: {e}")
-        raise ToolError(f"Unexpected error: {e}")
+        logger.error(f"Failed to fetch overdue opportunities: {e}")
+        raise ToolError(f"Failed to fetch overdue opportunities: {e}")
+
+
+@log_function_call
+def get_all_opportunities(force_refresh: bool = False) -> List[OpportunityInfo]:
+    """
+    获取所有商机列表
+
+    Args:
+        force_refresh: 是否强制刷新数据，忽略缓存
+
+    Returns:
+        所有商机列表
+    """
+    try:
+        data_strategy = get_data_strategy()
+        opportunities = data_strategy.get_opportunities(force_refresh)
+
+        logger.info(f"Successfully fetched {len(opportunities)} opportunities")
+        return opportunities
+
+    except Exception as e:
+        logger.error(f"Failed to fetch opportunities: {e}")
+        raise ToolError(f"Failed to fetch opportunities: {e}")
+
+
+@log_function_call
+def get_opportunities_by_org(org_name: str, force_refresh: bool = False) -> List[OpportunityInfo]:
+    """
+    按组织获取商机列表
+
+    Args:
+        org_name: 组织名称
+        force_refresh: 是否强制刷新数据
+
+    Returns:
+        指定组织的商机列表
+    """
+    try:
+        data_strategy = get_data_strategy()
+        opportunities = data_strategy.get_opportunities_by_org(org_name, force_refresh)
+
+        logger.info(f"Successfully fetched {len(opportunities)} opportunities for {org_name}")
+        return opportunities
+
+    except Exception as e:
+        logger.error(f"Failed to fetch opportunities for {org_name}: {e}")
+        raise ToolError(f"Failed to fetch opportunities for {org_name}: {e}")
+
+
+@log_function_call
+def create_notification_tasks(opportunities: List[OpportunityInfo], run_id: int) -> List[NotificationTask]:
+    """
+    基于商机创建通知任务
+
+    Args:
+        opportunities: 商机列表
+        run_id: Agent运行ID
+
+    Returns:
+        创建的通知任务列表
+    """
+    try:
+        notification_manager = get_notification_manager()
+        tasks = notification_manager.create_notification_tasks(opportunities, run_id)
+
+        logger.info(f"Successfully created {len(tasks)} notification tasks")
+        return tasks
+
+    except Exception as e:
+        logger.error(f"Failed to create notification tasks: {e}")
+        raise ToolError(f"Failed to create notification tasks: {e}")
+
+
+@log_function_call
+def execute_notification_tasks(run_id: int) -> Dict[str, Any]:
+    """
+    执行待处理的通知任务
+
+    Args:
+        run_id: Agent运行ID
+
+    Returns:
+        执行结果统计
+    """
+    try:
+        notification_manager = get_notification_manager()
+        result = notification_manager.execute_pending_tasks(run_id)
+
+        result_dict = {
+            "total_tasks": result.total_tasks,
+            "sent_count": result.sent_count,
+            "failed_count": result.failed_count,
+            "escalated_count": result.escalated_count,
+            "errors": result.errors
+        }
+
+        logger.info(f"Notification execution completed: {result_dict}")
+        return result_dict
+
+    except Exception as e:
+        logger.error(f"Failed to execute notification tasks: {e}")
+        raise ToolError(f"Failed to execute notification tasks: {e}")
 
 
 @log_function_call
@@ -388,12 +553,13 @@ def get_system_health() -> Dict[str, Any]:
 
 
 @log_function_call
-def send_business_notifications(opportunities: List[OpportunityInfo]) -> Dict[str, Any]:
+def send_business_notifications(opportunities: List[OpportunityInfo], run_id: Optional[int] = None) -> Dict[str, Any]:
     """
-    发送业务通知到对应的企微群
+    发送业务通知到对应的企微群 - 重构版本，使用新的通知管理器
 
     Args:
         opportunities: 逾期商机列表
+        run_id: Agent运行ID（可选）
 
     Returns:
         发送结果统计
@@ -402,89 +568,156 @@ def send_business_notifications(opportunities: List[OpportunityInfo]) -> Dict[st
         logger.info("No opportunities to notify")
         return {"total": 0, "sent": 0, "failed": 0, "escalated": 0}
 
-    # 按组织分组
-    org_opportunities = {}
-    escalation_opportunities = {}
+    try:
+        notification_manager = get_notification_manager()
 
-    for opp in opportunities:
-        org_name = opp.org_name
-        if org_name not in org_opportunities:
-            org_opportunities[org_name] = []
-        org_opportunities[org_name].append(opp)
+        # 如果没有提供run_id，创建一个临时的
+        if run_id is None:
+            execution_tracker = get_execution_tracker()
+            run_id = execution_tracker.start_run({"temporary": True, "direct_notification": True})
 
-        # 检查是否需要升级
-        if opp.escalation_level > 0:
-            if org_name not in escalation_opportunities:
-                escalation_opportunities[org_name] = []
-            escalation_opportunities[org_name].append(opp)
+        # 创建通知任务
+        tasks = notification_manager.create_notification_tasks(opportunities, run_id)
 
-    wechat_client = get_wechat_client()
-    formatter = BusinessNotificationFormatter()
+        # 执行通知任务
+        result = notification_manager.execute_pending_tasks(run_id)
 
-    sent_count = 0
-    failed_count = 0
-    escalated_count = 0
+        # 转换结果格式以保持兼容性
+        return {
+            "total": result.total_tasks,
+            "sent": result.sent_count,
+            "failed": result.failed_count,
+            "escalated": result.escalated_count,
+            "errors": result.errors
+        }
 
-    # 发送标准通知
-    for org_name, org_opps in org_opportunities.items():
-        try:
-            # 格式化通知内容
-            message = formatter.format_org_overdue_notification(org_name, org_opps)
+    except Exception as e:
+        logger.error(f"Failed to send business notifications: {e}")
+        return {
+            "total": len(opportunities),
+            "sent": 0,
+            "failed": len(opportunities),
+            "escalated": 0,
+            "errors": [str(e)]
+        }
 
-            if message:
-                # 发送到组织对应的企微群
-                success = wechat_client.send_notification_to_org(
-                    org_name=org_name,
-                    content=message,
-                    is_escalation=False
-                )
 
-                if success:
-                    sent_count += len(org_opps)
-                    logger.info(f"Sent notification to {org_name} for {len(org_opps)} opportunities")
-                else:
-                    failed_count += len(org_opps)
-                    logger.error(f"Failed to send notification to {org_name}")
 
-        except Exception as e:
-            logger.error(f"Error sending notification to {org_name}: {e}")
-            failed_count += len(org_opps)
+# ============================================================================
+# 新增的工具函数 - 基于新架构
+# ============================================================================
 
-    # 发送升级通知
-    for org_name, escalation_opps in escalation_opportunities.items():
-        try:
-            # 格式化升级通知内容
-            message = formatter.format_escalation_notification(
-                org_name=org_name,
-                opportunities=escalation_opps,
-                mention_users=["运营负责人", "区域经理"]  # 可配置
-            )
+@log_function_call
+def start_agent_execution(context: Optional[Dict[str, Any]] = None) -> int:
+    """
+    开始Agent执行
 
-            if message:
-                # 发送到内部运营群
-                success = wechat_client.send_notification_to_org(
-                    org_name=org_name,
-                    content=message,
-                    is_escalation=True,
-                    mention_users=["运营负责人", "区域经理"]
-                )
+    Args:
+        context: 执行上下文
 
-                if success:
-                    escalated_count += len(escalation_opps)
-                    logger.info(f"Sent escalation notification for {org_name} with {len(escalation_opps)} opportunities")
-                else:
-                    logger.error(f"Failed to send escalation notification for {org_name}")
+    Returns:
+        执行ID
+    """
+    try:
+        execution_tracker = get_execution_tracker()
+        run_id = execution_tracker.start_run(context)
 
-        except Exception as e:
-            logger.error(f"Error sending escalation notification for {org_name}: {e}")
+        logger.info(f"Started Agent execution {run_id}")
+        return run_id
 
-    result = {
-        "total": len(opportunities),
-        "sent": sent_count,
-        "failed": failed_count,
-        "escalated": escalated_count,
-        "organizations": len(org_opportunities)
-    }
+    except Exception as e:
+        logger.error(f"Failed to start Agent execution: {e}")
+        raise ToolError(f"Failed to start Agent execution: {e}")
 
-    logger.info(f"Notification summary: {result}")
-    return result
+
+@log_function_call
+def complete_agent_execution(run_id: int, final_stats: Dict[str, Any]) -> bool:
+    """
+    完成Agent执行
+
+    Args:
+        run_id: 执行ID
+        final_stats: 最终统计信息
+
+    Returns:
+        是否成功
+    """
+    try:
+        execution_tracker = get_execution_tracker()
+        success = execution_tracker.complete_run(run_id, final_stats)
+
+        if success:
+            logger.info(f"Completed Agent execution {run_id}")
+        else:
+            logger.error(f"Failed to complete Agent execution {run_id}")
+
+        return success
+
+    except Exception as e:
+        logger.error(f"Failed to complete Agent execution {run_id}: {e}")
+        return False
+
+
+@log_function_call
+def get_data_statistics() -> Dict[str, Any]:
+    """
+    获取数据统计信息
+
+    Returns:
+        数据统计信息
+    """
+    try:
+        data_strategy = get_data_strategy()
+        cache_stats = data_strategy.get_cache_statistics()
+
+        # 获取基本统计
+        all_opportunities = data_strategy.get_opportunities()
+        overdue_opportunities = [opp for opp in all_opportunities if opp.is_overdue]
+        escalation_opportunities = [opp for opp in overdue_opportunities if opp.escalation_level > 0]
+
+        stats = {
+            "total_opportunities": len(all_opportunities),
+            "overdue_opportunities": len(overdue_opportunities),
+            "escalation_opportunities": len(escalation_opportunities),
+            "organizations": len(set(opp.org_name for opp in all_opportunities)),
+            "cache_statistics": cache_stats,
+            "last_updated": datetime.now()
+        }
+
+        logger.info(f"Data statistics: {stats}")
+        return stats
+
+    except Exception as e:
+        logger.error(f"Failed to get data statistics: {e}")
+        return {"error": str(e)}
+
+
+@log_function_call
+def refresh_business_data() -> Dict[str, Any]:
+    """
+    手动刷新业务数据
+
+    Returns:
+        刷新结果
+    """
+    try:
+        data_strategy = get_data_strategy()
+        old_count, new_count = data_strategy.refresh_cache()
+
+        result = {
+            "success": True,
+            "old_cache_count": old_count,
+            "new_cache_count": new_count,
+            "refresh_time": datetime.now()
+        }
+
+        logger.info(f"Business data refreshed: {result}")
+        return result
+
+    except Exception as e:
+        logger.error(f"Failed to refresh business data: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "refresh_time": datetime.now()
+        }
