@@ -71,31 +71,33 @@ class AgentOrchestrator:
         self.graph = self._build_graph()
         
     def _build_graph(self):
-        """构建Agent执行图 - 修复递归循环问题"""
+        """构建Agent执行图 - 符合架构设计的6步流程"""
         # 创建状态图
         workflow = StateGraph(AgentState)
 
-        # 添加节点 - 简化为批量处理流程
-        workflow.add_node("fetch_opportunities", self._fetch_tasks_node)
-        workflow.add_node("process_opportunities", self._process_task_node)
-        workflow.add_node("send_notifications", self._send_notification_node)
-        workflow.add_node("finalize", self._finalize_node)
+        # 添加节点 - 按照架构设计的6个核心流程
+        workflow.add_node("fetch_data", self._fetch_data_node)           # 2. 获取任务数据
+        workflow.add_node("analyze_status", self._analyze_status_node)   # 3. 分析超时状态
+        workflow.add_node("make_decision", self._make_decision_node)     # 4. 智能决策
+        workflow.add_node("send_notifications", self._send_notification_node)  # 5. 发送通知
+        workflow.add_node("record_results", self._record_results_node)   # 6. 记录结果
 
         # 设置入口点
-        workflow.set_entry_point("fetch_opportunities")
+        workflow.set_entry_point("fetch_data")
 
-        # 添加边 - 简化为线性流程，避免循环
-        workflow.add_edge("fetch_opportunities", "process_opportunities")
+        # 添加边 - 线性流程，符合架构设计
+        workflow.add_edge("fetch_data", "analyze_status")
         workflow.add_conditional_edges(
-            "process_opportunities",
-            self._should_send_notifications,
+            "analyze_status",
+            self._should_continue_processing,
             {
-                "send": "send_notifications",
-                "skip": "finalize"
+                "continue": "make_decision",
+                "skip": "record_results"
             }
         )
-        workflow.add_edge("send_notifications", "finalize")
-        workflow.add_edge("finalize", END)
+        workflow.add_edge("make_decision", "send_notifications")
+        workflow.add_edge("send_notifications", "record_results")
+        workflow.add_edge("record_results", END)
 
         return workflow.compile()
     
@@ -191,12 +193,12 @@ class AgentOrchestrator:
         
         return execution
     
-    def _fetch_tasks_node(self, state: AgentState) -> AgentState:
-        """获取任务节点 - 重构版本使用新的数据策略"""
+    def _fetch_data_node(self, state: AgentState) -> AgentState:
+        """2. 获取任务数据 - 从Metabase获取商机数据"""
         run_id = state["run_id"]
 
         # 使用执行追踪器记录步骤
-        with self.execution_tracker.track_step("fetch_opportunities", {"run_id": run_id}) as output:
+        with self.execution_tracker.track_step("fetch_data", {"run_id": run_id}) as output:
             try:
                 # 使用新的数据策略获取商机
                 force_refresh = state["context"].get("force_refresh", False)
@@ -254,7 +256,92 @@ class AgentOrchestrator:
                     state["context"]["total_opportunities"] = 0
 
         return state
-    
+
+    def _analyze_status_node(self, state: AgentState) -> AgentState:
+        """3. 分析超时状态 - 分析商机的超时状态和优先级"""
+        run_id = state["run_id"]
+
+        with self.execution_tracker.track_step("analyze_status", {"run_id": run_id}) as output:
+            try:
+                opportunities = state.get("opportunities", [])
+
+                if not opportunities:
+                    output["message"] = "No opportunities to analyze"
+                    logger.info("No opportunities to analyze")
+                    return state
+
+                # 分析超时状态
+                overdue_opportunities = [opp for opp in opportunities if opp.is_overdue]
+                escalation_opportunities = [opp for opp in opportunities if opp.escalation_level > 0]
+
+                # 按组织分组
+                org_stats = {}
+                for opp in opportunities:
+                    if opp.org_name not in org_stats:
+                        org_stats[opp.org_name] = {"total": 0, "overdue": 0, "escalation": 0}
+                    org_stats[opp.org_name]["total"] += 1
+                    if opp.is_overdue:
+                        org_stats[opp.org_name]["overdue"] += 1
+                    if opp.escalation_level > 0:
+                        org_stats[opp.org_name]["escalation"] += 1
+
+                # 更新状态
+                state["context"]["analysis_result"] = {
+                    "total_opportunities": len(opportunities),
+                    "overdue_count": len(overdue_opportunities),
+                    "escalation_count": len(escalation_opportunities),
+                    "organization_stats": org_stats
+                }
+
+                # 输出统计
+                output.update(state["context"]["analysis_result"])
+
+                logger.info(f"Analyzed {len(opportunities)} opportunities: {len(overdue_opportunities)} overdue, {len(escalation_opportunities)} need escalation")
+
+            except Exception as e:
+                error_msg = f"Failed to analyze status: {e}"
+                state["errors"].append(error_msg)
+                output["error"] = error_msg
+                logger.error(error_msg)
+
+        return state
+
+    def _make_decision_node(self, state: AgentState) -> AgentState:
+        """4. 智能决策 - 基于规则+LLM的混合决策"""
+        run_id = state["run_id"]
+
+        with self.execution_tracker.track_step("make_decision", {"run_id": run_id}) as output:
+            try:
+                opportunities = state.get("opportunities", [])
+
+                if not opportunities:
+                    output["message"] = "No opportunities for decision making"
+                    logger.info("No opportunities for decision making")
+                    return state
+
+                # 创建通知任务（包含决策逻辑）
+                notification_tasks = self.notification_manager.create_notification_tasks(
+                    opportunities, run_id
+                )
+
+                state["notification_tasks"] = notification_tasks
+                state["processed_opportunities"] = opportunities.copy()
+
+                # 输出决策结果
+                output["notification_tasks_created"] = len(notification_tasks)
+                output["standard_tasks"] = len([t for t in notification_tasks if t.notification_type.value == "standard"])
+                output["escalation_tasks"] = len([t for t in notification_tasks if t.notification_type.value == "escalation"])
+
+                logger.info(f"Decision made: created {len(notification_tasks)} notification tasks")
+
+            except Exception as e:
+                error_msg = f"Failed to make decision: {e}"
+                state["errors"].append(error_msg)
+                output["error"] = error_msg
+                logger.error(error_msg)
+
+        return state
+
     def _process_task_node(self, state: AgentState) -> AgentState:
         """处理任务节点 - 重构版本处理商机和通知任务"""
         run_id = state["run_id"]
@@ -309,7 +396,48 @@ class AgentOrchestrator:
 
         return state
     
-    # 移除 _make_decision_node - 决策逻辑已集成到通知管理器中
+    def _record_results_node(self, state: AgentState) -> AgentState:
+        """6. 记录结果 - 记录执行结果和统计信息"""
+        run_id = state["run_id"]
+
+        with self.execution_tracker.track_step("record_results", {"run_id": run_id}) as output:
+            try:
+                # 统计执行结果
+                opportunities = state.get("opportunities", [])
+                processed_opportunities = state.get("processed_opportunities", [])
+                notification_tasks = state.get("notification_tasks", [])
+                notifications_sent = state.get("notifications_sent", 0)
+                errors = state.get("errors", [])
+
+                # 记录最终统计
+                final_stats = {
+                    "total_opportunities": len(opportunities),
+                    "processed_opportunities": len(processed_opportunities),
+                    "notification_tasks_created": len(notification_tasks),
+                    "notifications_sent": notifications_sent,
+                    "errors_count": len(errors),
+                    "success_rate": (notifications_sent / len(notification_tasks)) if notification_tasks else 1.0
+                }
+
+                state["context"]["final_stats"] = final_stats
+                output.update(final_stats)
+
+                # 记录到日志
+                logger.info(f"Execution completed: {final_stats}")
+
+                # 向后兼容：记录传统任务统计
+                legacy_tasks = state.get("tasks", [])
+                processed_tasks = state.get("processed_tasks", [])
+                output["legacy_tasks_total"] = len(legacy_tasks)
+                output["legacy_tasks_processed"] = len(processed_tasks)
+
+            except Exception as e:
+                error_msg = f"Failed to record results: {e}"
+                state["errors"].append(error_msg)
+                output["error"] = error_msg
+                logger.error(error_msg)
+
+        return state
     
     def _send_notification_node(self, state: AgentState) -> AgentState:
         """发送通知节点 - 重构版本使用新的通知管理器"""
@@ -389,33 +517,21 @@ class AgentOrchestrator:
     
     # 移除 _update_status_node - 状态更新已集成到通知管理器中
     
-    def _finalize_node(self, state: AgentState) -> AgentState:
-        """完成节点"""
-        log_agent_step(
-            "finalize",
-            output_data={
-                "total_opportunities": len(state.get("opportunities", [])),
-                "processed_opportunities": len(state.get("processed_opportunities", [])),
-                "notification_tasks": len(state.get("notification_tasks", [])),
-                "notifications_sent": state.get("notifications_sent", 0),
-                "errors_count": len(state.get("errors", [])),
-                # 向后兼容
-                "total_tasks": len(state.get("tasks", [])),
-                "processed_tasks": len(state.get("processed_tasks", []))
-            }
-        )
-
-        return state
+    # _finalize_node 已被 _record_results_node 替代
     
-    def _should_send_notifications(self, state: AgentState) -> str:
-        """判断是否需要发送通知"""
-        notification_tasks = state.get("notification_tasks", [])
+    def _should_continue_processing(self, state: AgentState) -> str:
+        """判断是否继续处理 - 基于分析结果决定"""
         opportunities = state.get("opportunities", [])
+        analysis_result = state.get("context", {}).get("analysis_result", {})
 
-        # 如果有通知任务或商机需要处理，则发送通知
-        if notification_tasks or opportunities:
-            return "send"
+        # 如果有商机需要处理，继续执行决策
+        if opportunities and analysis_result.get("overdue_count", 0) > 0:
+            return "continue"
+        elif opportunities:
+            # 有商机但没有超时的，也继续处理（可能有其他需要通知的情况）
+            return "continue"
         else:
+            # 没有商机，跳过后续处理
             return "skip"
     
     def get_execution_history(self, limit: int = 10) -> List[AgentExecution]:

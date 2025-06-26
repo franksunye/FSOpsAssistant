@@ -83,6 +83,11 @@ graph TB
     P3 --> P4
     P4 --> P5
     P5 --> P6
+    P1 --> P2
+    P2 --> P3
+    P3 --> P4
+    P4 --> P5
+    P5 --> P6
 
     %% 样式
     classDef external fill:#e1f5fe
@@ -271,7 +276,7 @@ Metabase (只读) → Agent Engine → 本地数据库 (Agent记录 + 通知任�
 
 ### 5.1 核心技术
 - **Python 3.9+**：主要开发语言
-- **LangGraph**：Agent编排框架
+- **LangGraph**：Agent编排框架，实现状态图工作流
 - **DeepSeek**：LLM推理引擎
 - **SQLite**：本地数据存储
 - **Streamlit**：Web UI框架
@@ -371,6 +376,70 @@ ALTER TABLE notification_tasks ADD COLUMN last_sent_at DATETIME;
 Metabase → BusinessTime → OpportunityInfo → Streamlit
 ```
 
+## 6. LangGraph工作流实现
+
+### 6.1 状态图设计
+
+Agent Orchestrator使用LangGraph实现状态图工作流，严格按照6步核心流程执行：
+
+```mermaid
+graph TD
+    START([开始]) --> FETCH[fetch_data<br/>2. 获取任务数据]
+    FETCH --> ANALYZE[analyze_status<br/>3. 分析超时状态]
+    ANALYZE --> DECISION{有需要处理的商机?}
+    DECISION -->|是| MAKE[make_decision<br/>4. 智能决策]
+    DECISION -->|否| RECORD[record_results<br/>6. 记录结果]
+    MAKE --> NOTIFY[send_notifications<br/>5. 发送通知]
+    NOTIFY --> RECORD
+    RECORD --> END([结束])
+```
+
+### 6.2 节点实现
+
+| 节点名称 | 对应流程 | 主要功能 | 实现方法 |
+|---------|---------|---------|---------|
+| `fetch_data` | 2. 获取任务数据 | 从Metabase获取商机数据 | `_fetch_data_node()` |
+| `analyze_status` | 3. 分析超时状态 | 分析商机超时状态和优先级 | `_analyze_status_node()` |
+| `make_decision` | 4. 智能决策 | 基于规则+LLM的混合决策 | `_make_decision_node()` |
+| `send_notifications` | 5. 发送通知 | 执行通知发送 | `_send_notification_node()` |
+| `record_results` | 6. 记录结果 | 记录执行结果和统计 | `_record_results_node()` |
+
+### 6.3 状态管理
+
+```python
+class AgentState(TypedDict):
+    # 执行上下文
+    run_id: str
+    context: Dict[str, Any]
+
+    # 业务数据
+    opportunities: List[OpportunityInfo]
+    processed_opportunities: List[OpportunityInfo]
+    notification_tasks: List[NotificationTask]
+
+    # 执行结果
+    notifications_sent: int
+    errors: List[str]
+
+    # 向后兼容
+    tasks: List[Task]
+    processed_tasks: List[Task]
+```
+
+### 6.4 条件分支
+
+- **`_should_continue_processing()`**: 判断是否有商机需要处理
+  - 有超时商机 → 继续执行决策
+  - 有商机但无超时 → 继续执行（可能有其他通知需求）
+  - 无商机 → 跳过处理，直接记录结果
+
+### 6.5 错误处理
+
+- **节点级错误处理**: 每个节点内部捕获异常，记录到 `state["errors"]`
+- **优雅降级**: 数据获取失败时使用缓存数据
+- **执行追踪**: 所有步骤都有详细的执行日志和性能监控
+
 ---
 > 架构设计遵循KISS原则，优先实现核心功能，保持扩展性
 > v0.2.0 重点增强了时间计算精度和通知控制能力
+> v0.3.0 修复了LangGraph递归循环问题，优化了工作流设计

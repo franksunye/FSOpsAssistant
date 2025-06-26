@@ -78,7 +78,7 @@ def test_graph_structure():
         nodes = list(graph.nodes.keys())
         print(f"📋 图节点: {nodes}")
         
-        expected_nodes = ["fetch_opportunities", "process_opportunities", "send_notifications", "finalize"]
+        expected_nodes = ["fetch_data", "analyze_status", "make_decision", "send_notifications", "record_results"]
         missing_nodes = [node for node in expected_nodes if node not in nodes]
         
         if missing_nodes:
