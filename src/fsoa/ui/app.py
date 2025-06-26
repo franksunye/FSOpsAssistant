@@ -12,7 +12,7 @@ from typing import List, Dict, Any
 # 设置页面配置
 st.set_page_config(
     page_title="FSOA - 现场服务运营助手",
-    page_icon="🤖",
+    page_icon="⚙️",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -57,47 +57,47 @@ logger = get_logger(__name__)
 
 def main():
     """主应用函数"""
-    st.title("🤖 FSOA - 现场服务运营助手")
-    st.markdown("---")
     
     # 侧边栏导航 - 重新设计为业务导向的清晰结构
     with st.sidebar:
-        st.title("🤖 FSOA 运营助手")
+        st.title("FSOA 运营助手")
         st.markdown("*现场服务智能监控系统*")
         st.markdown("---")
 
         # 核心业务功能
-        st.subheader("📊 核心监控")
-        if st.button("🎯 运营仪表板", use_container_width=True):
+        st.subheader("核心监控")
+        if st.button("运营仪表板", use_container_width=True):
             st.session_state.page = "dashboard"
-        if st.button("📋 商机监控", use_container_width=True):
+        if st.button("商机监控", use_container_width=True):
             st.session_state.page = "opportunities"
-        if st.button("📈 业务分析", use_container_width=True):
+        if st.button("业务分析", use_container_width=True):
             st.session_state.page = "analytics"
 
         st.markdown("---")
 
         # Agent管理功能
-        st.subheader("🤖 Agent管理")
-        if st.button("🎛️ Agent控制台", use_container_width=True):
+        st.subheader("Agent管理")
+        if st.button("Agent控制台", use_container_width=True):
             st.session_state.page = "agent_control"
-        if st.button("🔍 执行历史", use_container_width=True):
+        if st.button("执行历史", use_container_width=True):
             st.session_state.page = "execution_history"
-        if st.button("📬 通知管理", use_container_width=True):
+        if st.button("通知管理", use_container_width=True):
             st.session_state.page = "notification_management"
 
         st.markdown("---")
 
         # 系统管理功能
-        st.subheader("⚙️ 系统管理")
-        if st.button("💾 缓存管理", use_container_width=True):
+        st.subheader("系统管理")
+        if st.button("缓存管理", use_container_width=True):
             st.session_state.page = "cache_management"
-        if st.button("🔧 企微群配置", use_container_width=True):
+        if st.button("企微群配置", use_container_width=True):
             st.session_state.page = "wechat_config"
-        if st.button("⚙️ 系统设置", use_container_width=True):
+        if st.button("系统设置", use_container_width=True):
             st.session_state.page = "system_settings"
-        if st.button("🧪 系统测试", use_container_width=True):
+        if st.button("系统测试", use_container_width=True):
             st.session_state.page = "system_test"
+        if st.button("关于", use_container_width=True):
+            st.session_state.page = "about"
 
         # 获取当前页面
         page = st.session_state.get("page", "dashboard")
@@ -123,13 +123,14 @@ def main():
         show_system_test()
     elif page == "system_settings":
         show_system_settings()
+    elif page == "about":
+        show_about()
     else:
         show_dashboard()  # 默认页面
 
 
 def show_dashboard():
     """显示运营仪表板 - 重新设计为业务价值导向"""
-    st.title("🎯 FSOA 智能运营仪表板")
     st.markdown("**现场服务运营助手** - 主动监控 • 智能决策 • 自动通知")
     st.markdown("---")
 
@@ -185,82 +186,82 @@ def show_dashboard():
         org_breakdown = {}
         status_breakdown = {}
 
-    # 核心业务指标 - 突出Agent的价值
-    st.subheader("🎯 核心业务指标")
+    # 核心业务指标
+    st.subheader("核心业务指标")
 
     col1, col2, col3, col4 = st.columns(4)
 
     with col1:
         st.metric(
-            label="🤖 Agent状态",
+            label="Agent状态",
             value=agent_status,
             delta=agent_delta,
             delta_color="normal" if agent_delta == "正常" else "inverse"
         )
         if agent_status == "运行中":
-            st.success("✅ 智能监控运行中")
+            st.success("智能监控运行中")
         elif agent_status == "Web模式":
-            st.info("🌐 Web界面模式")
+            st.info("Web界面模式")
             st.caption("使用 `python scripts/start_full_app.py` 启动完整Agent")
         else:
-            st.error("❌ 需要启动Agent")
+            st.error("需要启动Agent")
 
     with col2:
         st.metric(
-            label="⚠️ 逾期商机",
+            label="逾期商机",
             value=str(overdue_opportunities),
             delta=f"监控{total_opportunities}个" if total_opportunities > 0 else "0"
         )
         if overdue_opportunities > 0:
-            st.warning(f"🔔 {overdue_opportunities}个商机需要关注")
+            st.warning(f"{overdue_opportunities}个商机需要关注")
         else:
-            st.success("✅ 暂无逾期商机")
+            st.success("暂无逾期商机")
         st.caption("仅监控'待预约'和'暂不上门'状态")
 
     with col3:
         st.metric(
-            label="🚨 升级处理",
+            label="升级处理",
             value=str(escalation_count),
             delta="紧急" if escalation_count > 0 else "正常",
             delta_color="inverse" if escalation_count > 0 else "normal"
         )
         if escalation_count > 0:
-            st.error(f"🚨 {escalation_count}个商机需要升级处理")
+            st.error(f"{escalation_count}个商机需要升级处理")
         else:
-            st.success("✅ 无需升级处理")
+            st.success("无需升级处理")
 
     with col4:
         st.metric(
-            label="🏢 涉及组织",
+            label="涉及组织",
             value=str(org_count),
             delta=f"监控{total_opportunities}个商机" if total_opportunities > 0 else "无数据"
         )
         if org_count > 0:
-            st.info(f"📊 {org_count}个组织")
+            st.info(f"{org_count}个组织")
         else:
-            st.warning("⚠️ 无组织数据")
+            st.warning("无组织数据")
     
     # 第二行：详细分类统计
-    st.markdown("### 📈 商机分类统计")
+    st.markdown("### 商机分类统计")
     col5, col6, col7, col8 = st.columns(4)
 
     with col5:
         st.metric(
-            label="🔴 已逾期",
+            label="已逾期",
             value=str(overdue_opportunities),
             delta=f"{overdue_opportunities/total_opportunities*100:.1f}%" if total_opportunities > 0 else "0%"
         )
 
     with col6:
         st.metric(
-            label="🟡 即将逾期",
+            label="即将逾期",
             value=str(approaching_opportunities),
             delta=f"{approaching_opportunities/total_opportunities*100:.1f}%" if total_opportunities > 0 else "0%"
         )
 
     with col7:
         st.metric(
-            label="🟢 正常跟进",
+            label="正常跟进",
             value=str(normal_opportunities),
             delta=f"{normal_opportunities/total_opportunities*100:.1f}%" if total_opportunities > 0 else "0%"
         )
@@ -269,88 +270,47 @@ def show_dashboard():
         overdue_rate = opportunity_stats.get("overdue_rate", 0)
         approaching_rate = opportunity_stats.get("approaching_rate", 0)
         st.metric(
-            label="📊 风险比例",
+            label="风险比例",
             value=f"{overdue_rate + approaching_rate:.1f}%",
             delta="需关注" if (overdue_rate + approaching_rate) > 20 else "良好"
         )
 
     st.markdown("---")
 
-    # Agent价值展示区域
-    st.subheader("🚀 Agent智能化价值")
-
-    col_value1, col_value2, col_value3 = st.columns(3)
-
-    with col_value1:
-        st.info("**🎯 主动监控**\n\n✅ 7x24小时自动扫描\n✅ 实时识别超时风险\n✅ 无需人工干预")
-
-    with col_value2:
-        st.info("**🧠 智能决策**\n\n✅ 规则引擎+LLM混合决策\n✅ 基于上下文智能判断\n✅ 自适应策略调整")
-
-    with col_value3:
-        # 检查企微配置状态
-        try:
-            from src.fsoa.data.database import get_database_manager
-            from src.fsoa.utils.config import get_config
-
-            db_manager = get_database_manager()
-            config = get_config()
-
-            # 检查配置状态
-            group_configs = db_manager.get_enabled_group_configs()
-            internal_webhook = config.internal_ops_webhook_url
-
-            total_webhooks = len([gc for gc in group_configs if gc.webhook_url])
-            has_internal = bool(internal_webhook)
-
-            if total_webhooks > 0 and has_internal:
-                st.success("**📱 自动通知**\n\n✅ 多企微群差异化通知\n✅ 智能去重和频率控制\n✅ 升级机制自动触发\n\n🔧 企微配置: 正常")
-            else:
-                missing = []
-                if not has_internal:
-                    missing.append("内部运营群")
-                if total_webhooks == 0:
-                    missing.append("组织群")
-                st.warning(f"**📱 自动通知**\n\n✅ 多企微群差异化通知\n✅ 智能去重和频率控制\n✅ 升级机制自动触发\n\n⚠️ 企微配置: 缺少{'/'.join(missing)}")
-        except:
-            st.info("**📱 自动通知**\n\n✅ 多企微群差异化通知\n✅ 智能去重和频率控制\n✅ 升级机制自动触发\n\n❓ 企微配置: 检查中...")
-
-    st.markdown("---")
-
     # 快速操作区域
-    st.subheader("⚡ 快速操作")
+    st.subheader("快速操作")
 
     col_action1, col_action2, col_action3, col_action4 = st.columns(4)
 
     with col_action1:
-        if st.button("🚀 立即执行Agent", type="primary", use_container_width=True):
+        if st.button("立即执行Agent", type="primary", use_container_width=True):
             st.session_state.page = "agent_control"
             st.rerun()
 
     with col_action2:
-        if st.button("📋 查看商机列表", use_container_width=True):
+        if st.button("查看商机列表", use_container_width=True):
             st.session_state.page = "opportunities"
             st.rerun()
 
     with col_action3:
-        if st.button("📬 管理通知任务", use_container_width=True):
+        if st.button("管理通知任务", use_container_width=True):
             st.session_state.page = "notification_management"
             st.rerun()
 
     with col_action4:
-        if st.button("🔄 刷新数据", use_container_width=True):
+        if st.button("刷新数据", use_container_width=True):
             st.rerun()
 
     # Agent执行信息和系统状态
     col1, col2 = st.columns(2)
     
     with col1:
-        st.subheader("🤖 Agent执行状态")
+        st.subheader("Agent执行状态")
         st.info("上次执行: 2025-06-25 10:00:00")
         st.info("下次执行: 2025-06-25 11:00:00")
         st.info("执行间隔: 60分钟")
-        
-        if st.button("🚀 手动执行Agent", type="primary"):
+
+        if st.button("手动执行Agent", type="primary"):
             with st.spinner("正在执行Agent..."):
                 try:
                     agent = AgentOrchestrator()
@@ -360,35 +320,35 @@ def show_dashboard():
                         st.warning(f"执行中出现 {len(result.errors)} 个错误")
                 except Exception as e:
                     st.error(f"Agent执行失败: {e}")
-    
+
     with col2:
-        st.subheader("📈 系统健康状态")
-        
+        st.subheader("系统健康状态")
+
         # 获取系统健康状态
         try:
             health = get_system_health()
-            
+
             # 显示各组件状态
             if health.get("metabase_connection"):
-                st.success("✅ Metabase连接正常")
+                st.success("Metabase连接正常")
             else:
-                st.error("❌ Metabase连接异常")
-            
+                st.error("Metabase连接异常")
+
             if health.get("wechat_webhook"):
-                st.success("✅ 企微Webhook正常")
+                st.success("企微Webhook正常")
             else:
-                st.error("❌ 企微Webhook异常")
+                st.error("企微Webhook异常")
 
             if health.get("deepseek_connection"):
-                st.success("✅ DeepSeek连接正常")
+                st.success("DeepSeek连接正常")
             else:
-                st.error("❌ DeepSeek连接异常")
+                st.error("DeepSeek连接异常")
 
             if health.get("database_connection"):
-                st.success("✅ 数据库连接正常")
+                st.success("数据库连接正常")
             else:
-                st.error("❌ 数据库连接异常")
-                
+                st.error("数据库连接异常")
+
         except Exception as e:
             st.error(f"获取系统状态失败: {e}")
 
@@ -1805,6 +1765,140 @@ def show_detailed_config(db_manager, config):
     if st.button("关闭详细配置"):
         st.session_state.show_detailed_config = False
         st.rerun()
+
+
+def show_about():
+    """显示关于页面 - Agent智能化价值介绍"""
+    st.header("关于 FSOA")
+    st.markdown("**现场服务运营助手 - Field Service Operations Assistant**")
+    st.markdown("---")
+
+    # Agent智能化价值展示
+    st.subheader("Agent智能化价值")
+
+    col_value1, col_value2, col_value3 = st.columns(3)
+
+    with col_value1:
+        st.info("**主动监控**\n\n• 7x24小时自动扫描\n• 实时识别超时风险\n• 无需人工干预")
+
+    with col_value2:
+        st.info("**智能决策**\n\n• 规则引擎+LLM混合决策\n• 基于上下文智能判断\n• 自适应策略调整")
+
+    with col_value3:
+        # 检查企微配置状态
+        try:
+            from src.fsoa.data.database import get_database_manager
+            from src.fsoa.utils.config import get_config
+
+            db_manager = get_database_manager()
+            config = get_config()
+
+            # 检查配置状态
+            group_configs = db_manager.get_enabled_group_configs()
+            internal_webhook = config.internal_ops_webhook_url
+
+            total_webhooks = len([gc for gc in group_configs if gc.webhook_url])
+            has_internal = bool(internal_webhook)
+
+            if total_webhooks > 0 and has_internal:
+                st.success("**自动通知**\n\n• 多企微群差异化通知\n• 智能去重和频率控制\n• 升级机制自动触发\n\n企微配置: 正常")
+            else:
+                missing = []
+                if not has_internal:
+                    missing.append("内部运营群")
+                if total_webhooks == 0:
+                    missing.append("组织群")
+                st.warning(f"**自动通知**\n\n• 多企微群差异化通知\n• 智能去重和频率控制\n• 升级机制自动触发\n\n企微配置: 缺少{'/'.join(missing)}")
+        except:
+            st.info("**自动通知**\n\n• 多企微群差异化通知\n• 智能去重和频率控制\n• 升级机制自动触发\n\n企微配置: 检查中...")
+
+    st.markdown("---")
+
+    # 系统架构
+    st.subheader("系统架构")
+    st.markdown("""
+    **FSOA** 是一个基于 LangGraph 的智能Agent系统，专为现场服务运营管理设计：
+
+    **核心组件：**
+    - **Agent Orchestrator**: 基于LangGraph的智能编排引擎
+    - **Decision Engine**: 规则+LLM的混合决策系统
+    - **Tool Layer**: 标准化的工具函数集合
+    - **Data Layer**: 统一的数据访问和存储层
+    - **UI Layer**: 基于Streamlit的管理界面
+
+    **业务价值：**
+    - 自动监控现场服务SLA合规性
+    - 智能识别超时风险并主动预警
+    - 多渠道差异化通知机制
+    - 完整的执行追踪和性能分析
+    """)
+
+    st.markdown("---")
+
+    # 技术特性
+    st.subheader("技术特性")
+
+    col_tech1, col_tech2 = st.columns(2)
+
+    with col_tech1:
+        st.markdown("""
+        **Agent能力:**
+        - 定时执行：基于Cron的自动化调度
+        - 状态管理：完整的执行状态追踪
+        - 错误处理：异常捕获和自动恢复
+        - 工具调用：标准化的Function Calling
+        """)
+
+    with col_tech2:
+        st.markdown("""
+        **业务功能:**
+        - 分级通知：orgName智能路由，标准通知和升级通知
+        - 业务分析：逾期率、处理时长、组织绩效实时分析
+        - 商机管理：逾期商机列表、筛选、导出功能
+        - 格式化通知：按业务需求格式化工单详情和滞留时长
+        """)
+
+    st.markdown("---")
+
+    # 版本信息
+    st.subheader("版本信息")
+
+    col_ver1, col_ver2, col_ver3 = st.columns(3)
+
+    with col_ver1:
+        st.info("**当前版本**\n\nv1.0.0")
+
+    with col_ver2:
+        st.info("**更新日期**\n\n2025-06-26")
+
+    with col_ver3:
+        st.info("**开发状态**\n\n生产就绪")
+
+    # 快速链接
+    st.markdown("---")
+    st.subheader("快速链接")
+
+    col_link1, col_link2, col_link3, col_link4 = st.columns(4)
+
+    with col_link1:
+        if st.button("运营仪表板", use_container_width=True):
+            st.session_state.page = "dashboard"
+            st.rerun()
+
+    with col_link2:
+        if st.button("Agent控制台", use_container_width=True):
+            st.session_state.page = "agent_control"
+            st.rerun()
+
+    with col_link3:
+        if st.button("企微群配置", use_container_width=True):
+            st.session_state.page = "wechat_config"
+            st.rerun()
+
+    with col_link4:
+        if st.button("系统设置", use_container_width=True):
+            st.session_state.page = "system_settings"
+            st.rerun()
 
 
 if __name__ == "__main__":
