@@ -10,22 +10,23 @@ from typing import Dict, Any, List, Optional, TypedDict
 from langgraph.graph import StateGraph, END
 
 from ..data.models import (
-    TaskInfo, AgentExecution, AgentStatus, AgentHistory,
-    DecisionResult, NotificationInfo, Priority, OpportunityInfo,
-    AgentRun, AgentRunStatus, NotificationTask
+    # 推荐的模型
+    AgentExecution, AgentStatus, DecisionResult, OpportunityInfo, NotificationTask, Priority,
+    # 废弃的模型（仅用于兼容性）
+    TaskInfo
 )
 from ..data.database import get_db_manager
 from ..utils.logger import get_logger, log_agent_step
 from ..utils.config import get_config
 from .tools import (
-    # 新的工具函数
+    # 推荐的工具函数
     fetch_overdue_opportunities, get_all_opportunities,
     create_notification_tasks, execute_notification_tasks,
     start_agent_execution, complete_agent_execution,
     get_data_statistics, refresh_business_data,
     # 管理器
     get_data_strategy, get_notification_manager, get_execution_tracker,
-    # 兼容性函数
+    # 废弃的兼容性函数（存在任务-商机概念混淆）
     fetch_overdue_tasks, send_notification, send_business_notifications, update_task_status
 )
 from .decision import create_decision_engine
