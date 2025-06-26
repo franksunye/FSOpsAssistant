@@ -81,49 +81,56 @@ class NotificationTaskManager:
                 # 更新商机的计算字段
                 opp.update_overdue_info(use_business_time=True)
 
-                # 检查是否已存在相同的待处理任务
-                if self._has_pending_task(opp.order_num):
-                    logger.info(f"Order {opp.order_num} already has pending notification task")
-                    continue
-
                 # 创建违规通知任务（12小时）
                 if opp.is_violation:
-                    violation_task = NotificationTask(
-                        order_num=opp.order_num,
-                        org_name=opp.org_name,
-                        notification_type=NotificationTaskType.VIOLATION,
-                        due_time=now_china_naive(),
-                        created_run_id=run_id,
-                        cooldown_hours=self.notification_cooldown_hours,
-                        max_retry_count=self.max_retry_count
-                    )
-                    tasks.append(violation_task)
+                    # 检查是否已存在相同类型的待处理任务或在冷却期内
+                    if not self._has_pending_task(opp.order_num, NotificationTaskType.VIOLATION):
+                        violation_task = NotificationTask(
+                            order_num=opp.order_num,
+                            org_name=opp.org_name,
+                            notification_type=NotificationTaskType.VIOLATION,
+                            due_time=now_china_naive(),
+                            created_run_id=run_id,
+                            cooldown_hours=self.notification_cooldown_hours,
+                            max_retry_count=self.max_retry_count
+                        )
+                        tasks.append(violation_task)
+                    else:
+                        logger.info(f"Order {opp.order_num} already has pending/recent VIOLATION notification")
 
                 # 创建标准通知任务（24/48小时）
                 if opp.is_overdue:
-                    standard_task = NotificationTask(
-                        order_num=opp.order_num,
-                        org_name=opp.org_name,
-                        notification_type=NotificationTaskType.STANDARD,
-                        due_time=now_china_naive(),
-                        created_run_id=run_id,
-                        cooldown_hours=self.notification_cooldown_hours,
-                        max_retry_count=self.max_retry_count
-                    )
-                    tasks.append(standard_task)
+                    # 检查是否已存在相同类型的待处理任务或在冷却期内
+                    if not self._has_pending_task(opp.order_num, NotificationTaskType.STANDARD):
+                        standard_task = NotificationTask(
+                            order_num=opp.order_num,
+                            org_name=opp.org_name,
+                            notification_type=NotificationTaskType.STANDARD,
+                            due_time=now_china_naive(),
+                            created_run_id=run_id,
+                            cooldown_hours=self.notification_cooldown_hours,
+                            max_retry_count=self.max_retry_count
+                        )
+                        tasks.append(standard_task)
+                    else:
+                        logger.info(f"Order {opp.order_num} already has pending/recent STANDARD notification")
 
                 # 如果需要升级，创建升级通知任务
                 if opp.escalation_level > 0:
-                    escalation_task = NotificationTask(
-                        order_num=opp.order_num,
-                        org_name=opp.org_name,
-                        notification_type=NotificationTaskType.ESCALATION,
-                        due_time=now_china_naive(),
-                        created_run_id=run_id,
-                        cooldown_hours=self.notification_cooldown_hours,
-                        max_retry_count=self.max_retry_count
-                    )
-                    tasks.append(escalation_task)
+                    # 检查是否已存在相同类型的待处理任务或在冷却期内
+                    if not self._has_pending_task(opp.order_num, NotificationTaskType.ESCALATION):
+                        escalation_task = NotificationTask(
+                            order_num=opp.order_num,
+                            org_name=opp.org_name,
+                            notification_type=NotificationTaskType.ESCALATION,
+                            due_time=now_china_naive(),
+                            created_run_id=run_id,
+                            cooldown_hours=self.notification_cooldown_hours,
+                            max_retry_count=self.max_retry_count
+                        )
+                        tasks.append(escalation_task)
+                    else:
+                        logger.info(f"Order {opp.order_num} already has pending/recent ESCALATION notification")
             
             # 批量保存任务
             for task in tasks:
@@ -187,11 +194,50 @@ class NotificationTaskManager:
             result.errors.append(str(e))
             return result
     
-    def _has_pending_task(self, order_num: str) -> bool:
-        """检查是否已存在待处理任务"""
+    def _has_pending_task(self, order_num: str, notification_type: NotificationTaskType = None) -> bool:
+        """检查是否已存在待处理任务或在冷却期内的已发送任务
+
+        Args:
+            order_num: 订单号
+            notification_type: 通知类型，如果指定则只检查该类型的通知
+        """
         try:
+            # 检查是否有待处理任务
             pending_tasks = self.db_manager.get_pending_notification_tasks()
-            return any(task.order_num == order_num for task in pending_tasks)
+            if notification_type:
+                # 检查特定类型的待处理任务
+                if any(task.order_num == order_num and task.notification_type == notification_type
+                       for task in pending_tasks):
+                    return True
+            else:
+                # 检查任意类型的待处理任务（向后兼容）
+                if any(task.order_num == order_num for task in pending_tasks):
+                    return True
+
+            # 检查是否在冷却期内已发送过相同类型的通知
+            cooldown_cutoff = now_china_naive() - timedelta(hours=self.notification_cooldown_hours)
+
+            if notification_type:
+                # 检查特定类型的最近通知
+                recent_tasks = self.db_manager.get_recent_notification_tasks(
+                    order_num,
+                    since=cooldown_cutoff,
+                    notification_type=notification_type.value
+                )
+                if recent_tasks:
+                    logger.info(f"Order {order_num} has recent {notification_type.value} notifications within cooldown period")
+                    return True
+            else:
+                # 检查任意类型的最近通知（向后兼容）
+                recent_tasks = self.db_manager.get_recent_notification_tasks(
+                    order_num,
+                    since=cooldown_cutoff
+                )
+                if recent_tasks:
+                    logger.info(f"Order {order_num} has recent notifications within cooldown period")
+                    return True
+
+            return False
         except Exception as e:
             logger.error(f"Failed to check pending tasks for {order_num}: {e}")
             return False
@@ -347,32 +393,25 @@ class NotificationTaskManager:
         """发送后更新任务状态"""
         try:
             if success:
-                # 发送成功
+                # 发送成功，立即标记为已发送
                 task.last_sent_at = now_china_naive()
                 task.retry_count += 1
 
-                # 如果达到最大重试次数，标记为已发送
-                if task.retry_count >= task.max_retry_count:
-                    self.db_manager.update_notification_task_status(
-                        task.id, NotificationTaskStatus.SENT, run_id
-                    )
-                    logger.info(f"Task {task.id} completed after {task.retry_count} attempts")
-                else:
-                    # 更新任务信息，保持PENDING状态以便后续重试
-                    self.db_manager.update_notification_task_retry_info(
-                        task.id, task.retry_count, task.last_sent_at
-                    )
-                    logger.info(f"Task {task.id} sent, retry count: {task.retry_count}/{task.max_retry_count}")
+                self.db_manager.update_notification_task_status(
+                    task.id, NotificationTaskStatus.SENT, run_id
+                )
+                logger.info(f"Task {task.id} completed successfully after {task.retry_count} attempts")
             else:
-                # 发送失败
+                # 发送失败，增加重试次数
                 task.retry_count += 1
                 if task.retry_count >= task.max_retry_count:
+                    # 达到最大重试次数，标记为失败
                     self.db_manager.update_notification_task_status(
                         task.id, NotificationTaskStatus.FAILED, run_id
                     )
                     logger.warning(f"Task {task.id} failed after {task.retry_count} attempts")
                 else:
-                    # 更新重试次数，保持PENDING状态
+                    # 更新重试次数，保持PENDING状态以便后续重试
                     self.db_manager.update_notification_task_retry_info(
                         task.id, task.retry_count, None
                     )

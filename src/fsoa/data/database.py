@@ -587,6 +587,55 @@ class DatabaseManager:
             logger.error(f"Failed to update notification task retry info {task_id}: {e}")
             return False
 
+    def get_recent_notification_tasks(self, order_num: str, since: datetime,
+                                    notification_type: str = None) -> List['NotificationTask']:
+        """获取指定订单在指定时间之后的通知任务
+
+        Args:
+            order_num: 订单号
+            since: 起始时间
+            notification_type: 通知类型，如果指定则只返回该类型的任务
+        """
+        try:
+            with self.get_session() as session:
+                from .models import NotificationTask, NotificationTaskStatus, NotificationTaskType
+
+                query = session.query(NotificationTaskTable).filter(
+                    NotificationTaskTable.order_num == order_num,
+                    NotificationTaskTable.sent_at >= since,
+                    NotificationTaskTable.status.in_(['sent', 'confirmed'])
+                )
+
+                # 如果指定了通知类型，添加类型过滤
+                if notification_type:
+                    query = query.filter(NotificationTaskTable.notification_type == notification_type)
+
+                records = query.all()
+
+                tasks = []
+                for record in records:
+                    task = NotificationTask(
+                        id=record.id,
+                        order_num=record.order_num,
+                        org_name=record.org_name,
+                        notification_type=NotificationTaskType(record.notification_type),
+                        due_time=record.due_time,
+                        status=NotificationTaskStatus(record.status),
+                        message=record.message,
+                        sent_at=record.sent_at,
+                        created_run_id=record.created_run_id,
+                        sent_run_id=record.sent_run_id,
+                        retry_count=record.retry_count,
+                        created_at=record.created_at,
+                        updated_at=record.updated_at
+                    )
+                    tasks.append(task)
+
+                return tasks
+        except Exception as e:
+            logger.error(f"Failed to get recent notification tasks for {order_num}: {e}")
+            return []
+
     def save_opportunity_cache(self, opportunity: 'OpportunityInfo') -> bool:
         """保存商机缓存"""
         try:
