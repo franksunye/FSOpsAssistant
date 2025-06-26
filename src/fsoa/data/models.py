@@ -9,6 +9,9 @@ from typing import Optional, List, Dict, Any
 from enum import Enum
 from pydantic import BaseModel, Field, validator
 
+# 导入时区工具
+from ..utils.timezone_utils import now_china_naive
+
 
 # ============================================================================
 # Agent相关的状态枚举
@@ -153,7 +156,7 @@ class NotificationTask(BaseModel):
     @property
     def is_overdue(self) -> bool:
         """是否逾期未发送"""
-        return self.is_pending and datetime.now() > self.due_time
+        return self.is_pending and now_china_naive() > self.due_time
 
     @property
     def is_in_cooldown(self) -> bool:
@@ -162,7 +165,7 @@ class NotificationTask(BaseModel):
             return False
 
         cooldown_delta = timedelta(hours=self.cooldown_hours)
-        return datetime.now() - self.last_sent_at < cooldown_delta
+        return now_china_naive() - self.last_sent_at < cooldown_delta
 
     @property
     def can_retry(self) -> bool:
@@ -176,7 +179,7 @@ class NotificationTask(BaseModel):
 
         # 如果是第一次发送
         if self.retry_count == 0:
-            return datetime.now() >= self.due_time
+            return now_china_naive() >= self.due_time
 
         # 如果是重试，需要检查冷静时间
         return self.can_retry and not self.is_in_cooldown
@@ -381,7 +384,7 @@ class OpportunityInfo(BaseModel):
                 # 如果都失败，返回当前时间并记录警告
                 import logging
                 logging.warning(f"Failed to parse create_time: {v}, using current time")
-                return datetime.now()
+                return now_china_naive()
         return v
 
     def calculate_elapsed_hours(self, use_business_time: bool = True) -> float:
@@ -395,7 +398,7 @@ class OpportunityInfo(BaseModel):
             已经过时长（小时）
         """
         if not self.elapsed_hours:
-            now = datetime.now()
+            now = now_china_naive()
 
             if use_business_time:
                 # 使用工作时间计算
@@ -506,7 +509,7 @@ class OpportunityInfo(BaseModel):
 
     def update_cache_info(self):
         """更新缓存相关信息"""
-        self.last_updated = datetime.now()
+        self.last_updated = now_china_naive()
         self.source_hash = self.generate_source_hash()
 
     def is_cache_valid(self, cache_ttl_hours: int = 1) -> bool:
@@ -514,7 +517,7 @@ class OpportunityInfo(BaseModel):
         if not self.last_updated:
             return False
 
-        cache_age = datetime.now() - self.last_updated
+        cache_age = now_china_naive() - self.last_updated
         return cache_age.total_seconds() < (cache_ttl_hours * 3600)
 
     def should_cache(self) -> bool:

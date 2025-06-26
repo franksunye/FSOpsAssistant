@@ -12,6 +12,9 @@ from datetime import datetime, timedelta, time
 from typing import Tuple
 import logging
 
+# 导入时区工具
+from .timezone_utils import now_china_naive
+
 logger = logging.getLogger(__name__)
 
 
@@ -143,7 +146,7 @@ class BusinessTimeCalculator:
             工作时长（小时）
         """
         if current_time is None:
-            current_time = datetime.now()
+            current_time = now_china_naive()
         
         return cls.calculate_business_hours_between(create_time, current_time)
     
@@ -211,5 +214,5 @@ def is_within_business_hours(dt: datetime = None) -> bool:
         是否在工作时间内
     """
     if dt is None:
-        dt = datetime.now()
+        dt = now_china_naive()
     return BusinessTimeCalculator.is_business_hours(dt)

@@ -6,6 +6,9 @@ Agent工具函数模块
 
 import time
 from datetime import datetime, timedelta
+
+# 导入时区工具
+from ..utils.timezone_utils import now_china_naive
 from typing import List, Optional, Dict, Any
 from functools import wraps
 
@@ -388,7 +391,8 @@ def send_notification(task: TaskInfo, message: str, priority: Priority = Priorit
             try:
                 # 注意：save_task方法已被移除，因为TaskInfo模型已废弃
                 # 新的通知系统使用NotificationTask模型和相应的数据库操作
-                task.last_notification = datetime.now()
+                # 使用中国时区的时间（合并远程的时区修复）
+                task.last_notification = now_china_naive()
                 logger.debug(f"Updated task {task.id} last notification time (in-memory only)")
             except Exception as save_error:
                 logger.warning(f"Failed to update task last notification time: {save_error}")

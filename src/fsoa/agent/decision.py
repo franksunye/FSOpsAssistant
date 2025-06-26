@@ -5,6 +5,9 @@
 """
 
 from datetime import datetime, timedelta
+
+# 导入时区工具
+from ..utils.timezone_utils import now_china_naive
 from typing import Dict, Any, List, Optional
 from enum import Enum
 
@@ -104,7 +107,7 @@ class RuleEngine:
             return False
         
         cooldown_minutes = self.config.notification_cooldown
-        time_since_last = datetime.now() - task.last_notification
+        time_since_last = now_china_naive() - task.last_notification
         cooldown_period = timedelta(minutes=cooldown_minutes)
         
         return time_since_last < cooldown_period
@@ -275,7 +278,7 @@ class DecisionEngine:
                 context_dict["system_config"] = context.system_config
         
         # 添加当前时间信息
-        now = datetime.now()
+        now = now_china_naive()
         context_dict["current_time"] = {
             "timestamp": now.isoformat(),
             "hour": now.hour,
