@@ -11,7 +11,7 @@
 
 FSOA是一个具备**主动性、自主决策、目标导向**特性的AI Agent系统，专为现场服务运营场景设计。通过智能监控、自动决策和及时通知，大幅提升运营效率，减少人工干预。
 
-**🚀 当前状态**: ✅ 生产就绪 - 已完成架构重构、管理器模式实现、业务逻辑优化，系统稳定可靠，可维护性大幅提升。
+**🚀 当前状态**: ✅ v1.0.0 生产就绪 - 架构重构完成，管理器模式实现，智能缓存系统，分级通知机制，系统稳定可靠。
 
 ### 核心特性
 
@@ -185,14 +185,17 @@ FSOpsAssistant/
 │   │   ├── app.py             # 主应用
 │   │   └── pages/             # 页面模块
 │   └── utils/             # 工具模块
-├── docs/                  # 项目文档 (已清理)
-│   ├── 00_SYSTEM_STATUS.md    # 系统状态报告
+├── docs/                  # 项目文档 (精简优化)
+│   ├── 00_BACKLOG.md         # 待办事项
 │   ├── 00_PROJECT_OVERVIEW.md # 项目概述
+│   ├── 01_CHANGELOG.md       # 变更日志
 │   ├── 10_ARCHITECTURE.md     # 系统架构
 │   ├── 20_API.md             # API文档
 │   ├── 30_DEVELOPMENT.md     # 开发指南
+│   ├── 31_TESTING.md         # 测试指南
 │   ├── 40_USER_GUIDE.md      # 用户指南
-│   └── 50_DEPLOYMENT.md      # 部署指南
+│   ├── 50_DEPLOYMENT.md      # 部署指南
+│   └── BUSINESS_REQUIREMENTS.md # 业务需求
 ├── scripts/               # 核心脚本 (已精简)
 │   ├── README.md             # 脚本使用说明
 │   ├── init_db.py            # 数据库初始化
