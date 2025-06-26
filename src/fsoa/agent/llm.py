@@ -85,7 +85,7 @@ class DeepSeekClient:
     
     def generate_notification_message(self, task: TaskInfo, message_type: str = "overdue_alert") -> str:
         """
-        生成通知消息内容
+        生成通知消息内容 - 已修改为使用标准格式
         
         Args:
             task: 任务信息
@@ -94,24 +94,9 @@ class DeepSeekClient:
         Returns:
             生成的消息内容
         """
-        try:
-            prompt = self._build_message_generation_prompt(task, message_type)
-            
-            response = self.client.chat.completions.create(
-                model="deepseek-chat",
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.3,
-                max_tokens=500
-            )
-            
-            message = response.choices[0].message.content.strip()
-            logger.info(f"Generated message for task {task.id}")
-            return message
-            
-        except Exception as e:
-            logger.error(f"Failed to generate message: {e}")
-            # 降级到模板消息
-            return self._fallback_template_message(task, message_type)
+        # 不再使用LLM生成，直接使用标准模板
+        logger.info(f"Using standard template for task {task.id} (LLM disabled)")
+        return self._fallback_template_message(task, message_type)
     
     def optimize_decision_strategy(self, task: TaskInfo, history: List[Dict[str, Any]]) -> Dict[str, Any]:
         """

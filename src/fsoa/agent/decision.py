@@ -218,7 +218,7 @@ class DecisionEngine:
         # 对于需要处理的任务，使用LLM优化决策
         try:
             # 检查是否启用LLM优化
-            use_llm = getattr(self.config, 'use_llm_optimization', True)
+            use_llm = getattr(self.config, 'use_llm_optimization', False)
             if use_llm:
                 deepseek_client = get_deepseek_client()
                 context_dict = self._build_context_dict(task, context)

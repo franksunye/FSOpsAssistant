@@ -12,6 +12,7 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 from ..utils.logger import get_logger
+from .message_validator import validate_and_fix_message
 from ..utils.config import get_config
 
 logger = get_logger(__name__)
@@ -120,10 +121,15 @@ class WeChatClient:
             logger.error(f"No webhook URL configured for group {group_id}")
             return False
         
+        # 验证并修复消息格式
+        validated_content = validate_and_fix_message(content)
+        if validated_content != content:
+            logger.info("Message format was corrected before sending")
+        
         message_data = {
             "msgtype": "text",
             "text": {
-                "content": content
+                "content": validated_content
             }
         }
         
@@ -188,10 +194,15 @@ class WeChatClient:
             logger.error(f"No webhook URL available for org {org_name}")
             return False
 
+        # 验证并修复消息格式
+        validated_content = validate_and_fix_message(content)
+        if validated_content != content:
+            logger.info("Message format was corrected before sending")
+        
         message_data = {
             "msgtype": "text",
             "text": {
-                "content": content
+                "content": validated_content
             }
         }
 

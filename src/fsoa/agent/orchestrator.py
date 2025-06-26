@@ -219,8 +219,8 @@ class AgentOrchestrator:
 
                 # 向后兼容：尝试获取传统任务
                 try:
-                    tasks = fetch_overdue_tasks()
-                    state["tasks"] = tasks
+                    # tasks = fetch_overdue_tasks()  # 已禁用旧系统
+                    # state["tasks"] = []  # 已禁用旧系统
                     state["context"]["total_tasks"] = len(tasks)
                     output["legacy_task_count"] = len(tasks)
                     logger.info(f"Also fetched {len(tasks)} legacy tasks for compatibility")
