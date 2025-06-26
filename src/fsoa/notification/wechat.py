@@ -33,6 +33,10 @@ class WeChatClient:
         self.internal_ops_webhook = self.config.internal_ops_webhook_url
         self.session = self._create_session()
 
+        # API发送间隔配置（秒）
+        self.api_interval_seconds = 3  # 默认3秒
+        self._load_api_config()
+
     def _init_db_manager(self):
         """初始化数据库管理器"""
         try:
@@ -41,6 +45,16 @@ class WeChatClient:
         except Exception as e:
             logger.error(f"Failed to initialize database manager: {e}")
             self.db_manager = None
+
+    def _load_api_config(self):
+        """从数据库加载API配置"""
+        if self.db_manager:
+            try:
+                configs = self.db_manager.get_all_system_configs()
+                self.api_interval_seconds = int(configs.get("webhook_api_interval", "3"))
+                logger.info(f"Loaded webhook API interval: {self.api_interval_seconds} seconds")
+            except Exception as e:
+                logger.warning(f"Failed to load API config, using default: {e}")
 
     def _load_org_webhooks(self) -> Dict[str, str]:
         """从数据库加载组织群Webhook配置"""
@@ -217,25 +231,30 @@ class WeChatClient:
     
     def _send_message(self, webhook_url: str, message_data: Dict[str, Any]) -> bool:
         """
-        发送消息到企微群
-        
+        发送消息到企微群 - 包含API速率限制控制
+
         Args:
             webhook_url: Webhook URL
             message_data: 消息数据
-            
+
         Returns:
             是否发送成功
         """
         try:
+            # API发送间隔控制 - 避免触发企微Webhook速率限制
+            import time
+            time.sleep(self.api_interval_seconds)
+            logger.debug(f"API interval sleep: {self.api_interval_seconds} seconds")
+
             response = self.session.post(
                 webhook_url,
                 json=message_data,
                 timeout=10
             )
             response.raise_for_status()
-            
+
             result = response.json()
-            
+
             if result.get("errcode") == 0:
                 logger.info("WeChat message sent successfully")
                 return True
@@ -243,7 +262,7 @@ class WeChatClient:
                 error_msg = result.get("errmsg", "Unknown error")
                 logger.error(f"WeChat API error: {error_msg}")
                 return False
-                
+
         except requests.RequestException as e:
             logger.error(f"Failed to send WeChat message: {e}")
             return False

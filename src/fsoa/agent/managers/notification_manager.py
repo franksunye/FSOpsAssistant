@@ -41,11 +41,32 @@ class NotificationTaskManager:
         self.db_manager = get_db_manager()
         self.wechat_client = get_wechat_client()
         self.formatter = BusinessNotificationFormatter()
-        
+
         # 配置参数
         self.notification_cooldown_hours = 2.0  # 通知冷却时间（小时）
         self.max_retry_count = 5  # 最大重试次数
-    
+
+
+        # 从数据库加载配置
+        self._load_config_from_db()
+
+    def _load_config_from_db(self):
+        """从数据库加载配置参数"""
+        try:
+            configs = self.db_manager.get_all_system_configs()
+
+            # 更新配置参数
+            cooldown_minutes = int(configs.get("notification_cooldown", "120"))
+            self.notification_cooldown_hours = cooldown_minutes / 60.0
+
+            self.max_retry_count = int(configs.get("max_retry_count", "5"))
+            # API间隔现在由WeChatClient处理，这里不再需要
+
+            logger.info(f"Loaded notification config: cooldown={self.notification_cooldown_hours}h, "
+                       f"max_retry={self.max_retry_count}")
+        except Exception as e:
+            logger.warning(f"Failed to load config from database, using defaults: {e}")
+
     @log_function_call
     def create_notification_tasks(self, opportunities: List[OpportunityInfo], 
                                 run_id: int) -> List[NotificationTask]:
@@ -181,42 +202,18 @@ class NotificationTaskManager:
             org_tasks[task.org_name].append(task)
         return org_tasks
     
-    def _send_org_notifications(self, org_name: str, tasks: List[NotificationTask], 
+    def _send_org_notifications(self, org_name: str, tasks: List[NotificationTask],
                               run_id: int) -> NotificationResult:
-        """发送组织通知"""
+        """发送组织通知 - 优化版：合并同组织的所有通知为一条消息"""
         result = NotificationResult()
-        
+
         try:
             # 分离不同类型的通知
             violation_tasks = [t for t in tasks if t.notification_type == NotificationTaskType.VIOLATION]
             standard_tasks = [t for t in tasks if t.notification_type == NotificationTaskType.STANDARD]
             escalation_tasks = [t for t in tasks if t.notification_type == NotificationTaskType.ESCALATION]
 
-            # 发送违规通知
-            if violation_tasks:
-                success = self._send_violation_notification(org_name, violation_tasks, run_id)
-                if success:
-                    result.sent_count += len(violation_tasks)
-                    for task in violation_tasks:
-                        self._update_task_after_send(task, run_id, success=True)
-                else:
-                    result.failed_count += len(violation_tasks)
-                    for task in violation_tasks:
-                        self._update_task_after_send(task, run_id, success=False)
-
-            # 发送标准通知
-            if standard_tasks:
-                success = self._send_standard_notification(org_name, standard_tasks, run_id)
-                if success:
-                    result.sent_count += len(standard_tasks)
-                    for task in standard_tasks:
-                        self._update_task_after_send(task, run_id, success=True)
-                else:
-                    result.failed_count += len(standard_tasks)
-                    for task in standard_tasks:
-                        self._update_task_after_send(task, run_id, success=False)
-            
-            # 发送升级通知
+            # 检查是否有升级通知，如果有则发送到内部运营群
             if escalation_tasks:
                 success = self._send_escalation_notification(org_name, escalation_tasks, run_id)
                 if success:
@@ -226,6 +223,19 @@ class NotificationTaskManager:
                 else:
                     result.failed_count += len(escalation_tasks)
                     for task in escalation_tasks:
+                        self._update_task_after_send(task, run_id, success=False)
+
+            # 合并违规和标准通知为一条消息发送到组织群
+            org_notification_tasks = violation_tasks + standard_tasks
+            if org_notification_tasks:
+                success = self._send_unified_org_notification(org_name, org_notification_tasks, run_id)
+                if success:
+                    result.sent_count += len(org_notification_tasks)
+                    for task in org_notification_tasks:
+                        self._update_task_after_send(task, run_id, success=True)
+                else:
+                    result.failed_count += len(org_notification_tasks)
+                    for task in org_notification_tasks:
                         self._update_task_after_send(task, run_id, success=False)
             
             return result

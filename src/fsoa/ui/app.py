@@ -61,7 +61,6 @@ def main():
     # 侧边栏导航 - 重新设计为业务导向的清晰结构
     with st.sidebar:
         st.title("FSOA 运营助手")
-        st.markdown("*现场服务智能监控系统*")
         st.markdown("---")
 
         # 核心业务功能
@@ -131,8 +130,6 @@ def main():
 
 def show_dashboard():
     """显示运营仪表板 - 重新设计为业务价值导向"""
-    st.markdown("**现场服务运营助手** - 主动监控 • 智能决策 • 自动通知")
-    st.markdown("---")
 
     # 获取实时数据
     try:
@@ -358,10 +355,6 @@ def show_dashboard():
 
 def show_agent_control():
     """显示Agent控制台页面 - 重新设计为Agent管理导向"""
-    st.title("🤖 Agent智能控制台")
-    st.markdown("**Agent生命周期管理 • 执行监控 • 性能调优**")
-    st.markdown("---")
-
     # Agent状态信息
     col1, col2 = st.columns(2)
 
@@ -697,12 +690,6 @@ def show_notification_history():
 
 def show_system_settings():
     """显示系统设置"""
-    st.header("⚙️ 系统设置")
-    st.markdown("**Agent运行参数 • 通知策略配置 • 系统行为调优**")
-    st.markdown("---")
-
-    # 企微配置状态提示
-    st.info("💡 **企微群配置**: 请前往 [系统管理 → 企微群配置] 进行完整的企微通知配置")
 
     # 设置选项卡 - 添加工作时间配置
     tab1, tab2, tab3 = st.tabs(["Agent设置", "通知设置", "工作时间设置"])
@@ -740,19 +727,42 @@ def show_system_settings():
     
     with tab2:
         st.subheader("🔔 通知配置")
-        
+
+        # 从数据库加载现有配置
+        try:
+            from src.fsoa.data.database import get_database_manager
+            db_manager = get_database_manager()
+            configs = db_manager.get_all_system_configs()
+
+            default_max_notifications = int(configs.get("max_notifications_per_hour", "10"))
+            default_cooldown_minutes = int(configs.get("notification_cooldown", "120"))
+            default_max_retry = int(configs.get("max_retry_count", "5"))
+            default_api_interval = int(configs.get("webhook_api_interval", "3"))
+            default_violation_threshold = int(configs.get("violation_threshold", "12"))
+            default_escalation_threshold = int(configs.get("escalation_threshold", "24"))
+            default_enable_dedup = configs.get("enable_dedup", "true").lower() == "true"
+        except Exception as e:
+            st.warning(f"无法加载配置，使用默认值: {e}")
+            default_max_notifications = 10
+            default_cooldown_minutes = 120
+            default_max_retry = 5
+            default_api_interval = 3
+            default_violation_threshold = 12
+            default_escalation_threshold = 24
+            default_enable_dedup = True
+
         max_notifications = st.number_input(
             "每小时最大通知数",
             min_value=1,
             max_value=100,
-            value=10
+            value=default_max_notifications
         )
         
         cooldown_hours = st.number_input(
             "通知冷静时间（小时）",
             min_value=0.5,
             max_value=24.0,
-            value=2.0,
+            value=default_cooldown_minutes / 60.0,
             step=0.5,
             help="发送通知后的冷静时间，避免频繁打扰"
         )
@@ -761,8 +771,16 @@ def show_system_settings():
             "最大重试次数",
             min_value=1,
             max_value=10,
-            value=5,
+            value=default_max_retry,
             help="每个通知任务的最大重试次数"
+        )
+
+        api_interval_seconds = st.number_input(
+            "Webhook API发送间隔（秒）",
+            min_value=1,
+            max_value=30,
+            value=default_api_interval,
+            help="每次调用企微Webhook API之间的间隔时间，避免触发速率限制"
         )
 
         st.markdown("**SLA阈值设置（工作时间）**")
@@ -771,7 +789,7 @@ def show_system_settings():
             "违规阈值（小时）",
             min_value=1,
             max_value=24,
-            value=12,
+            value=default_violation_threshold,
             help="超过此时间算作违规，需要立即处理"
         )
 
@@ -779,14 +797,34 @@ def show_system_settings():
             "升级阈值（小时）",
             min_value=1,
             max_value=72,
-            value=24,
+            value=default_escalation_threshold,
             help="超过此时间需要运营人员介入"
         )
-        
-        enable_dedup = st.checkbox("启用智能去重", value=True)
+
+        enable_dedup = st.checkbox("启用智能去重", value=default_enable_dedup)
         
         if st.button("💾 保存通知设置"):
-            st.success("通知设置已保存")
+            try:
+                from src.fsoa.data.database import get_database_manager
+                db_manager = get_database_manager()
+
+                # 保存通知配置
+                configs = [
+                    ("max_notifications_per_hour", str(max_notifications), "每小时最大通知数"),
+                    ("notification_cooldown", str(int(cooldown_hours * 60)), "通知冷却时间（分钟）"),
+                    ("max_retry_count", str(max_retry_count), "最大重试次数"),
+                    ("webhook_api_interval", str(api_interval_seconds), "Webhook API发送间隔（秒）"),
+                    ("violation_threshold", str(violation_threshold), "违规阈值（小时）"),
+                    ("escalation_threshold", str(escalation_threshold), "升级阈值（小时）"),
+                    ("enable_dedup", str(enable_dedup).lower(), "启用智能去重"),
+                ]
+
+                for key, value, description in configs:
+                    db_manager.set_system_config(key, value, description)
+
+                st.success("✅ 通知设置已保存")
+            except Exception as e:
+                st.error(f"❌ 保存失败: {e}")
 
     with tab3:
         st.subheader("🕒 工作时间配置")
@@ -880,7 +918,6 @@ def show_system_settings():
 
 def show_system_test():
     """显示系统测试"""
-    st.header("🔧 系统测试")
     
     col1, col2 = st.columns(2)
     
@@ -940,7 +977,6 @@ def show_system_test():
 
 def show_business_analytics():
     """显示业务分析页面"""
-    st.header("📈 业务分析")
 
     try:
         # 获取逾期商机数据
@@ -999,9 +1035,6 @@ def show_business_analytics():
 
 def show_opportunity_list():
     """显示商机监控页面 - 重新设计为业务监控导向"""
-    st.title("📋 现场服务商机监控")
-    st.markdown("**实时监控现场服务时效 • 智能识别超时风险 • 主动预警处理**")
-    st.markdown("---")
 
     try:
         # 获取逾期商机数据
@@ -1105,58 +1138,302 @@ def show_opportunity_list():
 
 
 def show_execution_history():
-    """显示Agent执行历史页面"""
-    st.header("🔍 Agent执行历史")
+    """显示Agent执行历史页面 - 重新设计版本"""
 
     try:
         from src.fsoa.agent.tools import get_execution_tracker
-
         tracker = get_execution_tracker()
 
-        # 获取执行统计
-        stats = tracker.get_run_statistics()
+        # 时间范围选择
+        col_time1, col_time2 = st.columns(2)
+        with col_time1:
+            hours_back = st.selectbox(
+                "查看时间范围",
+                options=[24, 72, 168, 720],  # 1天, 3天, 1周, 1月
+                format_func=lambda x: f"最近{x//24}天" if x >= 24 else f"最近{x}小时",
+                index=2  # 默认1周
+            )
 
-        # 显示统计信息
-        col1, col2, col3, col4 = st.columns(4)
+        with col_time2:
+            if st.button("🔄 刷新数据"):
+                st.rerun()
+
+        # 获取执行统计
+        stats = tracker.get_run_statistics(hours_back)
+
+        # 显示核心统计信息
+        st.subheader("📈 执行统计概览")
+        col1, col2, col3, col4, col5 = st.columns(5)
+
         with col1:
-            st.metric("总运行次数", stats.get("total_runs", 0))
+            st.metric(
+                "总运行次数",
+                stats.get("total_runs", 0),
+                help="指定时间范围内的总执行次数"
+            )
         with col2:
-            st.metric("成功运行", stats.get("successful_runs", 0))
+            st.metric(
+                "成功运行",
+                stats.get("successful_runs", 0),
+                delta=f"{stats.get('success_rate', 0):.1f}%"
+            )
         with col3:
-            st.metric("失败运行", stats.get("failed_runs", 0))
+            st.metric(
+                "失败运行",
+                stats.get("failed_runs", 0),
+                delta=f"-{100-stats.get('success_rate', 0):.1f}%" if stats.get('success_rate', 0) < 100 else None
+            )
         with col4:
-            st.metric("平均耗时", f"{stats.get('average_duration_seconds', 0):.1f}秒")
+            st.metric(
+                "平均耗时",
+                f"{stats.get('average_duration_seconds', 0):.1f}秒",
+                help="成功执行的平均耗时"
+            )
+        with col5:
+            st.metric(
+                "处理商机",
+                stats.get("total_opportunities_processed", 0),
+                help="总共处理的商机数量"
+            )
+
+        # 业务指标
+        col_biz1, col_biz2 = st.columns(2)
+        with col_biz1:
+            st.metric(
+                "发送通知",
+                stats.get("total_notifications_sent", 0),
+                help="总共发送的通知数量"
+            )
+        with col_biz2:
+            if stats.get("total_runs", 0) > 0:
+                avg_notifications = stats.get("total_notifications_sent", 0) / stats.get("total_runs", 1)
+                st.metric(
+                    "平均通知/次",
+                    f"{avg_notifications:.1f}",
+                    help="每次执行平均发送的通知数"
+                )
+
+        st.markdown("---")
+
+        # 执行历史列表
+        st.subheader("📋 最近执行记录")
+
+        recent_runs = tracker.get_recent_runs(limit=20, hours_back=hours_back)
+
+        if recent_runs:
+            # 创建执行记录表格数据
+            table_data = []
+            for run in recent_runs:
+                status_icon = {
+                    "completed": "✅",
+                    "failed": "❌",
+                    "running": "🔄"
+                }.get(run.status.value, "❓")
+
+                duration = ""
+                if run.duration_seconds:
+                    if run.duration_seconds < 60:
+                        duration = f"{run.duration_seconds:.1f}秒"
+                    else:
+                        duration = f"{run.duration_seconds/60:.1f}分钟"
+
+                table_data.append({
+                    "运行ID": run.id,
+                    "状态": f"{status_icon} {run.status.value}",
+                    "开始时间": run.trigger_time.strftime("%m-%d %H:%M:%S"),
+                    "耗时": duration,
+                    "处理商机": run.opportunities_processed,
+                    "发送通知": run.notifications_sent,
+                    "错误": len(run.errors) if run.errors else 0
+                })
+
+            # 显示表格
+            import pandas as pd
+            df = pd.DataFrame(table_data)
+
+            # 选择要查看详情的运行
+            selected_run_id = st.selectbox(
+                "选择运行查看详情",
+                options=[0] + [run.id for run in recent_runs],
+                format_func=lambda x: "请选择..." if x == 0 else f"运行 #{x}",
+                key="selected_run"
+            )
+
+            st.dataframe(df, use_container_width=True, hide_index=True)
+
+            # 显示选中运行的详情
+            if selected_run_id and selected_run_id != 0:
+                show_run_details(tracker, selected_run_id)
+
+        else:
+            st.info("📝 暂无执行记录")
+            st.markdown("**可能的原因:**")
+            st.markdown("- Agent尚未运行过")
+            st.markdown("- 选择的时间范围内没有执行记录")
+            st.markdown("- 数据库连接问题")
 
         st.markdown("---")
 
         # 步骤性能分析
-        st.subheader("📊 步骤性能分析")
+        st.subheader("🔧 步骤性能分析")
 
-        steps = ["fetch_opportunities", "process_opportunities", "send_notifications"]
-        for step in steps:
-            step_perf = tracker.get_step_performance(step)
+        # 获取所有步骤的性能数据
+        common_steps = [
+            ("fetch_opportunities", "获取商机数据"),
+            ("process_opportunities", "处理商机逻辑"),
+            ("send_notifications", "发送通知"),
+            ("create_notification_tasks", "创建通知任务"),
+            ("execute_notification_tasks", "执行通知任务")
+        ]
 
-            with st.expander(f"📈 {step} 性能"):
-                col_a, col_b, col_c = st.columns(3)
-                with col_a:
-                    st.metric("执行次数", step_perf.get("total_executions", 0))
-                with col_b:
-                    st.metric("成功次数", step_perf.get("successful_executions", 0))
-                with col_c:
-                    st.metric("平均耗时", f"{step_perf.get('average_duration_seconds', 0):.2f}秒")
+        step_tabs = st.tabs([desc for _, desc in common_steps] + ["全部步骤"])
 
-        # 刷新按钮
-        if st.button("🔄 刷新执行历史"):
-            st.rerun()
+        for i, (step_name, step_desc) in enumerate(common_steps):
+            with step_tabs[i]:
+                show_step_performance(tracker, step_name, step_desc, hours_back)
+
+        # 全部步骤标签页
+        with step_tabs[-1]:
+            show_step_performance(tracker, None, "所有步骤", hours_back)
 
     except Exception as e:
-        st.error(f"获取执行历史失败: {e}")
-        st.info("💡 提示: 执行历史功能需要Agent运行后才会有数据")
+        st.error(f"❌ 获取执行历史失败: {e}")
+        st.info("💡 **故障排除提示:**")
+        st.markdown("- 检查数据库连接是否正常")
+        st.markdown("- 确认Agent执行追踪器配置正确")
+        st.markdown("- 查看系统日志获取详细错误信息")
+
+        if st.button("🔧 重试加载"):
+            st.rerun()
+
+
+def show_run_details(tracker, run_id: int):
+    """显示运行详情"""
+    st.markdown("---")
+    st.subheader(f"🔍 运行详情 #{run_id}")
+
+    try:
+        run_details = tracker.get_run_details(run_id)
+
+        if not run_details:
+            st.warning(f"未找到运行 #{run_id} 的详情")
+            return
+
+        run, history = run_details
+
+        # 运行基本信息
+        col_info1, col_info2, col_info3 = st.columns(3)
+
+        with col_info1:
+            st.metric("运行状态", run.status.value)
+            st.metric("开始时间", run.trigger_time.strftime("%Y-%m-%d %H:%M:%S"))
+
+        with col_info2:
+            if run.end_time:
+                st.metric("结束时间", run.end_time.strftime("%Y-%m-%d %H:%M:%S"))
+                st.metric("总耗时", f"{run.duration_seconds:.2f}秒" if run.duration_seconds else "未知")
+            else:
+                st.metric("结束时间", "运行中...")
+
+        with col_info3:
+            st.metric("处理商机", run.opportunities_processed)
+            st.metric("发送通知", run.notifications_sent)
+
+        # 错误信息
+        if run.errors:
+            st.error("❌ 执行错误:")
+            for error in run.errors:
+                st.code(error)
+
+        # 执行上下文
+        if run.context:
+            with st.expander("📋 执行上下文"):
+                st.json(run.context)
+
+        # 步骤执行历史
+        if history:
+            st.subheader("📝 执行步骤")
+
+            for i, step in enumerate(history, 1):
+                status_icon = "❌" if step.error_message else "✅"
+                duration_text = f" ({step.duration_seconds:.2f}s)" if step.duration_seconds else ""
+
+                with st.expander(f"{status_icon} {i}. {step.step_name}{duration_text}"):
+                    col_step1, col_step2 = st.columns(2)
+
+                    with col_step1:
+                        st.write("**执行时间:**", step.timestamp.strftime("%H:%M:%S"))
+                        if step.duration_seconds:
+                            st.write("**耗时:**", f"{step.duration_seconds:.2f}秒")
+
+                    with col_step2:
+                        if step.error_message:
+                            st.error(f"错误: {step.error_message}")
+
+                    # 输入数据
+                    if step.input_data:
+                        st.write("**输入数据:**")
+                        st.json(step.input_data)
+
+                    # 输出数据
+                    if step.output_data:
+                        st.write("**输出数据:**")
+                        st.json(step.output_data)
+        else:
+            st.info("该运行没有详细的步骤记录")
+
+    except Exception as e:
+        st.error(f"获取运行详情失败: {e}")
+
+
+def show_step_performance(tracker, step_name: str, step_desc: str, hours_back: int):
+    """显示步骤性能信息"""
+    try:
+        perf = tracker.get_step_performance(step_name, hours_back)
+
+        if perf.get("total_executions", 0) == 0:
+            st.info(f"📝 {step_desc}: 暂无执行记录")
+            return
+
+        # 性能指标
+        col_perf1, col_perf2, col_perf3, col_perf4 = st.columns(4)
+
+        with col_perf1:
+            st.metric("执行次数", perf.get("total_executions", 0))
+
+        with col_perf2:
+            st.metric(
+                "成功次数",
+                perf.get("successful_executions", 0),
+                delta=f"{perf.get('success_rate', 0):.1f}%"
+            )
+
+        with col_perf3:
+            st.metric("失败次数", perf.get("failed_executions", 0))
+
+        with col_perf4:
+            st.metric("平均耗时", f"{perf.get('average_duration_seconds', 0):.2f}秒")
+
+        # 性能详情
+        if perf.get("min_duration_seconds", 0) > 0 or perf.get("max_duration_seconds", 0) > 0:
+            col_detail1, col_detail2 = st.columns(2)
+
+            with col_detail1:
+                st.metric("最快执行", f"{perf.get('min_duration_seconds', 0):.2f}秒")
+
+            with col_detail2:
+                st.metric("最慢执行", f"{perf.get('max_duration_seconds', 0):.2f}秒")
+
+        # 成功率进度条
+        success_rate = perf.get("success_rate", 0)
+        st.progress(success_rate / 100, text=f"成功率: {success_rate:.1f}%")
+
+    except Exception as e:
+        st.error(f"获取{step_desc}性能数据失败: {e}")
 
 
 def show_notification_management():
     """显示通知任务管理页面"""
-    st.header("📬 通知任务管理")
 
     try:
         from src.fsoa.agent.tools import get_notification_manager
@@ -1288,8 +1565,6 @@ def show_notification_management():
 
 def show_cache_management():
     """显示缓存管理页面"""
-    st.header("💾 缓存管理")
-
     try:
         from src.fsoa.agent.tools import get_data_strategy
 
@@ -1368,9 +1643,6 @@ def show_cache_management():
 
 def show_wechat_config():
     """显示企微群配置页面 - 数据库+.env混合配置管理"""
-    st.title("🔧 企微群配置管理")
-    st.markdown("**组织群配置(数据库) • 运营群配置(.env) • 通知渠道基础设施**")
-    st.markdown("---")
 
     # 配置状态概览
     st.subheader("📊 配置状态概览")
@@ -1769,10 +2041,6 @@ def show_detailed_config(db_manager, config):
 
 def show_about():
     """显示关于页面 - Agent智能化价值介绍"""
-    st.header("关于 FSOA")
-    st.markdown("**现场服务运营助手 - Field Service Operations Assistant**")
-    st.markdown("---")
-
     # Agent智能化价值展示
     st.subheader("Agent智能化价值")
 
@@ -1817,7 +2085,7 @@ def show_about():
     # 系统架构
     st.subheader("系统架构")
     st.markdown("""
-    **FSOA** 是一个基于 LangGraph 的智能Agent系统，专为现场服务运营管理设计：
+    **FSOA** (Field Service Operations Assistant) 是一个基于 LangGraph 的智能Agent系统，专为现场服务运营管理设计：
 
     **核心组件：**
     - **Agent Orchestrator**: 基于LangGraph的智能编排引擎

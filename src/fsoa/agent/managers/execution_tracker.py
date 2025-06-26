@@ -5,8 +5,8 @@ Agent执行追踪器
 """
 
 import time
-from datetime import datetime
-from typing import Dict, Any, Optional, List
+from datetime import datetime, timedelta
+from typing import Dict, Any, Optional, List, Tuple
 from contextlib import contextmanager
 
 from ...data.models import AgentRun, AgentHistory, AgentRunStatus
@@ -192,47 +192,60 @@ class AgentExecutionTracker:
     def get_run_statistics(self, hours_back: int = 24) -> Dict[str, Any]:
         """获取运行统计信息"""
         try:
-            # 这里简化实现，实际需要查询数据库
-            stats = {
-                "total_runs": 0,
-                "successful_runs": 0,
-                "failed_runs": 0,
-                "average_duration_seconds": 0,
-                "total_opportunities_processed": 0,
-                "total_notifications_sent": 0,
-                "period_hours": hours_back
-            }
-            
-            logger.info(f"Retrieved run statistics for last {hours_back} hours")
+            stats = self.db_manager.get_agent_run_statistics(hours_back)
+            logger.info(f"Retrieved run statistics for last {hours_back} hours: {stats}")
             return stats
-            
+
         except Exception as e:
             logger.error(f"Failed to get run statistics: {e}")
             return {}
     
     @log_function_call
-    def get_step_performance(self, step_name: Optional[str] = None, 
+    def get_step_performance(self, step_name: Optional[str] = None,
                            hours_back: int = 24) -> Dict[str, Any]:
         """获取步骤性能统计"""
         try:
-            # 这里简化实现，实际需要查询数据库
-            performance = {
-                "step_name": step_name or "all",
-                "total_executions": 0,
-                "successful_executions": 0,
-                "failed_executions": 0,
-                "average_duration_seconds": 0,
-                "min_duration_seconds": 0,
-                "max_duration_seconds": 0,
-                "period_hours": hours_back
-            }
-            
-            logger.info(f"Retrieved step performance for {step_name or 'all steps'}")
+            performance = self.db_manager.get_step_performance_statistics(step_name, hours_back)
+            logger.info(f"Retrieved step performance for {step_name or 'all steps'}: {performance}")
             return performance
-            
+
         except Exception as e:
             logger.error(f"Failed to get step performance: {e}")
             return {}
+
+    @log_function_call
+    def get_recent_runs(self, limit: int = 20, hours_back: int = 168) -> List['AgentRun']:
+        """获取最近的执行记录"""
+        try:
+            runs = self.db_manager.get_agent_runs(limit, hours_back)
+            logger.info(f"Retrieved {len(runs)} recent runs")
+            return runs
+
+        except Exception as e:
+            logger.error(f"Failed to get recent runs: {e}")
+            return []
+
+    @log_function_call
+    def get_run_details(self, run_id: int) -> Optional[Tuple['AgentRun', List['AgentHistory']]]:
+        """获取运行详情和步骤历史"""
+        try:
+            # 获取运行记录
+            runs = self.db_manager.get_agent_runs(limit=1000)  # 获取足够多的记录
+            run = next((r for r in runs if r.id == run_id), None)
+
+            if not run:
+                logger.warning(f"Run {run_id} not found")
+                return None
+
+            # 获取步骤历史
+            history = self.db_manager.get_agent_history_by_run(run_id)
+
+            logger.info(f"Retrieved details for run {run_id}: {len(history)} steps")
+            return run, history
+
+        except Exception as e:
+            logger.error(f"Failed to get run details for {run_id}: {e}")
+            return None
     
     def cleanup_old_records(self, days_back: int = 30) -> int:
         """清理旧的执行记录"""

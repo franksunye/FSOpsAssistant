@@ -225,7 +225,16 @@ class TaskInfo(BaseModel):
 
 
 class NotificationInfo(BaseModel):
-    """通知信息模型"""
+    """
+    通知信息模型 - 已废弃
+
+    ⚠️ 此模型已废弃，仅保留用于向后兼容
+
+    推荐使用：
+    - NotificationTask 模型用于新的通知任务系统
+
+    此模型不再对应数据库表，仅用于内存中的数据传递
+    """
     id: Optional[int] = None
     task_id: int
     type: str = Field(description="通知类型")

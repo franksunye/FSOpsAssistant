@@ -339,9 +339,14 @@ def execute_notification_tasks(run_id: int) -> Dict[str, Any]:
 @retry_on_failure(max_retries=2)
 def send_notification(task: TaskInfo, message: str, priority: Priority = Priority.NORMAL) -> bool:
     """
-    发送企微通知 - 已废弃
+    发送企微通知 - 已重构，不再使用废弃表
 
     ⚠️ 此函数已废弃，存在任务-商机概念混淆问题
+
+    重构说明：
+    - 已移除对notifications_deprecated表的操作
+    - 不再保存通知记录到废弃表
+    - 仅保留消息发送功能用于向后兼容
 
     推荐使用：
     - send_business_notifications() 发送业务通知
@@ -376,25 +381,18 @@ def send_notification(task: TaskInfo, message: str, priority: Priority = Priorit
         success = send_wechat_message(task.group_id, message)
         
         if success:
-            # 记录通知
-            notification = NotificationInfo(
-                task_id=task.id,
-                type="overdue_alert",
-                priority=priority,
-                message=message,
-                group_id=task.group_id,
-                sent_at=datetime.now(),
-                status=NotificationStatus.SENT
-            )
-            
-            db_manager = get_db_manager()
-            notification_id = db_manager.save_notification(notification)
-            
-            # 更新任务的最后通知时间
-            task.last_notification = datetime.now()
-            db_manager.save_task(task)
-            
-            logger.info(f"Successfully sent notification for task {task.id}")
+            # 不再使用废弃的notifications_deprecated表
+            # 通知记录现在由新的通知任务系统管理
+
+            # 更新任务的最后通知时间（保留用于兼容性）
+            try:
+                db_manager = get_db_manager()
+                task.last_notification = datetime.now()
+                db_manager.save_task(task)  # 这个方法也是废弃的，但保留用于兼容
+            except Exception as save_error:
+                logger.warning(f"Failed to update task last notification time: {save_error}")
+
+            logger.info(f"Successfully sent notification for task {task.id} (legacy mode)")
             return True
         else:
             logger.error(f"Failed to send notification for task {task.id}")
@@ -431,68 +429,45 @@ def update_task_status(task_id: int, status: str, comment: str = None) -> bool:
         "update_task_status() is deprecated due to task-opportunity concept confusion. "
         "Use direct opportunity data operations instead."
     )
-    try:
-        db_manager = get_db_manager()
-        
-        # 获取现有任务
-        tasks = db_manager.get_tasks()
-        task = next((t for t in tasks if t.id == task_id), None)
-        
-        if not task:
-            logger.warning(f"Task {task_id} not found")
-            return False
-        
-        # 更新状态
-        task.status = status
-        task.updated_at = datetime.now()
-        
-        success = db_manager.save_task(task)
-        
-        if success:
-            logger.info(f"Successfully updated task {task_id} status to {status}")
-        else:
-            logger.error(f"Failed to update task {task_id} status")
-        
-        return success
-        
-    except Exception as e:
-        logger.error(f"Error updating task status: {e}")
-        return False
+    # 此函数已完全废弃，不再执行任何操作
+    # 任务状态更新功能已迁移到商机数据和通知任务管理
+    logger.error(
+        f"update_task_status() is completely deprecated and no longer functional. "
+        f"Task ID {task_id} status update to '{status}' was ignored. "
+        f"Use direct opportunity data operations or NotificationTaskManager instead."
+    )
+    return False
 
 
 @log_function_call
 def get_task_notification_history(task_id: int, hours_back: int = 24) -> List[NotificationInfo]:
     """
-    获取任务通知历史 - 已废弃
+    获取任务通知历史 - 已彻底废弃
 
-    ⚠️ 此函数已废弃，存在任务-商机概念混淆问题
+    ⚠️ 此函数已彻底废弃，不再提供任何功能
+
+    原因：
+    - 存在任务-商机概念混淆问题
+    - 对应的notifications_deprecated表已被移除
+    - 新系统使用完全不同的数据结构
 
     推荐使用：
-    - 查询通知任务历史而不是任务通知历史
-    - 使用NotificationTaskManager查询通知记录
+    - NotificationTaskManager.get_notification_tasks_by_order() 查询工单通知记录
+    - DatabaseManager.get_agent_history_by_run() 查询执行历史
 
     Args:
-        task_id: 任务ID（实际为商机数据的伪ID）
-        hours_back: 查询多少小时内的历史
+        task_id: 任务ID（已无效）
+        hours_back: 查询时间范围（已无效）
 
     Returns:
-        通知历史列表
+        空列表（不再提供数据）
     """
-    logger.warning(
-        "get_task_notification_history() is deprecated due to task-opportunity concept confusion. "
-        "Use NotificationTaskManager to query notification records instead."
+    logger.error(
+        "get_task_notification_history() is completely deprecated and no longer functional. "
+        "The underlying notifications_deprecated table has been removed. "
+        "Use NotificationTaskManager for notification queries."
     )
-    try:
-        db_manager = get_db_manager()
-        
-        # 这里简化实现，实际需要在数据库中查询
-        # 暂时返回空列表
-        logger.info(f"Retrieved notification history for task {task_id}")
-        return []
-        
-    except Exception as e:
-        logger.error(f"Error getting notification history: {e}")
-        return []
+    return []  # 直接返回空列表，不再尝试查询
 
 
 def _check_notification_cooldown(task: TaskInfo) -> bool:

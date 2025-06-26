@@ -157,8 +157,7 @@ class AgentOrchestrator:
                 status=AgentStatus.RUNNING
             )
 
-            # 保存执行记录（兼容性）
-            self.db_manager.save_agent_execution(execution)
+            # 执行记录现在通过 AgentExecutionTracker 管理，不再使用废弃的 save_agent_execution
 
             # 执行工作流
             final_state = self.graph.invoke(initial_state)
@@ -191,8 +190,8 @@ class AgentOrchestrator:
             execution.errors = [str(e)]
             
         finally:
-            # 保存最终执行结果
-            self.db_manager.save_agent_execution(execution)
+            # 执行结果现在通过 AgentExecutionTracker 管理，不再使用废弃的 save_agent_execution
+            pass
         
         return execution
     
@@ -458,9 +457,8 @@ class AgentOrchestrator:
             if decision and decision.action in ["notify", "escalate"]:
                 current_task.last_notification = datetime.now()
                 
-                # 保存到数据库
-                if not state["context"].get("dry_run", False):
-                    self.db_manager.save_task(current_task)
+                # 任务状态更新现在通过商机数据和通知任务管理，不再使用废弃的 save_task
+                # 实际的状态更新已在通知发送过程中完成
             
             log_agent_step(
                 "update_status",

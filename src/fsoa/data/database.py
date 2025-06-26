@@ -112,57 +112,16 @@ class OpportunityCacheTable(Base):
 # 旧的表结构 - 待移除
 # ============================================================================
 
-class TaskTable(Base):
-    """任务表 - 已废弃，将被移除"""
-    __tablename__ = 'tasks_deprecated'
-
-    id = Column(Integer, primary_key=True)
-    title = Column(String(255), nullable=False)
-    description = Column(Text)
-    status = Column(String(50), nullable=False)
-    priority = Column(String(50), default='normal')
-    sla_hours = Column(Integer, nullable=False)
-    elapsed_hours = Column(Float, nullable=False)
-    overdue_hours = Column(Float, default=0)
-    group_id = Column(String(100))
-    assignee = Column(String(100))
-    customer = Column(String(255))
-    location = Column(String(255))
-    created_at = Column(DateTime, nullable=False)
-    updated_at = Column(DateTime, nullable=False)
-    last_notification = Column(DateTime)
+# TaskTable (tasks_deprecated) 已被彻底移除
+# 所有任务功能现在直接使用商机数据，不再维护单独的任务表
 
 
-class NotificationTable(Base):
-    """通知表 - 已废弃，保留用于历史数据"""
-    __tablename__ = 'notifications_deprecated'
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    task_id = Column(Integer, nullable=False)
-    type = Column(String(100), nullable=False)
-    priority = Column(String(50), default='normal')
-    message = Column(Text, nullable=False)
-    group_id = Column(String(100), nullable=False)
-    sent_at = Column(DateTime)
-    status = Column(String(50), default='pending')
-    delivery_status = Column(String(50))
-    error_message = Column(Text)
-    retry_count = Column(Integer, default=0)
+# NotificationTable (notifications_deprecated) 已被彻底移除
+# 所有通知功能现在使用 NotificationTaskTable (notification_tasks)
 
 
-class AgentExecutionTable(Base):
-    """Agent执行记录表 - 已废弃，被AgentRunTable替代"""
-    __tablename__ = 'agent_executions_deprecated'
-
-    id = Column(String(100), primary_key=True)
-    start_time = Column(DateTime, nullable=False)
-    end_time = Column(DateTime)
-    status = Column(String(50), nullable=False)
-    tasks_processed = Column(Integer, default=0)
-    notifications_sent = Column(Integer, default=0)
-    errors = Column(JSON)
-    context = Column(JSON)
-    execution_time_seconds = Column(Float)
+# AgentExecutionTable (agent_executions_deprecated) 已被彻底移除
+# 所有Agent执行记录功能现在使用 AgentRunTable (agent_runs) + AgentHistoryTable (agent_history)
 
 
 # 旧的AgentHistoryTable已被新设计替代，见上面的新表结构
@@ -219,6 +178,7 @@ class DatabaseManager:
             ("agent_execution_interval", "60", "Agent执行间隔（分钟）"),
             ("max_notifications_per_hour", "10", "每小时最大通知数"),
             ("notification_cooldown", "30", "通知冷却时间（分钟）"),
+            ("webhook_api_interval", "3", "Webhook API发送间隔（秒）"),
             ("escalation_threshold", "4", "升级阈值（小时）"),
             ("use_llm_optimization", "true", "是否使用LLM优化"),
             ("llm_temperature", "0.1", "LLM温度参数"),
@@ -250,124 +210,17 @@ class DatabaseManager:
         finally:
             session.close()
     
-    def save_task(self, task: 'TaskInfo') -> bool:
-        """
-        保存任务信息 - 已废弃
-
-        ⚠️ 此方法已废弃，存在任务-商机概念混淆问题
-
-        推荐使用：
-        - 直接操作商机数据，而不是任务数据
-        - 使用NotificationTaskManager管理通知任务
-
-        此方法仅用于向后兼容，不应在新代码中使用
-        """
-        logger.warning(
-            "save_task() is deprecated due to task-opportunity concept confusion. "
-            "Use direct opportunity data operations instead."
-        )
-        try:
-            with self.get_session() as session:
-                task_record = TaskTable(
-                    id=task.id,
-                    title=task.title,
-                    description=task.description,
-                    status=task.status.value,
-                    priority=task.priority.value,
-                    sla_hours=task.sla_hours,
-                    elapsed_hours=task.elapsed_hours,
-                    overdue_hours=task.overdue_hours,
-                    group_id=task.group_id,
-                    assignee=task.assignee,
-                    customer=task.customer,
-                    location=task.location,
-                    created_at=task.created_at,
-                    updated_at=task.updated_at,
-                    last_notification=task.last_notification
-                )
-                session.merge(task_record)  # 使用merge支持更新
-                session.commit()
-                return True
-        except Exception as e:
-            logger.error(f"Failed to save task {task.id}: {e}")
-            return False
+    # save_task() 方法已被移除
+    # 所有任务功能现在直接使用商机数据，不再维护单独的任务表
     
-    def get_tasks(self, status: Optional[TaskStatus] = None,
-                  group_id: Optional[str] = None) -> List['TaskInfo']:
-        """
-        获取任务列表 - 已废弃
-
-        ⚠️ 此方法已废弃，存在任务-商机概念混淆问题
-
-        推荐使用：
-        - 直接查询商机数据，而不是任务数据
-        - 使用NotificationTaskManager查询通知任务
-
-        此方法仅用于向后兼容，不应在新代码中使用
-        """
-        logger.warning(
-            "get_tasks() is deprecated due to task-opportunity concept confusion. "
-            "Use direct opportunity data queries instead."
-        )
-        try:
-            with self.get_session() as session:
-                query = session.query(TaskTable)
-                
-                if status:
-                    query = query.filter(TaskTable.status == status.value)
-                if group_id:
-                    query = query.filter(TaskTable.group_id == group_id)
-                
-                tasks = query.all()
-                return [self._task_table_to_model(task) for task in tasks]
-        except Exception as e:
-            logger.error(f"Failed to get tasks: {e}")
-            return []
+    # get_tasks() 方法已被移除
+    # 所有任务查询功能现在直接使用商机数据，不再维护单独的任务表
     
-    def save_notification(self, notification: NotificationInfo) -> Optional[int]:
-        """保存通知记录"""
-        try:
-            with self.get_session() as session:
-                notification_record = NotificationTable(
-                    task_id=notification.task_id,
-                    type=notification.type,
-                    priority=notification.priority.value,
-                    message=notification.message,
-                    group_id=notification.group_id,
-                    sent_at=notification.sent_at,
-                    status=notification.status.value,
-                    delivery_status=notification.delivery_status,
-                    error_message=notification.error_message,
-                    retry_count=notification.retry_count
-                )
-                session.add(notification_record)
-                session.commit()
-                return notification_record.id
-        except Exception as e:
-            logger.error(f"Failed to save notification: {e}")
-            return None
+    # save_notification() 方法已被移除
+    # 所有通知记录现在通过 NotificationTaskTable 管理
     
-    def save_agent_execution(self, execution: AgentExecution) -> bool:
-        """保存Agent执行记录"""
-        try:
-            with self.get_session() as session:
-                execution_record = AgentExecutionTable(
-                    id=execution.id,
-                    start_time=execution.start_time,
-                    end_time=execution.end_time,
-                    status=execution.status.value,
-                    tasks_processed=execution.tasks_processed,
-                    notifications_sent=execution.notifications_sent,
-                    errors=execution.errors,
-                    context=execution.context,
-                    execution_time_seconds=execution.execution_time_seconds
-                )
-                session.merge(execution_record)
-                session.commit()
-                return True
-        except Exception as e:
-            logger.error(f"Failed to save agent execution: {e}")
-            return False
+    # save_agent_execution() 方法已被移除
+    # 所有Agent执行记录功能现在使用 AgentRunTable (agent_runs) + AgentHistoryTable (agent_history)
     
     def get_system_config(self, key: str) -> Optional[str]:
         """获取系统配置"""
@@ -406,39 +259,8 @@ class DatabaseManager:
             logger.error(f"Failed to set system config {key}: {e}")
             return False
     
-    def _task_table_to_model(self, task_record: TaskTable) -> 'TaskInfo':
-        """
-        将数据库记录转换为模型 - 已废弃
-
-        ⚠️ 此方法已废弃，存在任务-商机概念混淆问题
-
-        推荐使用：
-        - 直接操作商机数据模型，而不是任务数据模型
-        - 使用OpportunityInfo模型而不是TaskInfo
-
-        此方法仅用于向后兼容，不应在新代码中使用
-        """
-        logger.warning(
-            "_task_table_to_model() is deprecated due to task-opportunity concept confusion. "
-            "Use OpportunityInfo model instead."
-        )
-        return TaskInfo(
-            id=task_record.id,
-            title=task_record.title,
-            description=task_record.description,
-            status=TaskStatus(task_record.status),
-            priority=task_record.priority,
-            sla_hours=task_record.sla_hours,
-            elapsed_hours=task_record.elapsed_hours,
-            overdue_hours=task_record.overdue_hours,
-            group_id=task_record.group_id,
-            assignee=task_record.assignee,
-            customer=task_record.customer,
-            location=task_record.location,
-            created_at=task_record.created_at,
-            updated_at=task_record.updated_at,
-            last_notification=task_record.last_notification
-        )
+    # _task_table_to_model() 方法已被移除
+    # 所有任务数据转换功能现在直接使用商机数据模型，不再维护单独的任务表
 
     # ============================================================================
     # 新的数据操作方法 - 重构后的设计
@@ -502,6 +324,167 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Failed to save agent history: {e}")
             return False
+
+    def get_agent_runs(self, limit: int = 50, hours_back: int = 168) -> List['AgentRun']:
+        """获取Agent执行记录列表"""
+        try:
+            with self.get_session() as session:
+                cutoff_time = datetime.utcnow() - timedelta(hours=hours_back)
+
+                runs = session.query(AgentRunTable)\
+                    .filter(AgentRunTable.trigger_time >= cutoff_time)\
+                    .order_by(AgentRunTable.trigger_time.desc())\
+                    .limit(limit)\
+                    .all()
+
+                result = []
+                for run in runs:
+                    agent_run = AgentRun(
+                        id=run.id,
+                        trigger_time=run.trigger_time,
+                        end_time=run.end_time,
+                        status=AgentRunStatus(run.status),
+                        context=run.context or {},
+                        opportunities_processed=run.opportunities_processed,
+                        notifications_sent=run.notifications_sent,
+                        errors=run.errors or [],
+                        created_at=run.created_at
+                    )
+                    result.append(agent_run)
+
+                return result
+
+        except Exception as e:
+            logger.error(f"Failed to get agent runs: {e}")
+            return []
+
+    def get_agent_run_statistics(self, hours_back: int = 24) -> Dict[str, Any]:
+        """获取Agent运行统计信息"""
+        try:
+            with self.get_session() as session:
+                cutoff_time = datetime.utcnow() - timedelta(hours=hours_back)
+
+                # 基本统计
+                total_runs = session.query(AgentRunTable)\
+                    .filter(AgentRunTable.trigger_time >= cutoff_time)\
+                    .count()
+
+                successful_runs = session.query(AgentRunTable)\
+                    .filter(AgentRunTable.trigger_time >= cutoff_time)\
+                    .filter(AgentRunTable.status == 'completed')\
+                    .count()
+
+                failed_runs = session.query(AgentRunTable)\
+                    .filter(AgentRunTable.trigger_time >= cutoff_time)\
+                    .filter(AgentRunTable.status == 'failed')\
+                    .count()
+
+                # 计算平均执行时间
+                completed_runs = session.query(AgentRunTable)\
+                    .filter(AgentRunTable.trigger_time >= cutoff_time)\
+                    .filter(AgentRunTable.status == 'completed')\
+                    .filter(AgentRunTable.end_time.isnot(None))\
+                    .all()
+
+                total_duration = 0
+                duration_count = 0
+                total_opportunities = 0
+                total_notifications = 0
+
+                for run in completed_runs:
+                    if run.end_time and run.trigger_time:
+                        duration = (run.end_time - run.trigger_time).total_seconds()
+                        total_duration += duration
+                        duration_count += 1
+
+                    total_opportunities += run.opportunities_processed or 0
+                    total_notifications += run.notifications_sent or 0
+
+                avg_duration = total_duration / duration_count if duration_count > 0 else 0
+
+                return {
+                    "total_runs": total_runs,
+                    "successful_runs": successful_runs,
+                    "failed_runs": failed_runs,
+                    "running_runs": total_runs - successful_runs - failed_runs,
+                    "success_rate": round(successful_runs / total_runs * 100, 2) if total_runs > 0 else 0,
+                    "average_duration_seconds": round(avg_duration, 2),
+                    "total_opportunities_processed": total_opportunities,
+                    "total_notifications_sent": total_notifications,
+                    "period_hours": hours_back
+                }
+
+        except Exception as e:
+            logger.error(f"Failed to get agent run statistics: {e}")
+            return {}
+
+    def get_agent_history_by_run(self, run_id: int) -> List['AgentHistory']:
+        """获取指定运行的执行历史"""
+        try:
+            with self.get_session() as session:
+                histories = session.query(AgentHistoryTable)\
+                    .filter(AgentHistoryTable.run_id == run_id)\
+                    .order_by(AgentHistoryTable.timestamp)\
+                    .all()
+
+                result = []
+                for history in histories:
+                    agent_history = AgentHistory(
+                        id=history.id,
+                        run_id=history.run_id,
+                        step_name=history.step_name,
+                        input_data=history.input_data or {},
+                        output_data=history.output_data or {},
+                        timestamp=history.timestamp,
+                        duration_seconds=history.duration_seconds,
+                        error_message=history.error_message,
+                        created_at=history.created_at
+                    )
+                    result.append(agent_history)
+
+                return result
+
+        except Exception as e:
+            logger.error(f"Failed to get agent history for run {run_id}: {e}")
+            return []
+
+    def get_step_performance_statistics(self, step_name: Optional[str] = None,
+                                      hours_back: int = 24) -> Dict[str, Any]:
+        """获取步骤性能统计"""
+        try:
+            with self.get_session() as session:
+                cutoff_time = datetime.utcnow() - timedelta(hours=hours_back)
+
+                query = session.query(AgentHistoryTable)\
+                    .join(AgentRunTable, AgentHistoryTable.run_id == AgentRunTable.id)\
+                    .filter(AgentRunTable.trigger_time >= cutoff_time)
+
+                if step_name:
+                    query = query.filter(AgentHistoryTable.step_name == step_name)
+
+                histories = query.all()
+
+                total_executions = len(histories)
+                successful_executions = len([h for h in histories if not h.error_message])
+                failed_executions = total_executions - successful_executions
+
+                durations = [h.duration_seconds for h in histories if h.duration_seconds is not None]
+
+                return {
+                    "step_name": step_name or "all",
+                    "total_executions": total_executions,
+                    "successful_executions": successful_executions,
+                    "failed_executions": failed_executions,
+                    "success_rate": round(successful_executions / total_executions * 100, 2) if total_executions > 0 else 0,
+                    "average_duration_seconds": round(sum(durations) / len(durations), 2) if durations else 0,
+                    "min_duration_seconds": round(min(durations), 2) if durations else 0,
+                    "max_duration_seconds": round(max(durations), 2) if durations else 0,
+                    "period_hours": hours_back
+                }
+
+        except Exception as e:
+            logger.error(f"Failed to get step performance statistics: {e}")
+            return {}
 
     def save_notification_task(self, task: 'NotificationTask') -> int:
         """保存通知任务"""

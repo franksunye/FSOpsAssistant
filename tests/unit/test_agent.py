@@ -259,19 +259,18 @@ class TestAgentOrchestrator:
     @patch('src.fsoa.agent.orchestrator.get_db_manager')
     @patch('src.fsoa.agent.orchestrator.fetch_overdue_tasks')
     def test_agent_execution_success(self, mock_fetch_tasks, mock_db_manager, sample_task):
-        """测试Agent执行成功"""
+        """测试Agent执行成功 - 使用废弃方法的兼容性测试"""
         # Arrange
         mock_fetch_tasks.return_value = [sample_task]
         mock_db = Mock()
-        mock_db.save_agent_execution.return_value = True
-        mock_db.save_task.return_value = True
+        # 注意：save_agent_execution 和 save_task 方法已被移除，但测试仍保留以验证兼容性
         mock_db_manager.return_value = mock_db
-        
+
         orchestrator = AgentOrchestrator()
-        
+
         # Act
         result = orchestrator.execute(dry_run=True)
-        
+
         # Assert
         assert result.tasks_processed >= 0
         assert result.status.value in ["idle", "running", "error"]
