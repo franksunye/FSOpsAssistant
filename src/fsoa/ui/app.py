@@ -1881,22 +1881,22 @@ def show_about():
     col_link1, col_link2, col_link3, col_link4 = st.columns(4)
 
     with col_link1:
-        if st.button("运营仪表板", use_container_width=True):
+        if st.button("运营仪表板", use_container_width=True, key="about_dashboard"):
             st.session_state.page = "dashboard"
             st.rerun()
 
     with col_link2:
-        if st.button("Agent控制台", use_container_width=True):
+        if st.button("Agent控制台", use_container_width=True, key="about_agent"):
             st.session_state.page = "agent_control"
             st.rerun()
 
     with col_link3:
-        if st.button("企微群配置", use_container_width=True):
+        if st.button("企微群配置", use_container_width=True, key="about_wechat"):
             st.session_state.page = "wechat_config"
             st.rerun()
 
     with col_link4:
-        if st.button("系统设置", use_container_width=True):
+        if st.button("系统设置", use_container_width=True, key="about_settings"):
             st.session_state.page = "system_settings"
             st.rerun()
 
