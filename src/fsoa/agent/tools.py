@@ -94,7 +94,7 @@ def get_execution_tracker() -> AgentExecutionTracker:
 
 
 # ============================================================================
-# 废弃的函数 - 保留用于向后兼容
+# 废弃的函数 - 仅保留用于向后兼容，请使用新的商机相关接口
 # ============================================================================
 
 @log_function_call
@@ -103,22 +103,31 @@ def fetch_overdue_tasks() -> List[TaskInfo]:
     """
     从Metabase获取超时任务列表 - 已废弃
 
-    请使用 get_data_strategy().get_opportunities() 替代
+    ⚠️ 此函数已废弃，存在任务-商机概念混淆问题
+
+    推荐使用：
+    - fetch_overdue_opportunities() 获取逾期商机
+    - get_data_strategy().get_overdue_opportunities() 获取逾期商机
+
+    此函数将商机数据强制转换为TaskInfo格式，仅用于向后兼容
 
     Returns:
-        超时任务列表
+        超时任务列表（实际为商机数据的TaskInfo包装）
 
     Raises:
         ToolError: 当获取数据失败时
     """
-    logger.warning("fetch_overdue_tasks() is deprecated, use get_data_strategy().get_opportunities() instead")
+    logger.warning(
+        "fetch_overdue_tasks() is deprecated due to task-opportunity concept confusion. "
+        "Use fetch_overdue_opportunities() instead."
+    )
 
     try:
-        # 使用新的数据策略获取商机，然后转换为TaskInfo格式
+        # 使用新的数据策略获取商机，然后转换为TaskInfo格式以保持兼容性
         data_strategy = get_data_strategy()
         opportunities = data_strategy.get_overdue_opportunities()
 
-        # 转换为TaskInfo格式以保持兼容性
+        # 将商机数据包装为TaskInfo格式（仅用于兼容性）
         tasks = []
         for opp in opportunities:
             task = TaskInfo(
@@ -139,7 +148,7 @@ def fetch_overdue_tasks() -> List[TaskInfo]:
             )
             tasks.append(task)
 
-        logger.info(f"Successfully converted {len(opportunities)} opportunities to {len(tasks)} tasks")
+        logger.info(f"Successfully converted {len(opportunities)} opportunities to {len(tasks)} legacy tasks")
         return tasks
 
     except Exception as e:
@@ -330,19 +339,29 @@ def execute_notification_tasks(run_id: int) -> Dict[str, Any]:
 @retry_on_failure(max_retries=2)
 def send_notification(task: TaskInfo, message: str, priority: Priority = Priority.NORMAL) -> bool:
     """
-    发送企微通知
-    
+    发送企微通知 - 已废弃
+
+    ⚠️ 此函数已废弃，存在任务-商机概念混淆问题
+
+    推荐使用：
+    - send_business_notifications() 发送业务通知
+    - NotificationTaskManager.execute_notification_tasks() 执行通知任务
+
     Args:
-        task: 任务信息
+        task: 任务信息（实际为商机数据的TaskInfo包装）
         message: 通知消息
         priority: 优先级
-        
+
     Returns:
         是否发送成功
-        
+
     Raises:
         ToolError: 当发送失败时
     """
+    logger.warning(
+        "send_notification() is deprecated due to task-opportunity concept confusion. "
+        "Use send_business_notifications() instead."
+    )
     if not task.group_id:
         logger.warning(f"Task {task.id} has no group_id, skipping notification")
         return False
@@ -392,16 +411,26 @@ def send_notification(task: TaskInfo, message: str, priority: Priority = Priorit
 @log_function_call
 def update_task_status(task_id: int, status: str, comment: str = None) -> bool:
     """
-    更新任务状态
-    
+    更新任务状态 - 已废弃
+
+    ⚠️ 此函数已废弃，存在任务-商机概念混淆问题
+
+    推荐使用：
+    - 直接操作商机数据，而不是任务状态
+    - 使用NotificationTaskManager管理通知任务状态
+
     Args:
-        task_id: 任务ID
+        task_id: 任务ID（实际为商机数据的伪ID）
         status: 新状态
         comment: 备注信息
-        
+
     Returns:
         是否更新成功
     """
+    logger.warning(
+        "update_task_status() is deprecated due to task-opportunity concept confusion. "
+        "Use direct opportunity data operations instead."
+    )
     try:
         db_manager = get_db_manager()
         
@@ -434,15 +463,25 @@ def update_task_status(task_id: int, status: str, comment: str = None) -> bool:
 @log_function_call
 def get_task_notification_history(task_id: int, hours_back: int = 24) -> List[NotificationInfo]:
     """
-    获取任务通知历史
-    
+    获取任务通知历史 - 已废弃
+
+    ⚠️ 此函数已废弃，存在任务-商机概念混淆问题
+
+    推荐使用：
+    - 查询通知任务历史而不是任务通知历史
+    - 使用NotificationTaskManager查询通知记录
+
     Args:
-        task_id: 任务ID
+        task_id: 任务ID（实际为商机数据的伪ID）
         hours_back: 查询多少小时内的历史
-        
+
     Returns:
         通知历史列表
     """
+    logger.warning(
+        "get_task_notification_history() is deprecated due to task-opportunity concept confusion. "
+        "Use NotificationTaskManager to query notification records instead."
+    )
     try:
         db_manager = get_db_manager()
         

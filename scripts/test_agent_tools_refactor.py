@@ -227,12 +227,21 @@ def test_backward_compatibility():
         from src.fsoa.agent.tools import fetch_overdue_tasks, send_business_notifications
         from src.fsoa.data.models import OpportunityInfo, OpportunityStatus
         
-        # 测试废弃的fetch_overdue_tasks函数
+        # 测试废弃的fetch_overdue_tasks函数（已重构，存在概念混淆）
         try:
             tasks = fetch_overdue_tasks()
-            print(f"✅ 废弃函数fetch_overdue_tasks仍可用: {len(tasks)} 个任务")
+            print(f"⚠️ 废弃函数fetch_overdue_tasks仍可用（存在任务-商机概念混淆）: {len(tasks)} 个任务")
+            print("   推荐使用: fetch_overdue_opportunities() 获取逾期商机")
         except Exception as e:
             print(f"⚠️ fetch_overdue_tasks失败（可能是Metabase连接问题）: {e}")
+
+        # 测试推荐的新接口
+        try:
+            from src.fsoa.agent.tools import fetch_overdue_opportunities
+            opportunities = fetch_overdue_opportunities()
+            print(f"✅ 推荐接口fetch_overdue_opportunities正常: {len(opportunities)} 个商机")
+        except Exception as e:
+            print(f"⚠️ fetch_overdue_opportunities失败: {e}")
         
         # 测试重构的send_business_notifications函数
         test_opportunities = [
