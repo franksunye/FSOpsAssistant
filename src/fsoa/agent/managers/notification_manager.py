@@ -225,17 +225,27 @@ class NotificationTaskManager:
                     for task in escalation_tasks:
                         self._update_task_after_send(task, run_id, success=False)
 
-            # 合并违规和标准通知为一条消息发送到组织群
-            org_notification_tasks = violation_tasks + standard_tasks
-            if org_notification_tasks:
-                success = self._send_unified_org_notification(org_name, org_notification_tasks, run_id)
+            # 分别发送违规通知和标准通知
+            if violation_tasks:
+                success = self._send_violation_notification(org_name, violation_tasks, run_id)
                 if success:
-                    result.sent_count += len(org_notification_tasks)
-                    for task in org_notification_tasks:
+                    result.sent_count += len(violation_tasks)
+                    for task in violation_tasks:
                         self._update_task_after_send(task, run_id, success=True)
                 else:
-                    result.failed_count += len(org_notification_tasks)
-                    for task in org_notification_tasks:
+                    result.failed_count += len(violation_tasks)
+                    for task in violation_tasks:
+                        self._update_task_after_send(task, run_id, success=False)
+
+            if standard_tasks:
+                success = self._send_standard_notification(org_name, standard_tasks, run_id)
+                if success:
+                    result.sent_count += len(standard_tasks)
+                    for task in standard_tasks:
+                        self._update_task_after_send(task, run_id, success=True)
+                else:
+                    result.failed_count += len(standard_tasks)
+                    for task in standard_tasks:
                         self._update_task_after_send(task, run_id, success=False)
             
             return result

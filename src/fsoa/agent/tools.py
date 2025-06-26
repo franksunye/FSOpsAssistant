@@ -386,9 +386,10 @@ def send_notification(task: TaskInfo, message: str, priority: Priority = Priorit
 
             # 更新任务的最后通知时间（保留用于兼容性）
             try:
-                db_manager = get_db_manager()
+                # 注意：save_task方法已被移除，因为TaskInfo模型已废弃
+                # 新的通知系统使用NotificationTask模型和相应的数据库操作
                 task.last_notification = datetime.now()
-                db_manager.save_task(task)  # 这个方法也是废弃的，但保留用于兼容
+                logger.debug(f"Updated task {task.id} last notification time (in-memory only)")
             except Exception as save_error:
                 logger.warning(f"Failed to update task last notification time: {save_error}")
 
