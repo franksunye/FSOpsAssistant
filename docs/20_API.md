@@ -19,10 +19,10 @@ Field Service Operations Assistant - API接口规范
 ```json
 {
     "error": {
-        "code": "TASK_NOT_FOUND",
-        "message": "指定的任务不存在",
+        "code": "OPPORTUNITY_NOT_FOUND",
+        "message": "指定的商机不存在",
         "details": {
-            "task_id": 123
+            "order_num": "ORD123456"
         }
     }
 }
@@ -41,9 +41,13 @@ GET /api/agent/status
     "status": "running",
     "last_execution": "2025-06-25T10:00:00Z",
     "next_execution": "2025-06-25T11:00:00Z",
-    "tasks_processed": 15,
+    "opportunities_processed": 15,
     "notifications_sent": 3,
-    "errors": 0
+    "notification_tasks_created": 5,
+    "escalated_count": 1,
+    "errors": 0,
+    "cache_enabled": true,
+    "cache_hit_rate": 0.85
 }
 ```
 

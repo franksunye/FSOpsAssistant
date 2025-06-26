@@ -4,7 +4,7 @@ Field Service Operations Assistant - 轻量级本地部署指南
 
 ## 📋 部署概述
 
-本指南提供FSOA的轻量级本地部署方案，适用于开发和小规模生产环境。
+本指南提供FSOA的轻量级本地部署方案，适用于开发和小规模生产环境。系统采用管理器架构，支持Web界面管理和Agent后台服务。
 
 ## 🔧 环境要求
 
@@ -67,8 +67,10 @@ METABASE_USERNAME=fsoa_user
 METABASE_PASSWORD=your_password
 METABASE_DATABASE_ID=1
 
-# 企业微信通知配置
-# 注意：企微配置已迁移到Web界面管理
+# 内部运营群配置（用于升级通知）
+INTERNAL_OPS_WEBHOOK=https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=your_internal_ops_key
+
+# 企业微信群组配置已迁移到数据库管理
 # 请在部署后通过 [系统管理 → 企微群配置] 进行配置
 
 # 数据库配置

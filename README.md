@@ -11,7 +11,7 @@
 
 FSOA是一个具备**主动性、自主决策、目标导向**特性的AI Agent系统，专为现场服务运营场景设计。通过智能监控、自动决策和及时通知，大幅提升运营效率，减少人工干预。
 
-**🚀 当前状态**: ✅ 架构重构完成 - 已完成数据架构清晰化、管理器模式重构、业务逻辑优化，系统可维护性大幅提升。
+**🚀 当前状态**: ✅ 生产就绪 - 已完成架构重构、管理器模式实现、业务逻辑优化，系统稳定可靠，可维护性大幅提升。
 
 ### 核心特性
 
@@ -163,24 +163,43 @@ FSOA已实现完整的业务功能：
 ```
 FSOpsAssistant/
 ├── src/fsoa/              # 源代码
-│   ├── agent/             # Agent核心模块 (重构中)
-│   │   ├── orchestrator.py    # Agent编排器
-│   │   ├── tools.py           # Agent工具集 (重构)
-│   │   └── managers/          # 新增管理器 (计划)
+│   ├── agent/             # Agent核心模块
+│   │   ├── orchestrator.py    # Agent编排器 (LangGraph)
+│   │   ├── tools.py           # Agent工具集
+│   │   ├── decision.py        # 决策引擎
+│   │   ├── llm.py            # LLM集成
+│   │   └── managers/          # 管理器模块
+│   │       ├── data_strategy.py      # 业务数据策略
+│   │       ├── notification_manager.py # 通知任务管理
+│   │       └── execution_tracker.py   # 执行追踪
 │   ├── analytics/         # 业务分析模块
-│   ├── config/            # 配置管理模块
-│   ├── data/              # 数据层 (重构中)
-│   │   ├── models.py          # 数据模型 (重构)
-│   │   ├── database.py        # 数据库操作 (重构)
+│   ├── data/              # 数据层
+│   │   ├── models.py          # 数据模型
+│   │   ├── database.py        # 数据库操作
 │   │   └── metabase.py        # Metabase客户端
 │   ├── notification/      # 通知模块
+│   │   ├── wechat.py          # 企微通知
+│   │   ├── business_formatter.py # 业务消息格式化
+│   │   └── templates.py       # 消息模板
 │   ├── ui/                # UI界面
-│   │   └── pages/         # 页面模块
+│   │   ├── app.py             # 主应用
+│   │   └── pages/             # 页面模块
 │   └── utils/             # 工具模块
-├── docs/                  # 项目文档
-│   ├── REFACTORING_PLAN.md    # 重构计划 (新增)
-│   └── ...                    # 其他文档
-├── scripts/               # 脚本文件
+├── docs/                  # 项目文档 (已清理)
+│   ├── 00_SYSTEM_STATUS.md    # 系统状态报告
+│   ├── 00_PROJECT_OVERVIEW.md # 项目概述
+│   ├── 10_ARCHITECTURE.md     # 系统架构
+│   ├── 20_API.md             # API文档
+│   ├── 30_DEVELOPMENT.md     # 开发指南
+│   ├── 40_USER_GUIDE.md      # 用户指南
+│   └── 50_DEPLOYMENT.md      # 部署指南
+├── scripts/               # 核心脚本 (已精简)
+│   ├── README.md             # 脚本使用说明
+│   ├── init_db.py            # 数据库初始化
+│   ├── run_tests.py          # 测试运行器
+│   ├── start_web.py          # Web界面启动
+│   ├── start_agent.py        # Agent服务启动
+│   └── start_full_app.py     # 完整应用启动
 └── config/                # 配置文件目录
 ```
 

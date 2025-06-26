@@ -136,17 +136,35 @@ graph TB
 ```python
 # 核心工具集 (重构后)
 - fetch_overdue_opportunities()    # 从Metabase获取逾期商机
-- send_business_notifications()    # 发送分级业务通知
+- get_all_opportunities()          # 获取所有商机数据
+- create_notification_tasks()      # 创建通知任务
+- execute_notification_tasks()     # 执行通知任务
+- start_agent_execution()          # 开始Agent执行
+- complete_agent_execution()       # 完成Agent执行
+
+# 管理器组件
+- BusinessDataStrategy            # 业务数据处理策略
+  ├── get_opportunities()         # 获取商机数据
+  ├── get_overdue_opportunities() # 获取逾期商机
+  ├── refresh_cache()            # 刷新缓存
+  └── validate_data_consistency() # 数据一致性验证
+
 - NotificationTaskManager         # 通知任务管理器
+  ├── create_tasks()             # 创建通知任务
+  ├── execute_pending_tasks()    # 执行待处理任务
+  └── get_task_statistics()      # 获取任务统计
+
 - AgentExecutionTracker          # Agent执行追踪器
-- BusinessDataStrategy           # 业务数据处理策略
+  ├── start_run()                # 开始运行
+  ├── complete_run()             # 完成运行
+  └── get_run_statistics()       # 获取运行统计
 ```
 
 #### 重构说明
-- **移除**: `fetch_overdue_tasks()` - 概念混淆，已用`fetch_overdue_opportunities()`替代
-- **移除**: `TaskInfo`相关代码 - 与业务数据模型重复
-- **新增**: 通知任务管理和Agent执行追踪功能
-- **优化**: 业务数据与Agent数据的清晰分离
+- **✅ 已完成**: 管理器模式架构重构，数据与Agent逻辑分离
+- **✅ 已移除**: `fetch_overdue_tasks()`、`TaskInfo`等概念混淆的代码
+- **✅ 已新增**: 完整的通知任务管理和Agent执行追踪功能
+- **✅ 已优化**: 业务数据与Agent数据的清晰分离和统一接口
 
 ### 3.3 Decision Engine
 - **规则引擎**：基于SLA时间的硬规则判断

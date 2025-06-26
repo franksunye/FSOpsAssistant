@@ -25,8 +25,10 @@ Field Service Operations Assistant - 测试策略和实施指南
 - **业务导向**：优先测试核心业务逻辑和用户场景
 
 ### 1.3 测试范围
-- **核心功能**：Agent执行、任务检测、通知发送
+- **核心功能**：Agent执行、商机检测、分级通知发送
+- **管理器组件**：BusinessDataStrategy、NotificationTaskManager、AgentExecutionTracker
 - **集成点**：Metabase API、企微Webhook、LLM调用
+- **缓存机制**：数据缓存、TTL策略、一致性验证
 - **边界条件**：异常处理、网络故障、数据异常
 - **性能要求**：响应时间、并发处理、资源使用
 
@@ -44,7 +46,11 @@ tests/unit/
 ├── test_agent/
 │   ├── test_orchestrator.py    # Agent编排器测试
 │   ├── test_tools.py          # 工具函数测试
-│   └── test_decision.py       # 决策引擎测试
+│   ├── test_decision.py       # 决策引擎测试
+│   └── test_managers/         # 管理器测试
+│       ├── test_data_strategy.py      # 数据策略测试
+│       ├── test_notification_manager.py # 通知管理器测试
+│       └── test_execution_tracker.py   # 执行追踪器测试
 ├── test_data/
 │   ├── test_models.py         # 数据模型测试
 │   ├── test_database.py       # 数据库操作测试

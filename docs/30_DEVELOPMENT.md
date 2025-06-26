@@ -29,32 +29,27 @@ python scripts/init_db.py
 # 启动Web界面（推荐用于开发测试）
 python scripts/start_web.py
 
-# 或启动完整应用（包含定时任务）
-python scripts/start_app.py
+# 启动Agent服务（后台运行）
+python scripts/start_agent.py
+
+# 启动完整应用（Web界面+Agent服务）
+python scripts/start_full_app.py
 ```
 
 ### 1.3 环境验证
 
 ```bash
-# 运行环境测试（验证所有组件是否正常）
-python scripts/test_environment.py
+# 运行测试套件
+python scripts/run_tests.py
 
 # 预期输出：
-# ✅ 模块导入正常
-# ✅ 配置系统正常
-# ✅ 数据库连接正常
-# ✅ 日志系统正常
-# ✅ Agent组件正常
-# ✅ 通知系统正常
+# ✅ 单元测试通过
+# ✅ 集成测试通过
+# ✅ 管理器组件测试通过
+# ✅ Agent工作流测试通过
 
-# 测试外部服务连接
-python scripts/test_services.py
-
-# 预期输出：
-# ✅ DeepSeek API 连接成功
-# ✅ Metabase 连接成功
-# ✅ 企微 Webhook 配置成功
-# ✅ Agent 工作流测试成功
+# 验证系统健康状态
+# 通过Web界面：[系统管理 → 系统测试] 进行全面验证
 ```
 
 ### 1.4 配置文件
