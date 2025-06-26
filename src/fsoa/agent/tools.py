@@ -6,6 +6,9 @@ Agent工具函数模块
 
 import time
 from datetime import datetime, timedelta
+
+# 导入时区工具
+from ..utils.timezone_utils import now_china_naive
 from typing import List, Optional, Dict, Any
 from functools import wraps
 
@@ -387,7 +390,7 @@ def send_notification(task: TaskInfo, message: str, priority: Priority = Priorit
             # 更新任务的最后通知时间（保留用于兼容性）
             try:
                 db_manager = get_db_manager()
-                task.last_notification = datetime.now()
+                task.last_notification = now_china_naive()
                 db_manager.save_task(task)  # 这个方法也是废弃的，但保留用于兼容
             except Exception as save_error:
                 logger.warning(f"Failed to update task last notification time: {save_error}")

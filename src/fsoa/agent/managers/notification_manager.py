@@ -5,6 +5,9 @@
 """
 
 from datetime import datetime, timedelta
+
+# 导入时区工具
+from ...utils.timezone_utils import now_china_naive
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 
@@ -89,7 +92,7 @@ class NotificationTaskManager:
                         order_num=opp.order_num,
                         org_name=opp.org_name,
                         notification_type=NotificationTaskType.VIOLATION,
-                        due_time=datetime.now(),
+                        due_time=now_china_naive(),
                         created_run_id=run_id,
                         cooldown_hours=self.notification_cooldown_hours,
                         max_retry_count=self.max_retry_count
@@ -102,7 +105,7 @@ class NotificationTaskManager:
                         order_num=opp.order_num,
                         org_name=opp.org_name,
                         notification_type=NotificationTaskType.STANDARD,
-                        due_time=datetime.now(),
+                        due_time=now_china_naive(),
                         created_run_id=run_id,
                         cooldown_hours=self.notification_cooldown_hours,
                         max_retry_count=self.max_retry_count
@@ -115,7 +118,7 @@ class NotificationTaskManager:
                         order_num=opp.order_num,
                         org_name=opp.org_name,
                         notification_type=NotificationTaskType.ESCALATION,
-                        due_time=datetime.now(),
+                        due_time=now_china_naive(),
                         created_run_id=run_id,
                         cooldown_hours=self.notification_cooldown_hours,
                         max_retry_count=self.max_retry_count
@@ -335,7 +338,7 @@ class NotificationTaskManager:
         try:
             if success:
                 # 发送成功
-                task.last_sent_at = datetime.now()
+                task.last_sent_at = now_china_naive()
                 task.retry_count += 1
 
                 # 如果达到最大重试次数，标记为已发送
@@ -385,7 +388,7 @@ class NotificationTaskManager:
             name="客户",  # 简化显示
             address="地址",  # 简化显示
             supervisor_name="负责人",  # 简化显示
-            create_time=datetime.now() - timedelta(days=2),  # 估算创建时间
+            create_time=now_china_naive() - timedelta(days=2),  # 估算创建时间
             org_name=task.org_name,
             order_status=OpportunityStatus.PENDING_APPOINTMENT  # 默认状态
         )

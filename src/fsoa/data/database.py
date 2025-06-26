@@ -15,6 +15,7 @@ from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.exc import SQLAlchemyError
 
 from ..utils.logger import get_logger
+from ..utils.timezone_utils import now_china_naive
 from .models import (
     OpportunityInfo, NotificationInfo, AgentExecution,
     SystemConfig, GroupConfig, NotificationStatus, AgentStatus,
@@ -44,7 +45,7 @@ class AgentRunTable(Base):
     opportunities_processed = Column(Integer, default=0)
     notifications_sent = Column(Integer, default=0)
     errors = Column(JSON)  # 错误信息列表
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=now_china_naive)
 
 
 class AgentHistoryTable(Base):
@@ -59,7 +60,7 @@ class AgentHistoryTable(Base):
     timestamp = Column(DateTime, nullable=False)
     duration_seconds = Column(Float)  # 执行耗时
     error_message = Column(Text)  # 错误信息
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=now_china_naive)
 
 
 class NotificationTaskTable(Base):
@@ -77,8 +78,8 @@ class NotificationTaskTable(Base):
     created_run_id = Column(Integer)  # 创建此任务的Agent运行ID
     sent_run_id = Column(Integer)  # 发送此通知的Agent运行ID
     retry_count = Column(Integer, default=0)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=now_china_naive)
+    updated_at = Column(DateTime, nullable=False, default=now_china_naive)
 
 
 class OpportunityCacheTable(Base):
@@ -99,13 +100,13 @@ class OpportunityCacheTable(Base):
     escalation_level = Column(Integer, default=0)
 
     # 缓存管理字段
-    last_updated = Column(DateTime, nullable=False, default=datetime.utcnow)
+    last_updated = Column(DateTime, nullable=False, default=now_china_naive)
     source_hash = Column(String(64))  # 用于检测数据变化
     cache_version = Column(Integer, default=1)  # 缓存版本
 
     # 系统字段
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=now_china_naive)
+    updated_at = Column(DateTime, nullable=False, default=now_china_naive)
 
 
 # ============================================================================
@@ -192,7 +193,7 @@ class DatabaseManager:
                         key=key,
                         value=value,
                         description=description,
-                        updated_at=datetime.now()
+                        updated_at=now_china_naive()
                     )
                     session.add(config)
             session.commit()
@@ -250,7 +251,7 @@ class DatabaseManager:
                     key=key,
                     value=value,
                     description=description,
-                    updated_at=datetime.now()
+                    updated_at=now_china_naive()
                 )
                 session.merge(config)
                 session.commit()
@@ -278,7 +279,7 @@ class DatabaseManager:
                     opportunities_processed=agent_run.opportunities_processed,
                     notifications_sent=agent_run.notifications_sent,
                     errors=agent_run.errors,
-                    created_at=agent_run.created_at or datetime.utcnow()
+                    created_at=agent_run.created_at or now_china_naive()
                 )
                 session.add(run_record)
                 session.commit()
@@ -316,7 +317,7 @@ class DatabaseManager:
                     timestamp=history.timestamp,
                     duration_seconds=history.duration_seconds,
                     error_message=history.error_message,
-                    created_at=history.created_at or datetime.utcnow()
+                    created_at=history.created_at or now_china_naive()
                 )
                 session.add(history_record)
                 session.commit()
@@ -501,8 +502,8 @@ class DatabaseManager:
                     created_run_id=task.created_run_id,
                     sent_run_id=task.sent_run_id,
                     retry_count=task.retry_count,
-                    created_at=task.created_at or datetime.utcnow(),
-                    updated_at=task.updated_at or datetime.utcnow()
+                    created_at=task.created_at or now_china_naive(),
+                    updated_at=task.updated_at or now_china_naive()
                 )
                 session.add(task_record)
                 session.commit()
@@ -554,9 +555,9 @@ class DatabaseManager:
                 task_record = session.query(NotificationTaskTable).filter_by(id=task_id).first()
                 if task_record:
                     task_record.status = status.value
-                    task_record.updated_at = datetime.utcnow()
+                    task_record.updated_at = now_china_naive()
                     if status.value == 'sent':
-                        task_record.sent_at = datetime.utcnow()
+                        task_record.sent_at = now_china_naive()
                         if sent_run_id:
                             task_record.sent_run_id = sent_run_id
                     session.commit()
@@ -574,7 +575,7 @@ class DatabaseManager:
                 task_record = session.query(NotificationTaskTable).filter_by(id=task_id).first()
                 if task_record:
                     task_record.retry_count = retry_count
-                    task_record.updated_at = datetime.utcnow()
+                    task_record.updated_at = now_china_naive()
                     if last_sent_at:
                         # 这里需要在数据库表中添加last_sent_at字段
                         # 暂时使用sent_at字段存储最后发送时间
@@ -607,8 +608,8 @@ class DatabaseManager:
                     last_updated=opportunity.last_updated,
                     source_hash=opportunity.source_hash,
                     cache_version=opportunity.cache_version,
-                    created_at=datetime.utcnow(),
-                    updated_at=datetime.utcnow()
+                    created_at=now_china_naive(),
+                    updated_at=now_china_naive()
                 )
                 session.merge(cache_record)  # 使用merge支持更新
                 session.commit()
@@ -653,7 +654,7 @@ class DatabaseManager:
                 from .models import OpportunityInfo, OpportunityStatus
 
                 # 计算缓存过期时间
-                cutoff_time = datetime.utcnow() - timedelta(hours=cache_ttl_hours)
+                cutoff_time = now_china_naive() - timedelta(hours=cache_ttl_hours)
 
                 records = session.query(OpportunityCacheTable).filter(
                     OpportunityCacheTable.last_updated > cutoff_time
@@ -714,7 +715,7 @@ class DatabaseManager:
                 GroupConfigTable.group_id == group_id
             ).first()
 
-            now = datetime.now()
+            now = now_china_naive()
 
             if existing:
                 # 更新现有配置

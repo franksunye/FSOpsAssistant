@@ -9,6 +9,9 @@ import pandas as pd
 from datetime import datetime, timedelta
 from typing import List, Dict, Any
 
+# 导入时区工具
+from ..utils.timezone_utils import now_china_naive, format_china_time
+
 # 设置页面配置
 st.set_page_config(
     page_title="FSOA - 现场服务运营助手",
@@ -610,7 +613,7 @@ def show_task_list():
                     st.download_button(
                         label="下载CSV文件",
                         data=csv,
-                        file_name=f"tasks_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                        file_name=f"tasks_{now_china_naive().strftime('%Y%m%d_%H%M%S')}.csv",
                         mime="text/csv"
                     )
             
@@ -636,10 +639,10 @@ def show_notification_history():
     col1, col2 = st.columns(2)
     
     with col1:
-        start_date = st.date_input("开始日期", datetime.now() - timedelta(days=7))
-    
+        start_date = st.date_input("开始日期", now_china_naive() - timedelta(days=7))
+
     with col2:
-        end_date = st.date_input("结束日期", datetime.now())
+        end_date = st.date_input("结束日期", now_china_naive())
     
     # 通知历史表格（示例数据）
     sample_notifications = [
@@ -866,8 +869,7 @@ def show_system_settings():
         st.markdown("---")
         st.subheader("📊 工作时间计算示例")
 
-        from datetime import datetime, timedelta
-        now = datetime.now()
+        now = now_china_naive()
 
         # 示例计算
         example_scenarios = [
@@ -1094,7 +1096,7 @@ def show_opportunity_list():
                     "负责人": opp.supervisor_name,
                     "组织": opp.org_name,
                     "状态": opp.order_status,
-                    "创建时间": opp.create_time.strftime("%Y-%m-%d %H:%M"),
+                    "创建时间": format_china_time(opp.create_time, "%Y-%m-%d %H:%M"),
                     "工作时长(小时)": f"{opp.elapsed_hours:.1f}",
                     "是否违规": "🚨 是" if getattr(opp, 'is_violation', False) else "否",
                     "是否逾期": "⚠️ 是" if opp.is_overdue else "否",
@@ -1114,7 +1116,7 @@ def show_opportunity_list():
                     st.download_button(
                         label="下载CSV文件",
                         data=csv,
-                        file_name=f"opportunities_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                        file_name=f"opportunities_{now_china_naive().strftime('%Y%m%d_%H%M%S')}.csv",
                         mime="text/csv"
                     )
 
@@ -1492,7 +1494,7 @@ def show_notification_management():
                     with col_c:
                         st.write(f"**冷静时间**: {getattr(task, 'cooldown_hours', 2.0)}小时")
                         if hasattr(task, 'last_sent_at') and task.last_sent_at:
-                            st.write(f"**最后发送**: {task.last_sent_at.strftime('%m-%d %H:%M')}")
+                            st.write(f"**最后发送**: {format_china_time(task.last_sent_at, '%m-%d %H:%M')}")
                         else:
                             st.write(f"**最后发送**: 未发送")
 
@@ -1873,7 +1875,7 @@ def show_notification_test(db_manager, config):
                         test_message = f"""🧪 FSOA系统测试消息
 
 组织: {org_name}
-时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+时间: {format_china_time(now_china_naive())}
 状态: 测试通知功能正常
 
 这是一条来自FSOA系统的测试消息，用于验证企微群通知功能是否正常工作。"""
@@ -1913,7 +1915,7 @@ def show_notification_test(db_manager, config):
                 # 构造测试消息
                 test_message = f"""🚨 FSOA内部运营群测试消息
 
-时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+时间: {format_china_time(now_china_naive())}
 类型: 升级通知测试
 状态: 系统功能正常
 

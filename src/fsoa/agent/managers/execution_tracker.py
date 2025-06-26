@@ -9,6 +9,9 @@ from datetime import datetime, timedelta
 from typing import Dict, Any, Optional, List, Tuple
 from contextlib import contextmanager
 
+# 导入时区工具
+from ...utils.timezone_utils import now_china_naive
+
 from ...data.models import AgentRun, AgentHistory, AgentRunStatus
 from ...data.database import get_db_manager
 from ...utils.logger import get_logger, log_function_call
@@ -29,7 +32,7 @@ class AgentExecutionTracker:
         """开始一次Agent运行"""
         try:
             agent_run = AgentRun(
-                trigger_time=datetime.now(),
+                trigger_time=now_china_naive(),
                 status=AgentRunStatus.RUNNING,
                 context=context or {},
                 opportunities_processed=0,
@@ -105,12 +108,12 @@ class AgentExecutionTracker:
             # 计算执行时长
             duration_seconds = None
             if self.current_step_start_time:
-                duration_seconds = (datetime.now() - self.current_step_start_time).total_seconds()
+                duration_seconds = (now_china_naive() - self.current_step_start_time).total_seconds()
             
             history = AgentHistory(
                 run_id=run_id,
                 step_name=step_name,
-                timestamp=datetime.now(),
+                timestamp=now_china_naive(),
                 input_data=input_data or {},
                 output_data=output_data or {},
                 duration_seconds=duration_seconds,
@@ -137,7 +140,7 @@ class AgentExecutionTracker:
         if not self.current_run_id:
             raise ValueError("No active Agent run to track")
         
-        self.current_step_start_time = datetime.now()
+        self.current_step_start_time = now_china_naive()
         output_data = {}
         error_message = None
         
