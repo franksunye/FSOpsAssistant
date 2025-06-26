@@ -271,17 +271,35 @@ class MetabaseClient:
             raise
     
     def get_overdue_tasks(self) -> List[TaskInfo]:
-        """获取超时任务列表 - 兼容性方法，实际使用商机数据"""
+        """
+        获取超时任务列表 - 已废弃
+
+        ⚠️ 此方法已废弃，存在任务-商机概念混淆问题
+
+        推荐使用：
+        - get_overdue_opportunities() 获取逾期商机
+        - get_all_monitored_opportunities() 获取所有监控商机
+
+        此方法将商机数据强制转换为TaskInfo格式，仅用于向后兼容
+
+        Returns:
+            超时任务列表（实际为商机数据的TaskInfo包装）
+        """
+        logger.warning(
+            "get_overdue_tasks() is deprecated due to task-opportunity concept confusion. "
+            "Use get_overdue_opportunities() instead."
+        )
+
         try:
             # 获取逾期商机
             overdue_opportunities = self.get_overdue_opportunities()
 
-            # 转换为TaskInfo格式以保持向后兼容
+            # 将商机数据包装为TaskInfo格式（仅用于兼容性）
             tasks = []
             for opp in overdue_opportunities:
                 try:
                     task = TaskInfo(
-                        id=hash(opp.order_num) % 1000000,  # 使用工单号生成ID
+                        id=hash(opp.order_num) % 1000000,  # 使用工单号生成伪ID
                         title=f"商机跟进 - {opp.name}",
                         description=f"地址: {opp.address}, 负责人: {opp.supervisor_name}",
                         status=TaskStatus.OVERDUE,
@@ -297,10 +315,10 @@ class MetabaseClient:
                     )
                     tasks.append(task)
                 except Exception as e:
-                    logger.warning(f"Failed to convert opportunity to task: {e}")
+                    logger.warning(f"Failed to convert opportunity to legacy task format: {e}")
                     continue
 
-            logger.info(f"Found {len(tasks)} overdue tasks (converted from opportunities)")
+            logger.info(f"Found {len(tasks)} overdue tasks (converted from {len(overdue_opportunities)} opportunities)")
             return tasks
 
         except Exception as e:
@@ -308,7 +326,21 @@ class MetabaseClient:
             return []
     
     def _convert_raw_task_to_model(self, raw_task: Dict[str, Any]) -> TaskInfo:
-        """将原始任务数据转换为TaskInfo模型"""
+        """
+        将原始任务数据转换为TaskInfo模型 - 已废弃
+
+        ⚠️ 此方法已废弃，存在任务-商机概念混淆问题
+
+        推荐使用：
+        - _convert_raw_opportunity_to_model() 转换商机数据
+        - 直接使用OpportunityInfo模型而不是TaskInfo
+
+        此方法仅用于向后兼容，不应在新代码中使用
+        """
+        logger.warning(
+            "_convert_raw_task_to_model() is deprecated due to task-opportunity concept confusion. "
+            "Use _convert_raw_opportunity_to_model() instead."
+        )
         # 状态映射
         status_mapping = {
             'in_progress': TaskStatus.IN_PROGRESS,
