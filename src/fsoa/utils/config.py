@@ -51,9 +51,10 @@ class Config(BaseSettings):
     llm_max_tokens: int = Field(1000, env="LLM_MAX_TOKENS")
     
     # 通知配置
-    notification_cooldown: int = Field(30, env="NOTIFICATION_COOLDOWN")
+    notification_cooldown: int = Field(120, env="NOTIFICATION_COOLDOWN")  # 2小时=120分钟
     max_notifications_per_hour: int = Field(10, env="MAX_NOTIFICATIONS_PER_HOUR")
     escalation_threshold_hours: int = Field(4, env="ESCALATION_THRESHOLD_HOURS")
+    max_retry_count: int = Field(5, env="MAX_RETRY_COUNT")  # 最大重试次数
     
     # 开发配置
     debug: bool = Field(False, env="DEBUG")

@@ -583,6 +583,26 @@ class DatabaseManager:
             logger.error(f"Failed to update notification task {task_id}: {e}")
             return False
 
+    def update_notification_task_retry_info(self, task_id: int, retry_count: int,
+                                          last_sent_at: Optional[datetime] = None) -> bool:
+        """更新通知任务重试信息"""
+        try:
+            with self.get_session() as session:
+                task_record = session.query(NotificationTaskTable).filter_by(id=task_id).first()
+                if task_record:
+                    task_record.retry_count = retry_count
+                    task_record.updated_at = datetime.utcnow()
+                    if last_sent_at:
+                        # 这里需要在数据库表中添加last_sent_at字段
+                        # 暂时使用sent_at字段存储最后发送时间
+                        task_record.sent_at = last_sent_at
+                    session.commit()
+                    return True
+                return False
+        except Exception as e:
+            logger.error(f"Failed to update notification task retry info {task_id}: {e}")
+            return False
+
     def save_opportunity_cache(self, opportunity: 'OpportunityInfo') -> bool:
         """保存商机缓存"""
         try:
