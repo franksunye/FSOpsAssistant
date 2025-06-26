@@ -14,7 +14,69 @@ logger = get_logger(__name__)
 
 class BusinessNotificationFormatter:
     """业务通知格式化器"""
-    
+
+    @staticmethod
+    def format_violation_notification(org_name: str, opportunities: List[OpportunityInfo]) -> str:
+        """
+        格式化违规通知（12小时）
+
+        Args:
+            org_name: 组织名称
+            opportunities: 违规商机列表
+
+        Returns:
+            格式化的通知消息
+        """
+        if not opportunities:
+            return ""
+
+        # 按状态分组
+        status_groups = {}
+        for opp in opportunities:
+            status = opp.order_status
+            if status not in status_groups:
+                status_groups[status] = []
+            status_groups[status].append(opp)
+
+        # 构建消息
+        message_parts = [f"⚠️ SLA违规提醒 ({org_name})"]
+        message_parts.append("")
+
+        total_count = len(opportunities)
+        message_parts.append(f"共有 {total_count} 个工单违反12小时SLA规范：")
+        message_parts.append("")
+
+        # 按状态显示
+        item_index = 1
+        for status, status_opps in status_groups.items():
+            for opp in status_opps:
+                elapsed_hours = opp.elapsed_hours or 0
+                elapsed_days = int(elapsed_hours // 24)
+                remaining_hours = int(elapsed_hours % 24)
+
+                if elapsed_days > 0:
+                    time_str = f"{elapsed_days}天{remaining_hours}小时"
+                else:
+                    time_str = f"{remaining_hours}小时"
+
+                create_time_str = opp.create_time.strftime("%m-%d %H:%M") if opp.create_time else "未知"
+
+                message_parts.append(f"{item_index:02d}. 工单号：{opp.order_num}")
+                message_parts.append(f"     违规时长：{time_str}")
+                message_parts.append(f"     客户：{opp.name}")
+                message_parts.append(f"     地址：{opp.address}")
+                message_parts.append(f"     负责人：{opp.supervisor_name}")
+                message_parts.append(f"     创建时间：{create_time_str}")
+                message_parts.append(f"     状态：{status}")
+                message_parts.append("")
+
+                item_index += 1
+
+        message_parts.append("🚨 请销售人员立即处理，确保客户服务质量！")
+        message_parts.append("💡 处理后系统将自动停止提醒")
+
+        return "\n".join(message_parts)
+
     @staticmethod
     def format_org_overdue_notification(org_name: str, opportunities: List[OpportunityInfo]) -> str:
         """

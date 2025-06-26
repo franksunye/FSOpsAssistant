@@ -43,8 +43,8 @@ class NotificationTaskManager:
         self.formatter = BusinessNotificationFormatter()
         
         # 配置参数
-        self.notification_cooldown_minutes = 30  # 通知冷却时间
-        self.max_retry_count = 3  # 最大重试次数
+        self.notification_cooldown_hours = 2.0  # 通知冷却时间（小时）
+        self.max_retry_count = 5  # 最大重试次数
     
     @log_function_call
     def create_notification_tasks(self, opportunities: List[OpportunityInfo], 
@@ -54,24 +54,40 @@ class NotificationTaskManager:
         
         try:
             for opp in opportunities:
-                if not opp.is_overdue:
-                    continue
-                
+                # 更新商机的计算字段
+                opp.update_overdue_info(use_business_time=True)
+
                 # 检查是否已存在相同的待处理任务
                 if self._has_pending_task(opp.order_num):
                     logger.info(f"Order {opp.order_num} already has pending notification task")
                     continue
-                
-                # 创建标准通知任务
-                standard_task = NotificationTask(
-                    order_num=opp.order_num,
-                    org_name=opp.org_name,
-                    notification_type=NotificationTaskType.STANDARD,
-                    due_time=datetime.now(),
-                    created_run_id=run_id
-                )
-                tasks.append(standard_task)
-                
+
+                # 创建违规通知任务（12小时）
+                if opp.is_violation:
+                    violation_task = NotificationTask(
+                        order_num=opp.order_num,
+                        org_name=opp.org_name,
+                        notification_type=NotificationTaskType.VIOLATION,
+                        due_time=datetime.now(),
+                        created_run_id=run_id,
+                        cooldown_hours=self.notification_cooldown_hours,
+                        max_retry_count=self.max_retry_count
+                    )
+                    tasks.append(violation_task)
+
+                # 创建标准通知任务（24/48小时）
+                if opp.is_overdue:
+                    standard_task = NotificationTask(
+                        order_num=opp.order_num,
+                        org_name=opp.org_name,
+                        notification_type=NotificationTaskType.STANDARD,
+                        due_time=datetime.now(),
+                        created_run_id=run_id,
+                        cooldown_hours=self.notification_cooldown_hours,
+                        max_retry_count=self.max_retry_count
+                    )
+                    tasks.append(standard_task)
+
                 # 如果需要升级，创建升级通知任务
                 if opp.escalation_level > 0:
                     escalation_task = NotificationTask(
@@ -79,7 +95,9 @@ class NotificationTaskManager:
                         org_name=opp.org_name,
                         notification_type=NotificationTaskType.ESCALATION,
                         due_time=datetime.now(),
-                        created_run_id=run_id
+                        created_run_id=run_id,
+                        cooldown_hours=self.notification_cooldown_hours,
+                        max_retry_count=self.max_retry_count
                     )
                     tasks.append(escalation_task)
             
@@ -105,14 +123,23 @@ class NotificationTaskManager:
             # 获取待处理任务
             pending_tasks = self.db_manager.get_pending_notification_tasks()
             result.total_tasks = len(pending_tasks)
-            
+
             if not pending_tasks:
                 logger.info("No pending notification tasks")
                 return result
-            
+
+            # 过滤出应该立即发送的任务（考虑冷静时间）
+            ready_tasks = [task for task in pending_tasks if task.should_send_now()]
+
+            if not ready_tasks:
+                logger.info(f"No tasks ready to send (total pending: {len(pending_tasks)})")
+                return result
+
+            logger.info(f"Found {len(ready_tasks)} tasks ready to send out of {len(pending_tasks)} pending")
+
             # 按组织分组
-            org_tasks = self._group_tasks_by_org(pending_tasks)
-            
+            org_tasks = self._group_tasks_by_org(ready_tasks)
+
             # 执行通知
             for org_name, tasks in org_tasks.items():
                 try:
@@ -121,7 +148,7 @@ class NotificationTaskManager:
                     result.failed_count += org_result.failed_count
                     result.escalated_count += org_result.escalated_count
                     result.errors.extend(org_result.errors)
-                    
+
                 except Exception as e:
                     error_msg = f"Failed to send notifications to {org_name}: {e}"
                     logger.error(error_msg)
@@ -160,21 +187,34 @@ class NotificationTaskManager:
         result = NotificationResult()
         
         try:
-            # 分离标准通知和升级通知
+            # 分离不同类型的通知
+            violation_tasks = [t for t in tasks if t.notification_type == NotificationTaskType.VIOLATION]
             standard_tasks = [t for t in tasks if t.notification_type == NotificationTaskType.STANDARD]
             escalation_tasks = [t for t in tasks if t.notification_type == NotificationTaskType.ESCALATION]
-            
+
+            # 发送违规通知
+            if violation_tasks:
+                success = self._send_violation_notification(org_name, violation_tasks, run_id)
+                if success:
+                    result.sent_count += len(violation_tasks)
+                    for task in violation_tasks:
+                        self._update_task_after_send(task, run_id, success=True)
+                else:
+                    result.failed_count += len(violation_tasks)
+                    for task in violation_tasks:
+                        self._update_task_after_send(task, run_id, success=False)
+
             # 发送标准通知
             if standard_tasks:
                 success = self._send_standard_notification(org_name, standard_tasks, run_id)
                 if success:
                     result.sent_count += len(standard_tasks)
                     for task in standard_tasks:
-                        self.db_manager.update_notification_task_status(
-                            task.id, NotificationTaskStatus.SENT, run_id
-                        )
+                        self._update_task_after_send(task, run_id, success=True)
                 else:
                     result.failed_count += len(standard_tasks)
+                    for task in standard_tasks:
+                        self._update_task_after_send(task, run_id, success=False)
             
             # 发送升级通知
             if escalation_tasks:
@@ -182,11 +222,11 @@ class NotificationTaskManager:
                 if success:
                     result.escalated_count += len(escalation_tasks)
                     for task in escalation_tasks:
-                        self.db_manager.update_notification_task_status(
-                            task.id, NotificationTaskStatus.SENT, run_id
-                        )
+                        self._update_task_after_send(task, run_id, success=True)
                 else:
                     result.failed_count += len(escalation_tasks)
+                    for task in escalation_tasks:
+                        self._update_task_after_send(task, run_id, success=False)
             
             return result
             
@@ -223,6 +263,34 @@ class NotificationTaskManager:
         except Exception as e:
             logger.error(f"Failed to send standard notification to {org_name}: {e}")
             return False
+
+    def _send_violation_notification(self, org_name: str, tasks: List[NotificationTask],
+                                   run_id: int) -> bool:
+        """发送违规通知（12小时）"""
+        try:
+            # 格式化消息
+            message = self.formatter.format_violation_notification(
+                org_name,
+                [self._get_opportunity_info_for_notification(task) for task in tasks]
+            )
+
+            # 发送到组织对应的企微群
+            success = self.wechat_client.send_notification_to_org(
+                org_name=org_name,
+                content=message,
+                is_escalation=False
+            )
+
+            if success:
+                logger.info(f"Sent violation notification to {org_name} for {len(tasks)} tasks")
+            else:
+                logger.error(f"Failed to send violation notification to {org_name}")
+
+            return success
+
+        except Exception as e:
+            logger.error(f"Failed to send violation notification to {org_name}: {e}")
+            return False
     
     def _send_escalation_notification(self, org_name: str, tasks: List[NotificationTask],
                                     run_id: int) -> bool:
@@ -251,6 +319,44 @@ class NotificationTaskManager:
         except Exception as e:
             logger.error(f"Failed to send escalation notification for {org_name}: {e}")
             return False
+
+    def _update_task_after_send(self, task: NotificationTask, run_id: int, success: bool):
+        """发送后更新任务状态"""
+        try:
+            if success:
+                # 发送成功
+                task.last_sent_at = datetime.now()
+                task.retry_count += 1
+
+                # 如果达到最大重试次数，标记为已发送
+                if task.retry_count >= task.max_retry_count:
+                    self.db_manager.update_notification_task_status(
+                        task.id, NotificationTaskStatus.SENT, run_id
+                    )
+                    logger.info(f"Task {task.id} completed after {task.retry_count} attempts")
+                else:
+                    # 更新任务信息，保持PENDING状态以便后续重试
+                    self.db_manager.update_notification_task_retry_info(
+                        task.id, task.retry_count, task.last_sent_at
+                    )
+                    logger.info(f"Task {task.id} sent, retry count: {task.retry_count}/{task.max_retry_count}")
+            else:
+                # 发送失败
+                task.retry_count += 1
+                if task.retry_count >= task.max_retry_count:
+                    self.db_manager.update_notification_task_status(
+                        task.id, NotificationTaskStatus.FAILED, run_id
+                    )
+                    logger.warning(f"Task {task.id} failed after {task.retry_count} attempts")
+                else:
+                    # 更新重试次数，保持PENDING状态
+                    self.db_manager.update_notification_task_retry_info(
+                        task.id, task.retry_count, None
+                    )
+                    logger.warning(f"Task {task.id} failed, retry count: {task.retry_count}/{task.max_retry_count}")
+
+        except Exception as e:
+            logger.error(f"Failed to update task {task.id} after send: {e}")
     
     def _get_opportunity_info_for_notification(self, task: NotificationTask) -> OpportunityInfo:
         """获取通知任务对应的商机信息（用于格式化通知消息）"""
