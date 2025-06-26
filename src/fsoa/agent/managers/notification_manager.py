@@ -196,74 +196,88 @@ class NotificationTaskManager:
             result.failed_count += len(tasks)
             return result
     
-    def _send_standard_notification(self, org_name: str, tasks: List[NotificationTask], 
+    def _send_standard_notification(self, org_name: str, tasks: List[NotificationTask],
                                   run_id: int) -> bool:
         """发送标准通知"""
         try:
             # 格式化消息
             message = self.formatter.format_org_overdue_notification(
-                org_name, 
-                [self._task_to_opportunity_info(task) for task in tasks]
+                org_name,
+                [self._get_opportunity_info_for_notification(task) for task in tasks]
             )
-            
+
             # 发送到组织对应的企微群
             success = self.wechat_client.send_notification_to_org(
                 org_name=org_name,
                 content=message,
                 is_escalation=False
             )
-            
+
             if success:
                 logger.info(f"Sent standard notification to {org_name} for {len(tasks)} tasks")
             else:
                 logger.error(f"Failed to send standard notification to {org_name}")
-            
+
             return success
-            
+
         except Exception as e:
             logger.error(f"Failed to send standard notification to {org_name}: {e}")
             return False
     
-    def _send_escalation_notification(self, org_name: str, tasks: List[NotificationTask], 
+    def _send_escalation_notification(self, org_name: str, tasks: List[NotificationTask],
                                     run_id: int) -> bool:
         """发送升级通知"""
         try:
             # 格式化升级消息
             message = self.formatter.format_escalation_notification(
                 org_name,
-                [self._task_to_opportunity_info(task) for task in tasks]
+                [self._get_opportunity_info_for_notification(task) for task in tasks]
             )
-            
+
             # 发送到内部运营群
             success = self.wechat_client.send_notification_to_org(
                 org_name=org_name,
                 content=message,
                 is_escalation=True
             )
-            
+
             if success:
                 logger.info(f"Sent escalation notification for {org_name} with {len(tasks)} tasks")
             else:
                 logger.error(f"Failed to send escalation notification for {org_name}")
-            
+
             return success
-            
+
         except Exception as e:
             logger.error(f"Failed to send escalation notification for {org_name}: {e}")
             return False
     
-    def _task_to_opportunity_info(self, task: NotificationTask) -> OpportunityInfo:
-        """将通知任务转换为商机信息（用于格式化）"""
-        # 这里简化处理，实际应该从缓存或Metabase获取完整信息
-        return OpportunityInfo(
+    def _get_opportunity_info_for_notification(self, task: NotificationTask) -> OpportunityInfo:
+        """获取通知任务对应的商机信息（用于格式化通知消息）"""
+        # 尝试从缓存获取完整的商机信息
+        try:
+            cached_opp = self.db_manager.get_opportunity_cache(task.order_num)
+            if cached_opp:
+                return cached_opp
+        except Exception as e:
+            logger.warning(f"Failed to get cached opportunity for {task.order_num}: {e}")
+
+        # 如果缓存中没有，创建基础的商机信息用于通知
+        # 注意：这里创建的是用于通知显示的基础信息，不是完整的业务数据
+        opp = OpportunityInfo(
             order_num=task.order_num,
-            name="客户",  # 简化
-            address="地址",  # 简化
-            supervisor_name="负责人",  # 简化
-            create_time=datetime.now(),  # 简化
+            name="客户",  # 简化显示
+            address="地址",  # 简化显示
+            supervisor_name="负责人",  # 简化显示
+            create_time=datetime.now() - timedelta(days=2),  # 估算创建时间
             org_name=task.org_name,
-            order_status=OpportunityStatus.PENDING_APPOINTMENT  # 简化
+            order_status=OpportunityStatus.PENDING_APPOINTMENT  # 默认状态
         )
+
+        # 更新逾期信息，确保elapsed_hours不为None
+        opp.update_overdue_info()
+
+        return opp
     
     @log_function_call
     def get_notification_statistics(self, hours_back: int = 24) -> Dict[str, Any]:
