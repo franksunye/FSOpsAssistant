@@ -26,13 +26,13 @@ cp .env.example .env
 # 初始化数据库
 python scripts/init_db.py
 
-# 启动Web界面（推荐用于开发测试）
+# 启动Web界面（仅Web界面，用于开发测试）
 python scripts/start_web.py
 
-# 启动Agent服务（后台运行）
+# 启动Agent服务（仅后台服务，无Web界面）
 python scripts/start_agent.py
 
-# 启动完整应用（Web界面+Agent服务）
+# 启动完整应用（Web界面+Agent服务，推荐）
 python scripts/start_full_app.py
 ```
 

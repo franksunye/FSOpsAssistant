@@ -10,6 +10,7 @@ import sys
 import time
 import signal
 import threading
+import subprocess
 from pathlib import Path
 
 # 添加项目根目录到Python路径
@@ -155,33 +156,72 @@ def start_scheduler():
 def run_agent_once():
     """手动执行一次Agent"""
     print("🤖 手动执行Agent...")
-    
+
     try:
         from src.fsoa.agent.orchestrator import AgentOrchestrator
-        
+
         agent = AgentOrchestrator()
         execution = agent.execute()
-        
+
         print(f"✅ Agent执行完成")
         print(f"   - 执行ID: {execution.id}")
         print(f"   - 状态: {execution.status.value}")
         print(f"   - 处理任务数: {execution.tasks_processed}")
         print(f"   - 发送通知数: {execution.notifications_sent}")
-        
+
         if execution.errors:
             print(f"   - 错误数: {len(execution.errors)}")
             for error in execution.errors[:3]:
                 print(f"     • {error}")
-        
+
         return True
-        
+
     except Exception as e:
         print(f"❌ Agent执行失败: {e}")
         return False
 
 
+def start_web_interface():
+    """启动Web界面"""
+    print("🌐 启动Web界面...")
+
+    try:
+        # 检查 Streamlit 是否安装
+        import streamlit
+        print(f"✅ Streamlit 版本: {streamlit.__version__}")
+    except ImportError:
+        print("❌ Streamlit 未安装")
+        print("💡 请运行: pip install streamlit")
+        return None
+
+    # 启动 Streamlit 应用
+    app_path = project_root / "src" / "fsoa" / "ui" / "app.py"
+
+    print(f"📂 应用路径: {app_path}")
+    print("🌐 启动 Web 界面...")
+    print("📍 访问地址: http://localhost:8501")
+
+    try:
+        # 启动 Streamlit 进程
+        process = subprocess.Popen([
+            sys.executable, "-m", "streamlit", "run",
+            str(app_path),
+            "--server.address", "localhost",
+            "--server.port", "8501",
+            "--server.headless", "true"
+        ], cwd=str(project_root))
+
+        print("✅ Web界面启动成功")
+        return process
+
+    except Exception as e:
+        print(f"❌ Web界面启动失败: {e}")
+        return None
+
+
 # 全局变量用于优雅关闭
 shutdown_event = threading.Event()
+web_process = None
 
 
 def signal_handler(signum, frame):
@@ -192,6 +232,8 @@ def signal_handler(signum, frame):
 
 def main():
     """主函数"""
+    global web_process
+
     print("🚀 FSOA - 完整应用启动")
     print("=" * 50)
 
@@ -212,6 +254,12 @@ def main():
         if not test_services():
             print("⚠️  服务连接测试失败，但继续启动应用")
 
+        # 启动Web界面
+        print("\n🌐 启动Web界面...")
+        web_process = start_web_interface()
+        if not web_process:
+            print("⚠️  Web界面启动失败，但继续启动Agent服务")
+
         # 启动定时任务调度器
         scheduler = start_scheduler()
         if not scheduler:
@@ -221,20 +269,25 @@ def main():
         print("\n🎯 执行初始Agent检查...")
         run_agent_once()
 
-        print("\n🎉 FSOA应用启动完成！")
+        print("\n🎉 FSOA完整应用启动完成！")
         print("📌 功能状态:")
+        print("   - 🌐 Web界面: 运行中" if web_process else "   - 🌐 Web界面: 未启动")
         print("   - ⏰ 定时任务: 运行中" if scheduler else "   - ⏰ 定时任务: 未启动")
         print("   - 🤖 Agent: 就绪")
         print("   - 📊 监控: 激活")
         print("\n💡 提示:")
         print("   - 查看日志: tail -f logs/fsoa.log")
-        print("   - Web界面: python scripts/start_web.py")
+        print("   - Web界面: http://localhost:8501")
         print("   - 停止应用: Ctrl+C")
         print("\n" + "=" * 50)
 
         # 主循环 - 保持应用运行
         print("🔄 应用运行中，按 Ctrl+C 停止...")
         while not shutdown_event.is_set():
+            # 检查Web进程是否还在运行
+            if web_process and web_process.poll() is not None:
+                print("⚠️  Web界面进程意外退出")
+                web_process = None
             time.sleep(1)
 
     except KeyboardInterrupt:
@@ -247,6 +300,22 @@ def main():
         # 优雅关闭
         print("\n🛑 正在关闭应用...")
 
+        # 停止Web界面
+        try:
+            if web_process and web_process.poll() is None:
+                print("🌐 正在停止Web界面...")
+                web_process.terminate()
+                web_process.wait(timeout=5)
+                print("✅ Web界面已停止")
+        except Exception as e:
+            print(f"⚠️  停止Web界面时出错: {e}")
+            try:
+                if web_process:
+                    web_process.kill()
+            except:
+                pass
+
+        # 停止调度器
         try:
             if 'scheduler' in locals() and scheduler:
                 from src.fsoa.utils.scheduler import stop_scheduler
@@ -255,7 +324,7 @@ def main():
         except Exception as e:
             print(f"⚠️  停止调度器时出错: {e}")
 
-        print("👋 FSOA应用已安全关闭")
+        print("👋 FSOA完整应用已安全关闭")
 
 
 if __name__ == "__main__":
