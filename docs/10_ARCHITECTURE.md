@@ -306,5 +306,71 @@ Metabase (只读) → Agent Engine → 本地数据库 (Agent记录 + 通知任�
 - **消息队列**：Redis/RabbitMQ
 - **监控**：Prometheus + Grafana
 
+## 7. v0.2.0 新增架构组件
+
+### 7.1 工作时间计算模块
+```python
+# 新增模块: src/fsoa/utils/business_time.py
+class BusinessTimeCalculator:
+    WORK_START_HOUR = 9   # 早上9点
+    WORK_END_HOUR = 19    # 晚上7点
+
+    @classmethod
+    def calculate_business_hours_between(cls, start_dt, end_dt):
+        """计算两个时间点之间的工作时长"""
+
+    @classmethod
+    def is_business_hours(cls, dt):
+        """判断是否为工作时间"""
+```
+
+**架构集成**:
+- 与OpportunityInfo模型深度集成
+- 所有SLA计算均基于工作时间
+- 支持跨日、跨周末的精确计算
+
+### 7.2 增强的通知任务管理
+```sql
+-- notification_tasks表新增字段 (v0.2.0)
+ALTER TABLE notification_tasks ADD COLUMN max_retry_count INTEGER DEFAULT 5;
+ALTER TABLE notification_tasks ADD COLUMN cooldown_hours REAL DEFAULT 2.0;
+ALTER TABLE notification_tasks ADD COLUMN last_sent_at DATETIME;
+```
+
+**新增通知类型**:
+- `VIOLATION`: 违规通知（12小时工作时间）
+- `STANDARD`: 标准通知（24/48小时工作时间）
+- `ESCALATION`: 升级通知（运营介入）
+
+### 7.3 分级SLA架构
+```
+工作时间计算 → SLA阈值判断 → 分级通知
+     ↓              ↓            ↓
+  精确时长    →   违规/逾期/升级  →  不同通知类型
+```
+
+**SLA规则矩阵**:
+| 状态 | 违规阈值 | 标准阈值 | 升级阈值 | 通知对象 |
+|------|----------|----------|----------|----------|
+| 待预约 | 12h | 24h | 24h | 销售群→运营群 |
+| 暂不上门 | 12h | 48h | 48h | 销售群→运营群 |
+
+### 7.4 Web界面架构增强
+```python
+# 新增UI组件
+- 工作时间配置界面 (tab3)
+- 违规状态显示 (商机列表)
+- 冷静时间控制 (通知管理)
+- SLA进度显示 (业务分析)
+```
+
+**界面数据流**:
+```
+业务数据 → 工作时间计算 → SLA状态 → UI显示
+    ↓           ↓           ↓        ↓
+Metabase → BusinessTime → OpportunityInfo → Streamlit
+```
+
 ---
 > 架构设计遵循KISS原则，优先实现核心功能，保持扩展性
+> v0.2.0 重点增强了时间计算精度和通知控制能力

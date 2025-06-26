@@ -744,8 +744,8 @@ def show_system_settings():
     # 企微配置状态提示
     st.info("💡 **企微群配置**: 请前往 [系统管理 → 企微群配置] 进行完整的企微通知配置")
 
-    # 设置选项卡 - 移除群组管理，专注于系统参数
-    tab1, tab2 = st.tabs(["Agent设置", "通知设置"])
+    # 设置选项卡 - 添加工作时间配置
+    tab1, tab2, tab3 = st.tabs(["Agent设置", "通知设置", "工作时间设置"])
     
     with tab1:
         st.subheader("🤖 Agent配置")
@@ -788,24 +788,118 @@ def show_system_settings():
             value=10
         )
         
-        cooldown_minutes = st.number_input(
-            "通知冷却时间（分钟）",
-            min_value=1,
-            max_value=1440,
-            value=30
+        cooldown_hours = st.number_input(
+            "通知冷静时间（小时）",
+            min_value=0.5,
+            max_value=24.0,
+            value=2.0,
+            step=0.5,
+            help="发送通知后的冷静时间，避免频繁打扰"
         )
-        
+
+        max_retry_count = st.number_input(
+            "最大重试次数",
+            min_value=1,
+            max_value=10,
+            value=5,
+            help="每个通知任务的最大重试次数"
+        )
+
+        st.markdown("**SLA阈值设置（工作时间）**")
+
+        violation_threshold = st.number_input(
+            "违规阈值（小时）",
+            min_value=1,
+            max_value=24,
+            value=12,
+            help="超过此时间算作违规，需要立即处理"
+        )
+
         escalation_threshold = st.number_input(
             "升级阈值（小时）",
             min_value=1,
-            max_value=48,
-            value=4
+            max_value=72,
+            value=24,
+            help="超过此时间需要运营人员介入"
         )
         
         enable_dedup = st.checkbox("启用智能去重", value=True)
         
         if st.button("💾 保存通知设置"):
             st.success("通知设置已保存")
+
+    with tab3:
+        st.subheader("🕒 工作时间配置")
+        st.info("💡 所有SLA时间计算均基于工作时间，非工作时间不计入SLA")
+
+        col_time1, col_time2 = st.columns(2)
+
+        with col_time1:
+            work_start_hour = st.number_input(
+                "工作开始时间（小时）",
+                min_value=0,
+                max_value=23,
+                value=9,
+                help="工作日开始时间，24小时制"
+            )
+
+            work_end_hour = st.number_input(
+                "工作结束时间（小时）",
+                min_value=1,
+                max_value=24,
+                value=19,
+                help="工作日结束时间，24小时制"
+            )
+
+        with col_time2:
+            st.markdown("**工作日设置**")
+            work_days = st.multiselect(
+                "选择工作日",
+                ["周一", "周二", "周三", "周四", "周五", "周六", "周日"],
+                default=["周一", "周二", "周三", "周四", "周五"],
+                help="选择哪些天算作工作日"
+            )
+
+            st.markdown("**当前工作时间**")
+            st.info(f"⏰ {work_start_hour}:00 - {work_end_hour}:00")
+            st.info(f"📅 {', '.join(work_days)}")
+
+        # 工作时间计算示例
+        st.markdown("---")
+        st.subheader("📊 工作时间计算示例")
+
+        from datetime import datetime, timedelta
+        now = datetime.now()
+
+        # 示例计算
+        example_scenarios = [
+            ("周五下午5点创建", now.replace(hour=17, minute=0, second=0, microsecond=0)),
+            ("周一上午9点创建", now.replace(hour=9, minute=0, second=0, microsecond=0)),
+            ("周三中午12点创建", now.replace(hour=12, minute=0, second=0, microsecond=0))
+        ]
+
+        for desc, create_time in example_scenarios:
+            try:
+                from src.fsoa.utils.business_time import BusinessTimeCalculator
+                elapsed_hours = BusinessTimeCalculator.calculate_elapsed_business_hours(create_time, now)
+
+                col_ex1, col_ex2, col_ex3 = st.columns(3)
+                with col_ex1:
+                    st.write(f"**{desc}**")
+                with col_ex2:
+                    st.write(f"工作时长: {elapsed_hours:.1f}小时")
+                with col_ex3:
+                    if elapsed_hours > 12:
+                        st.error("🚨 已违规")
+                    elif elapsed_hours > 8:
+                        st.warning("⚠️ 接近违规")
+                    else:
+                        st.success("✅ 正常")
+            except Exception as e:
+                st.error(f"计算示例失败: {e}")
+
+        if st.button("💾 保存工作时间设置"):
+            st.success("工作时间设置已保存")
 
     # 添加企微配置快速跳转
     st.markdown("---")
@@ -997,6 +1091,9 @@ def show_opportunity_list():
             # 转换为DataFrame
             data = []
             for opp in filtered_opportunities:
+                # 确保计算字段已更新
+                opp.update_overdue_info(use_business_time=True)
+
                 data.append({
                     "工单号": opp.order_num,
                     "客户": opp.name,
@@ -1005,9 +1102,11 @@ def show_opportunity_list():
                     "组织": opp.org_name,
                     "状态": opp.order_status,
                     "创建时间": opp.create_time.strftime("%Y-%m-%d %H:%M"),
-                    "已过时长(小时)": f"{opp.elapsed_hours:.1f}",
-                    "是否逾期": "是" if opp.is_overdue else "否",
-                    "升级级别": opp.escalation_level
+                    "工作时长(小时)": f"{opp.elapsed_hours:.1f}",
+                    "是否违规": "🚨 是" if getattr(opp, 'is_violation', False) else "否",
+                    "是否逾期": "⚠️ 是" if opp.is_overdue else "否",
+                    "升级级别": opp.escalation_level,
+                    "SLA进度": f"{(getattr(opp, 'sla_progress_ratio', 0) * 100):.1f}%"
                 })
 
             df = pd.DataFrame(data)
@@ -1127,16 +1226,46 @@ def show_notification_management():
 
         if pending_tasks:
             for task in pending_tasks:
-                with st.expander(f"📬 任务 {task.id} - {task.order_num}"):
-                    col_a, col_b = st.columns(2)
+                # 根据通知类型设置图标
+                type_icons = {
+                    "violation": "🚨",
+                    "standard": "📬",
+                    "escalation": "🚨"
+                }
+                icon = type_icons.get(task.notification_type.value, "📬")
+
+                # 根据类型设置标题颜色
+                type_names = {
+                    "violation": "违规通知",
+                    "standard": "标准通知",
+                    "escalation": "升级通知"
+                }
+                type_name = type_names.get(task.notification_type.value, task.notification_type.value)
+
+                with st.expander(f"{icon} 任务 {task.id} - {task.order_num} ({type_name})"):
+                    col_a, col_b, col_c = st.columns(3)
                     with col_a:
                         st.write(f"**工单号**: {task.order_num}")
                         st.write(f"**组织**: {task.org_name}")
-                        st.write(f"**类型**: {task.notification_type.value}")
+                        st.write(f"**类型**: {type_name}")
                     with col_b:
                         st.write(f"**状态**: {task.status.value}")
                         st.write(f"**应发送时间**: {task.due_time}")
-                        st.write(f"**重试次数**: {task.retry_count}")
+                        st.write(f"**重试次数**: {task.retry_count}/{getattr(task, 'max_retry_count', 5)}")
+                    with col_c:
+                        st.write(f"**冷静时间**: {getattr(task, 'cooldown_hours', 2.0)}小时")
+                        if hasattr(task, 'last_sent_at') and task.last_sent_at:
+                            st.write(f"**最后发送**: {task.last_sent_at.strftime('%m-%d %H:%M')}")
+                        else:
+                            st.write(f"**最后发送**: 未发送")
+
+                        # 显示是否在冷静期
+                        if hasattr(task, 'is_in_cooldown') and task.is_in_cooldown:
+                            st.warning("⏰ 冷静期内")
+                        elif hasattr(task, 'can_retry') and not task.can_retry:
+                            st.error("❌ 无法重试")
+                        else:
+                            st.success("✅ 可发送")
 
                     if task.message:
                         st.write(f"**消息内容**: {task.message}")

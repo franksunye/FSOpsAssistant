@@ -69,7 +69,7 @@ class NotificationTaskTable(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     order_num = Column(String(100), nullable=False)  # 关联的工单号
     org_name = Column(String(255), nullable=False)  # 组织名称
-    notification_type = Column(String(100), nullable=False)  # 'standard', 'escalation'
+    notification_type = Column(String(100), nullable=False)  # 'violation', 'standard', 'escalation'
     due_time = Column(DateTime, nullable=False)  # 应该通知的时间
     status = Column(String(50), default='pending')  # 'pending', 'sent', 'failed', 'confirmed'
     message = Column(Text)  # 通知内容
