@@ -13,7 +13,7 @@ from typing import List, Optional, Dict, Any
 from functools import wraps
 
 from ..data.models import (
-    TaskInfo, NotificationInfo, NotificationStatus, Priority, OpportunityInfo,
+    NotificationInfo, NotificationStatus, Priority, OpportunityInfo,
     TaskStatus, NotificationTask
 )
 from ..data.database import get_db_manager

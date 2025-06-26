@@ -267,7 +267,7 @@ class MetabaseQuery(BaseModel):
 
 class DecisionContext(BaseModel):
     """决策上下文模型"""
-    task: TaskInfo
+    # task: TaskInfo  # 已废弃
     history: List[NotificationInfo] = []
     group_config: Optional[GroupConfig] = None
     system_config: Dict[str, str] = {}
@@ -496,3 +496,29 @@ class OpportunityInfo(BaseModel):
         json_encoders = {
             datetime: lambda v: v.isoformat()
         }
+
+
+# ==================== 兼容性存根 ====================
+# 为了避免导入错误，提供TaskInfo的兼容性存根
+# 新代码应该使用OpportunityInfo
+
+class TaskInfo:
+    """
+    TaskInfo兼容性存根 - 已废弃
+    
+    ⚠️ 此类已废弃，仅用于避免导入错误
+    新代码请使用OpportunityInfo
+    """
+    def __init__(self, **kwargs):
+        raise DeprecationWarning(
+            "TaskInfo is deprecated. Use OpportunityInfo instead."
+        )
+
+# 兼容性导入
+__all__ = [
+    'OpportunityInfo', 'OpportunityStatus', 'NotificationTask', 
+    'NotificationTaskType', 'NotificationTaskStatus', 'NotificationInfo',
+    'NotificationStatus', 'Priority', 'TaskStatus', 'AgentRun', 'AgentRunStatus',
+    'AgentHistory', 'GroupConfig', 'MetabaseQuery', 'DecisionContext',
+    'TaskInfo'  # 兼容性存根
+]

@@ -47,6 +47,7 @@ class Config(BaseSettings):
 
     # LLM配置
     use_llm_optimization: bool = Field(True, env="USE_LLM_OPTIMIZATION")
+    use_llm_message_formatting: bool = Field(False, env="USE_LLM_MESSAGE_FORMATTING")
     llm_temperature: float = Field(0.1, env="LLM_TEMPERATURE")
     llm_max_tokens: int = Field(1000, env="LLM_MAX_TOKENS")
     

@@ -7,76 +7,9 @@ from datetime import datetime
 from pydantic import ValidationError
 
 from src.fsoa.data.models import (
-    TaskInfo, TaskStatus, Priority, NotificationInfo, NotificationStatus,
+    TaskStatus, Priority, NotificationInfo, NotificationStatus,
     AgentExecution, AgentStatus, DecisionResult
 )
-
-
-class TestTaskInfo:
-    """测试TaskInfo模型"""
-    
-    def test_task_info_creation(self):
-        """测试任务信息创建"""
-        task = TaskInfo(
-            id=1,
-            title="测试任务",
-            status=TaskStatus.IN_PROGRESS,
-            sla_hours=8,
-            elapsed_hours=10,
-            created_at=datetime.now(),
-            updated_at=datetime.now()
-        )
-        
-        assert task.id == 1
-        assert task.title == "测试任务"
-        assert task.status == TaskStatus.IN_PROGRESS
-        assert task.sla_hours == 8
-        assert task.elapsed_hours == 10
-    
-    def test_task_overdue_calculation(self):
-        """测试超时时间计算"""
-        task = TaskInfo(
-            id=1,
-            title="超时任务",
-            status=TaskStatus.IN_PROGRESS,
-            sla_hours=8,
-            elapsed_hours=10,
-            created_at=datetime.now(),
-            updated_at=datetime.now()
-        )
-        
-        assert task.overdue_hours == 2  # 10 - 8 = 2
-        assert task.is_overdue is True
-        assert task.overdue_ratio == 1.25  # 10 / 8 = 1.25
-    
-    def test_task_not_overdue(self):
-        """测试未超时任务"""
-        task = TaskInfo(
-            id=1,
-            title="正常任务",
-            status=TaskStatus.IN_PROGRESS,
-            sla_hours=8,
-            elapsed_hours=6,
-            created_at=datetime.now(),
-            updated_at=datetime.now()
-        )
-        
-        assert task.overdue_hours == 0
-        assert task.is_overdue is False
-        assert task.overdue_ratio == 0.75  # 6 / 8 = 0.75
-    
-    def test_task_validation_error(self):
-        """测试数据验证错误"""
-        with pytest.raises(ValidationError):
-            TaskInfo(
-                id=1,
-                title="",  # 空标题
-                status=TaskStatus.IN_PROGRESS,
-                sla_hours=-1,  # 负数SLA
-                elapsed_hours=10,
-                created_at=datetime.now(),
-                updated_at=datetime.now()
-            )
 
 
 class TestNotificationInfo:

@@ -7,10 +7,10 @@ from unittest.mock import patch, Mock
 from datetime import datetime, timedelta
 
 from src.fsoa.agent.tools import (
-    fetch_overdue_tasks, send_notification, update_task_status,
+    
     test_metabase_connection, test_wechat_webhook, get_system_health
 )
-from src.fsoa.data.models import TaskInfo, TaskStatus, Priority, NotificationInfo
+from src.fsoa.data.models import TaskStatus, Priority, NotificationInfo
 
 
 class TestFetchOverdueTasks:

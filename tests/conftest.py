@@ -54,26 +54,6 @@ def test_config(test_database):
 
 
 @pytest.fixture
-def sample_task():
-    """示例任务数据"""
-    return TaskInfo(
-        id=1001,
-        title="测试任务",
-        description="这是一个测试任务",
-        status=TaskStatus.IN_PROGRESS,
-        priority=Priority.NORMAL,
-        sla_hours=8,
-        elapsed_hours=10,
-        group_id="group_001",
-        assignee="张三",
-        customer="测试客户",
-        location="北京市",
-        created_at=datetime.now(),
-        updated_at=datetime.now()
-    )
-
-
-@pytest.fixture
 def overdue_task():
     """超时任务数据"""
     return TaskInfo(

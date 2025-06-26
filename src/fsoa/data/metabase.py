@@ -13,7 +13,7 @@ from urllib3.util.retry import Retry
 
 from ..utils.logger import get_logger
 from ..utils.config import get_config
-from .models import TaskInfo, TaskStatus, Priority, OpportunityInfo, OpportunityStatus
+from .models import TaskStatus, Priority, OpportunityInfo, OpportunityStatus
 
 logger = get_logger(__name__)
 
@@ -325,60 +325,7 @@ class MetabaseClient:
             logger.error(f"Failed to get overdue tasks: {e}")
             return []
     
-    def _convert_raw_task_to_model(self, raw_task: Dict[str, Any]) -> TaskInfo:
-        """
-        将原始任务数据转换为TaskInfo模型 - 已废弃
-
-        ⚠️ 此方法已废弃，存在任务-商机概念混淆问题
-
-        推荐使用：
-        - _convert_raw_opportunity_to_model() 转换商机数据
-        - 直接使用OpportunityInfo模型而不是TaskInfo
-
-        此方法仅用于向后兼容，不应在新代码中使用
-        """
-        logger.warning(
-            "_convert_raw_task_to_model() is deprecated due to task-opportunity concept confusion. "
-            "Use _convert_raw_opportunity_to_model() instead."
-        )
-        # 状态映射
-        status_mapping = {
-            'in_progress': TaskStatus.IN_PROGRESS,
-            'assigned': TaskStatus.IN_PROGRESS,
-            'pending': TaskStatus.IN_PROGRESS,
-            'completed': TaskStatus.COMPLETED,
-            'cancelled': TaskStatus.CANCELLED,
-            'overdue': TaskStatus.OVERDUE
-        }
-        
-        # 优先级映射
-        priority_mapping = {
-            'low': Priority.LOW,
-            'normal': Priority.NORMAL,
-            'high': Priority.HIGH,
-            'urgent': Priority.URGENT,
-            'critical': Priority.URGENT
-        }
-        
-        # 解析时间字段
-        def parse_datetime(dt_str):
-            if not dt_str:
-                return None
-            try:
-                # 尝试多种时间格式
-                for fmt in ['%Y-%m-%d %H:%M:%S', '%Y-%m-%dT%H:%M:%S', '%Y-%m-%d']:
-                    try:
-                        return datetime.strptime(dt_str, fmt)
-                    except ValueError:
-                        continue
-                # 如果都失败，返回当前时间
-                logger.warning(f"Failed to parse datetime: {dt_str}")
-                return datetime.now()
-            except Exception:
-                return datetime.now()
-        
-        return TaskInfo(
-            id=int(raw_task.get('id', 0)),
+    ),
             title=str(raw_task.get('title', 'Unknown Task')),
             description=raw_task.get('description'),
             status=status_mapping.get(
