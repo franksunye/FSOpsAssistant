@@ -251,7 +251,21 @@ class DatabaseManager:
             session.close()
     
     def save_task(self, task: 'TaskInfo') -> bool:
-        """保存任务信息"""
+        """
+        保存任务信息 - 已废弃
+
+        ⚠️ 此方法已废弃，存在任务-商机概念混淆问题
+
+        推荐使用：
+        - 直接操作商机数据，而不是任务数据
+        - 使用NotificationTaskManager管理通知任务
+
+        此方法仅用于向后兼容，不应在新代码中使用
+        """
+        logger.warning(
+            "save_task() is deprecated due to task-opportunity concept confusion. "
+            "Use direct opportunity data operations instead."
+        )
         try:
             with self.get_session() as session:
                 task_record = TaskTable(
@@ -278,9 +292,23 @@ class DatabaseManager:
             logger.error(f"Failed to save task {task.id}: {e}")
             return False
     
-    def get_tasks(self, status: Optional[TaskStatus] = None, 
+    def get_tasks(self, status: Optional[TaskStatus] = None,
                   group_id: Optional[str] = None) -> List['TaskInfo']:
-        """获取任务列表"""
+        """
+        获取任务列表 - 已废弃
+
+        ⚠️ 此方法已废弃，存在任务-商机概念混淆问题
+
+        推荐使用：
+        - 直接查询商机数据，而不是任务数据
+        - 使用NotificationTaskManager查询通知任务
+
+        此方法仅用于向后兼容，不应在新代码中使用
+        """
+        logger.warning(
+            "get_tasks() is deprecated due to task-opportunity concept confusion. "
+            "Use direct opportunity data queries instead."
+        )
         try:
             with self.get_session() as session:
                 query = session.query(TaskTable)
@@ -379,7 +407,21 @@ class DatabaseManager:
             return False
     
     def _task_table_to_model(self, task_record: TaskTable) -> 'TaskInfo':
-        """将数据库记录转换为模型"""
+        """
+        将数据库记录转换为模型 - 已废弃
+
+        ⚠️ 此方法已废弃，存在任务-商机概念混淆问题
+
+        推荐使用：
+        - 直接操作商机数据模型，而不是任务数据模型
+        - 使用OpportunityInfo模型而不是TaskInfo
+
+        此方法仅用于向后兼容，不应在新代码中使用
+        """
+        logger.warning(
+            "_task_table_to_model() is deprecated due to task-opportunity concept confusion. "
+            "Use OpportunityInfo model instead."
+        )
         return TaskInfo(
             id=task_record.id,
             title=task_record.title,
