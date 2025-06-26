@@ -305,14 +305,102 @@ class NotificationTaskManager:
             result.failed_count += len(tasks)
             return result
     
+    def _format_notification_message(self, org_name: str, tasks: List[NotificationTask],
+                                   notification_type: NotificationTaskType) -> str:
+        """格式化通知消息"""
+        try:
+            # 获取商机信息
+            opportunities = 
+            
+            if self.use_llm_formatting and self.llm_client:
+                # 使用LLM格式化
+                return self._format_with_llm(org_name, opportunities, notification_type)
+            else:
+                # 使用标准模板
+                return self._format_with_template(org_name, opportunities, notification_type)
+                
+        except Exception as e:
+            logger.error(f"Failed to format message: {e}")
+            # 降级到标准模板
+            return self._format_with_template(org_name, opportunities, notification_type)
+    
+    def _format_with_llm(self, org_name: str, opportunities: List[OpportunityInfo],
+                        notification_type: NotificationTaskType) -> str:
+        """使用LLM格式化消息"""
+        try:
+            # 构建LLM提示词
+            prompt = self._build_llm_formatting_prompt(org_name, opportunities, notification_type)
+            
+            response = self.llm_client.client.chat.completions.create(
+                model="deepseek-chat",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.1,  # 低温度确保格式一致性
+                max_tokens=800
+            )
+            
+            message = response.choices[0].message.content.strip()
+            logger.info(f"Generated LLM message for {org_name}")
+            return message
+            
+        except Exception as e:
+            logger.error(f"LLM formatting failed: {e}")
+            # 降级到标准模板
+            return self._format_with_template(org_name, opportunities, notification_type)
+    
+    def _format_with_template(self, org_name: str, opportunities: List[OpportunityInfo],
+                            notification_type: NotificationTaskType) -> str:
+        """使用标准模板格式化消息"""
+        if notification_type == NotificationTaskType.VIOLATION:
+            return self.formatter.format_violation_notification(org_name, opportunities)
+        elif notification_type == NotificationTaskType.ESCALATION:
+            return self.formatter.format_escalation_notification(org_name, opportunities)
+        else:
+            return self.formatter.format_org_overdue_notification(org_name, opportunities)
+    
+    def _build_llm_formatting_prompt(self, org_name: str, opportunities: List[OpportunityInfo],
+                                   notification_type: NotificationTaskType) -> str:
+        """构建LLM格式化提示词"""
+        type_desc = {
+            NotificationTaskType.VIOLATION: "违规通知（12小时未处理）",
+            NotificationTaskType.STANDARD: "逾期提醒（24/48小时）",
+            NotificationTaskType.ESCALATION: "升级通知（运营介入）"
+        }
+        
+        opp_list = []
+        for i, opp in enumerate(opportunities, 1):
+            opp_list.append(f"{i}. 工单号：{opp.order_num}")
+            opp_list.append(f"   客户：{opp.name}")
+            opp_list.append(f"   地址：{opp.address}")
+            opp_list.append(f"   负责人：{opp.supervisor_name}")
+            opp_list.append(f"   已过时长：{opp.elapsed_hours:.1f}小时")
+            opp_list.append("")
+        
+        prompt = f"""请为以下{type_desc.get(notification_type, "通知")}生成专业的企微群消息。
+
+组织：{org_name}
+通知类型：{type_desc.get(notification_type)}
+工单信息：
+{chr(10).join(opp_list)}
+
+要求：
+1. 使用适当的emoji（🚨违规、⚠️逾期、🔥升级）
+2. 格式清晰，信息完整
+3. 语气专业但紧迫
+4. 包含明确的行动指示
+5. 长度控制在500字以内
+
+请直接返回消息内容，不需要解释。"""
+        
+        return prompt
+
     def _send_standard_notification(self, org_name: str, tasks: List[NotificationTask],
                                   run_id: int) -> bool:
         """发送标准通知"""
         try:
             # 格式化消息
-            message = self.formatter.format_org_overdue_notification(
+            message = self._format_notification_message(org_name, tasks, NotificationTaskType.STANDARD)
                 org_name,
-                [self._get_opportunity_info_for_notification(task) for task in tasks]
+                
             )
 
             # 发送到组织对应的企微群
@@ -338,9 +426,9 @@ class NotificationTaskManager:
         """发送违规通知（12小时）"""
         try:
             # 格式化消息
-            message = self.formatter.format_violation_notification(
+            message = self._format_notification_message(org_name, tasks, NotificationTaskType.VIOLATION)
                 org_name,
-                [self._get_opportunity_info_for_notification(task) for task in tasks]
+                
             )
 
             # 发送到组织对应的企微群
@@ -368,7 +456,7 @@ class NotificationTaskManager:
             # 格式化升级消息
             message = self.formatter.format_escalation_notification(
                 org_name,
-                [self._get_opportunity_info_for_notification(task) for task in tasks]
+                
             )
 
             # 发送到内部运营群

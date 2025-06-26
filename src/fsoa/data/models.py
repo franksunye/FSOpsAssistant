@@ -189,44 +189,6 @@ class NotificationTask(BaseModel):
 # 废弃的模型 - 保留用于兼容性
 # ============================================================================
 
-class TaskInfo(BaseModel):
-    """任务信息模型 - 已废弃，请使用OpportunityInfo"""
-    id: int
-    title: str
-    description: Optional[str] = None
-    status: TaskStatus
-    priority: Priority = Priority.NORMAL
-    sla_hours: int = Field(gt=0, description="SLA时间（小时）")
-    elapsed_hours: float = Field(ge=0, description="已用时间（小时）")
-    overdue_hours: float = Field(ge=0, default=0, description="超时时间（小时）")
-    group_id: Optional[str] = None
-    assignee: Optional[str] = None
-    customer: Optional[str] = None
-    location: Optional[str] = None
-    created_at: datetime
-    updated_at: datetime
-    last_notification: Optional[datetime] = None
-
-    @validator('overdue_hours', always=True)
-    def calculate_overdue_hours(cls, v, values):
-        """计算超时时间"""
-        elapsed = values.get('elapsed_hours', 0)
-        sla = values.get('sla_hours', 0)
-        return max(0, elapsed - sla)
-
-    @property
-    def is_overdue(self) -> bool:
-        """是否超时"""
-        return self.overdue_hours > 0
-
-    @property
-    def overdue_ratio(self) -> float:
-        """超时比例"""
-        if self.sla_hours == 0:
-            return 0
-        return self.elapsed_hours / self.sla_hours
-
-
 class NotificationInfo(BaseModel):
     """
     通知信息模型 - 已废弃

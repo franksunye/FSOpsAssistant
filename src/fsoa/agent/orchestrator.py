@@ -27,7 +27,7 @@ from .tools import (
     # 管理器
     get_data_strategy, get_notification_manager, get_execution_tracker,
     # 废弃的兼容性函数（存在任务-商机概念混淆）
-    fetch_overdue_tasks, send_notification, send_business_notifications, update_task_status
+    send_business_notifications
 )
 from .decision import create_decision_engine
 from .llm import get_deepseek_client
@@ -217,18 +217,7 @@ class AgentOrchestrator:
 
                 logger.info(f"Fetched {len(opportunities)} overdue opportunities from {output['organizations']} organizations")
 
-                # 向后兼容：尝试获取传统任务
-                try:
-                    # tasks = fetch_overdue_tasks()  # 已禁用旧系统
-                    # state["tasks"] = []  # 已禁用旧系统
-                    state["context"]["total_tasks"] = len(tasks)
-                    output["legacy_task_count"] = len(tasks)
-                    logger.info(f"Also fetched {len(tasks)} legacy tasks for compatibility")
-                except Exception as e:
-                    logger.warning(f"Failed to fetch legacy tasks (this is expected): {e}")
-                    state["tasks"] = []
-                    state["context"]["total_tasks"] = 0
-                    output["legacy_task_count"] = 0
+                
 
             except Exception as e:
                 error_msg = f"Failed to fetch opportunities: {e}"
