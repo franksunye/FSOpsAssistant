@@ -190,6 +190,11 @@ class DatabaseManager:
             ("sla_pending_escalation", "8", "待预约升级阈值（工作小时）→运营群"),
             ("sla_not_visiting_reminder", "8", "暂不上门提醒阈值（工作小时）→服务商群"),
             ("sla_not_visiting_escalation", "16", "暂不上门升级阈值（工作小时）→运营群"),
+
+            # 工作时间配置
+            ("work_start_hour", "9", "工作开始时间（小时）"),
+            ("work_end_hour", "19", "工作结束时间（小时）"),
+            ("work_days", "1,2,3,4,5", "工作日（1=周一，7=周日，逗号分隔）"),
         ]
         
         with self.get_session() as session:

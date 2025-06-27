@@ -1015,6 +1015,22 @@ def show_system_settings():
         st.subheader("🕒 工作时间配置")
         st.info("💡 所有SLA时间计算均基于工作时间，非工作时间不计入SLA")
 
+        # 读取当前配置
+        try:
+            current_start_hour = int(db_manager.get_system_config("work_start_hour") or "9")
+            current_end_hour = int(db_manager.get_system_config("work_end_hour") or "19")
+            current_work_days_str = db_manager.get_system_config("work_days") or "1,2,3,4,5"
+            current_work_days_nums = [int(d.strip()) for d in current_work_days_str.split(",") if d.strip().isdigit()]
+
+            # 转换为中文工作日名称
+            day_names = {1: "周一", 2: "周二", 3: "周三", 4: "周四", 5: "周五", 6: "周六", 7: "周日"}
+            current_work_days_names = [day_names[d] for d in current_work_days_nums if d in day_names]
+        except Exception as e:
+            st.error(f"读取工作时间配置失败: {e}")
+            current_start_hour = 9
+            current_end_hour = 19
+            current_work_days_names = ["周一", "周二", "周三", "周四", "周五"]
+
         col_time1, col_time2 = st.columns(2)
 
         with col_time1:
@@ -1022,7 +1038,7 @@ def show_system_settings():
                 "工作开始时间（小时）",
                 min_value=0,
                 max_value=23,
-                value=9,
+                value=current_start_hour,
                 help="工作日开始时间，24小时制"
             )
 
@@ -1030,7 +1046,7 @@ def show_system_settings():
                 "工作结束时间（小时）",
                 min_value=1,
                 max_value=24,
-                value=19,
+                value=current_end_hour,
                 help="工作日结束时间，24小时制"
             )
 
@@ -1039,7 +1055,7 @@ def show_system_settings():
             work_days = st.multiselect(
                 "选择工作日",
                 ["周一", "周二", "周三", "周四", "周五", "周六", "周日"],
-                default=["周一", "周二", "周三", "周四", "周五"],
+                default=current_work_days_names,
                 help="选择哪些天算作工作日"
             )
 
@@ -1081,7 +1097,32 @@ def show_system_settings():
                 st.error(f"计算示例失败: {e}")
 
         if st.button("💾 保存工作时间设置"):
-            st.success("工作时间设置已保存")
+            try:
+                # 验证输入
+                if work_start_hour >= work_end_hour:
+                    st.error("❌ 工作开始时间必须小于结束时间")
+                elif not work_days:
+                    st.error("❌ 至少需要选择一个工作日")
+                else:
+                    # 转换工作日为数字
+                    day_mapping = {"周一": 1, "周二": 2, "周三": 3, "周四": 4, "周五": 5, "周六": 6, "周日": 7}
+                    work_days_nums = [day_mapping[day] for day in work_days if day in day_mapping]
+                    work_days_str = ",".join(map(str, sorted(work_days_nums)))
+
+                    # 保存配置
+                    configs = [
+                        ("work_start_hour", str(work_start_hour), "工作开始时间（小时）"),
+                        ("work_end_hour", str(work_end_hour), "工作结束时间（小时）"),
+                        ("work_days", work_days_str, "工作日（1=周一，7=周日，逗号分隔）"),
+                    ]
+
+                    for key, value, description in configs:
+                        db_manager.set_system_config(key, value, description)
+
+                    st.success("✅ 工作时间设置已保存")
+                    st.info("💡 新的工作时间配置将在下次Agent执行时生效")
+            except Exception as e:
+                st.error(f"❌ 保存失败: {e}")
 
     # 添加企微配置快速跳转
     st.markdown("---")

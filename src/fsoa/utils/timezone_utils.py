@@ -155,20 +155,30 @@ def is_same_china_day(dt1: datetime, dt2: datetime) -> bool:
 def get_china_business_hours() -> tuple[int, int]:
     """
     获取中国时区的工作时间范围
-    
+
     Returns:
         (开始小时, 结束小时) 的元组
     """
-    return 9, 19  # 早9点到晚7点
+    try:
+        from ..data.database import get_database_manager
+        db_manager = get_database_manager()
+
+        work_start_hour = int(db_manager.get_system_config("work_start_hour") or "9")
+        work_end_hour = int(db_manager.get_system_config("work_end_hour") or "19")
+
+        return work_start_hour, work_end_hour
+    except Exception:
+        # 如果数据库不可用，使用默认配置
+        return 9, 19  # 早9点到晚7点
 
 
 def is_china_business_hours(dt: Optional[datetime] = None) -> bool:
     """
     判断是否在中国时区的工作时间内
-    
+
     Args:
         dt: 时间点，默认为当前时间
-        
+
     Returns:
         是否在工作时间内
     """
@@ -176,14 +186,32 @@ def is_china_business_hours(dt: Optional[datetime] = None) -> bool:
         dt = now_china_naive()
     else:
         dt = ensure_china_timezone(dt).replace(tzinfo=None)
-    
-    # 检查是否为工作日（周一到周五）
-    if dt.weekday() >= 5:  # 周六=5, 周日=6
-        return False
-    
-    # 检查是否在工作时间内
-    start_hour, end_hour = get_china_business_hours()
-    return start_hour <= dt.hour < end_hour
+
+    try:
+        from ..data.database import get_database_manager
+        db_manager = get_database_manager()
+
+        # 获取工作日配置
+        work_days_str = db_manager.get_system_config("work_days") or "1,2,3,4,5"
+        work_days = [int(d.strip()) for d in work_days_str.split(",") if d.strip().isdigit()]
+
+        # 检查是否为工作日（1=周一，7=周日）
+        weekday = dt.weekday() + 1  # Python的weekday()返回0-6，转换为1-7
+        if weekday not in work_days:
+            return False
+
+        # 检查是否在工作时间内
+        start_hour, end_hour = get_china_business_hours()
+        return start_hour <= dt.hour < end_hour
+    except Exception:
+        # 如果数据库不可用，使用默认逻辑
+        # 检查是否为工作日（周一到周五）
+        if dt.weekday() >= 5:  # 周六=5, 周日=6
+            return False
+
+        # 检查是否在工作时间内
+        start_hour, end_hour = get_china_business_hours()
+        return start_hour <= dt.hour < end_hour
 
 
 def china_time_delta_hours(start_dt: datetime, end_dt: Optional[datetime] = None) -> float:
