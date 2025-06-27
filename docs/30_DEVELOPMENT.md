@@ -48,6 +48,150 @@ python scripts/run_tests.py
 # ✅ 管理器组件测试通过
 # ✅ Agent工作流测试通过
 
+## 2. 部署指南
+
+### 2.1 快速部署
+
+#### 环境要求
+- Python 3.9+
+- Git
+- 网络连接（访问Metabase和企微）
+
+#### 部署步骤
+```bash
+# 1. 克隆项目
+git clone https://github.com/franksunye/FSOpsAssistant.git
+cd FSOpsAssistant
+
+# 2. 安装依赖
+pip install -r requirements.txt
+
+# 3. 配置环境
+cp .env.example .env
+nano .env  # 编辑配置文件
+
+# 4. 初始化数据库
+python scripts/init_db.py
+
+# 5. 启动应用
+python scripts/start_full_app.py  # Web + Agent
+```
+
+### 2.2 配置说明
+
+#### 核心配置项
+```env
+# 数据库配置
+DATABASE_URL=sqlite:///fsoa.db
+
+# Metabase配置
+METABASE_BASE_URL=https://your-metabase.com
+METABASE_USERNAME=your-username
+METABASE_PASSWORD=your-password
+
+# 企微配置
+WECHAT_WEBHOOK_LIST=["https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx"]
+
+# 通知配置
+NOTIFICATION_COOLDOWN=120  # 2小时冷静时间
+MAX_RETRY_COUNT=5          # 最大重试次数
+```
+
+### 2.3 生产部署
+
+#### 推荐架构
+```
+┌─────────────────┐    ┌─────────────────┐
+│   Nginx         │    │   FSOA App      │
+│   (反向代理)     │◄───┤   (Streamlit)   │
+└─────────────────┘    └─────────────────┘
+                              │
+                       ┌─────────────────┐
+                       │   FSOA Agent    │
+                       │   (后台服务)     │
+                       └─────────────────┘
+                              │
+                       ┌─────────────────┐
+                       │   SQLite/       │
+                       │   PostgreSQL    │
+                       └─────────────────┘
+```
+
+#### 系统服务配置
+```bash
+# Agent服务
+sudo nano /etc/systemd/system/fsoa-agent.service
+```
+
+```ini
+[Unit]
+Description=FSOA Agent Service
+After=network.target
+
+[Service]
+Type=simple
+User=fsoa
+WorkingDirectory=/home/fsoa/FSOpsAssistant
+Environment=PATH=/home/fsoa/FSOpsAssistant/venv/bin
+ExecStart=/home/fsoa/FSOpsAssistant/venv/bin/python scripts/start_agent.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+```
+
+### 2.4 升级指南
+
+#### 从v0.1.x升级到v0.2.0
+```bash
+# 1. 备份数据
+cp fsoa.db fsoa_backup_$(date +%Y%m%d).db
+
+# 2. 更新代码
+git pull origin main
+pip install -r requirements.txt
+
+# 3. 数据库迁移
+python scripts/migrate_notification_tasks.py
+
+# 4. 重启服务
+python scripts/start_full_app.py
+```
+
+### 2.5 监控和维护
+
+#### 日志查看
+```bash
+# 应用日志
+tail -f logs/fsoa.log
+
+# 系统服务日志
+sudo journalctl -u fsoa-agent -f
+```
+
+#### 健康检查
+```bash
+# 检查服务状态
+sudo systemctl status fsoa-agent
+
+# 检查数据库
+python scripts/test_database.py
+
+# 检查外部连接
+python scripts/test_connections.py
+```
+
+#### 备份策略
+```bash
+# 数据库备份
+cp fsoa.db backups/fsoa_$(date +%Y%m%d_%H%M%S).db
+
+# 自动备份脚本
+crontab -e
+# 添加: 0 2 * * * /home/fsoa/backup_fsoa.sh
+```
+
 # 验证系统健康状态
 # 通过Web界面：[系统管理 → 系统测试] 进行全面验证
 ```

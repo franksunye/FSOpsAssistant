@@ -11,7 +11,7 @@
 
 FSOA是一个具备**主动性、自主决策、目标导向**特性的AI Agent系统，专为现场服务运营场景设计。通过智能监控、自动决策和及时通知，大幅提升运营效率，减少人工干预。
 
-**🚀 当前状态**: ✅ v1.0.0 生产就绪 - 架构重构完成，管理器模式实现，智能缓存系统，分级通知机制，系统稳定可靠。
+**🚀 当前状态**: ✅ v0.2.0 生产就绪 - 架构重构完成，管理器模式实现，智能缓存系统，分级通知机制，系统稳定可靠。
 
 ### 核心特性
 
@@ -34,7 +34,7 @@ FSOA是一个具备**主动性、自主决策、目标导向**特性的AI Agent�
 
 ### 环境要求
 
-- Python 3.8+
+- Python 3.9+
 - 必要依赖：streamlit, pandas, requests, pydantic, pydantic-settings
 - 企业微信群机器人webhook
 - Metabase访问权限（可选，支持模拟数据）
@@ -48,16 +48,19 @@ git clone https://github.com/franksunye/FSOpsAssistant.git
 cd FSOpsAssistant
 
 # 2. 安装依赖
-pip install streamlit pandas requests pydantic pydantic-settings
+pip install -r requirements.txt
 
 # 3. 配置环境变量（可选）
 cp .env.example .env
 # 编辑 .env 文件，填入API密钥和webhook配置
 
-# 4. 启动Web界面
-streamlit run src/fsoa/ui/app.py
+# 4. 初始化数据库
+python scripts/init_db.py
 
-# 5. 访问界面
+# 5. 启动应用
+python scripts/start_full_app.py  # Web + Agent
+
+# 6. 访问界面
 # 浏览器打开：http://localhost:8501
 ```
 
@@ -187,15 +190,18 @@ FSOpsAssistant/
 │   └── utils/             # 工具模块
 ├── docs/                  # 项目文档 (精简优化)
 │   ├── 00_BACKLOG.md         # 待办事项
-│   ├── 00_PROJECT_OVERVIEW.md # 项目概述
+│   ├── 00_PROJECT_OVERVIEW.md # 项目概述 + 业务需求
+│   ├── 00_SYSTEM_STATUS.md   # 系统状态
 │   ├── 01_CHANGELOG.md       # 变更日志
-│   ├── 10_ARCHITECTURE.md     # 系统架构
+│   ├── 10_ARCHITECTURE.md    # 系统架构
+│   ├── 11_DATA_IMPORT_DESIGN.md # 数据导入设计
+│   ├── 12_SLA_DESIGN.md      # SLA模块设计
+│   ├── 13_NOTIFICATION_DESIGN.md # 通知模块设计
 │   ├── 20_API.md             # API文档
-│   ├── 30_DEVELOPMENT.md     # 开发指南
+│   ├── 30_DEVELOPMENT.md     # 开发指南 + 部署指南
 │   ├── 31_TESTING.md         # 测试指南
 │   ├── 40_USER_GUIDE.md      # 用户指南
-│   ├── 50_DEPLOYMENT.md      # 部署指南
-│   └── BUSINESS_REQUIREMENTS.md # 业务需求
+│   └── 50_DEPLOYMENT.md      # 部署指南
 ├── scripts/               # 核心脚本 (已精简)
 │   ├── README.md             # 脚本使用说明
 │   ├── init_db.py            # 数据库初始化
@@ -231,10 +237,13 @@ python scripts/test_business_notifications.py
 
 | 文档 | 描述 | 目标读者 |
 |------|------|----------|
-| [Backlog](docs/00_BACKLOG.md) | 开发计划和完成状态 | 开发团队 |
-| [实施计划](docs/IMPLEMENTATION_PLAN.md) | 实施完成报告 | 项目管理 |
-| [完成总结](docs/BACKLOG_COMPLETION_SUMMARY.md) | 功能完成详细总结 | 所有人 |
-| [业务需求](docs/BUSINESS_REQUIREMENTS.md) | 业务需求和规则定义 | 业务人员 |
+| [项目概述](docs/00_PROJECT_OVERVIEW.md) | 项目背景、目标、业务需求 | 所有人 |
+| [系统架构](docs/10_ARCHITECTURE.md) | 技术架构和设计原则 | 开发团队 |
+| [数据导入设计](docs/11_DATA_IMPORT_DESIGN.md) | 数据导入模块详细设计 | 开发团队 |
+| [SLA设计](docs/12_SLA_DESIGN.md) | SLA模块详细设计 | 开发团队 |
+| [通知设计](docs/13_NOTIFICATION_DESIGN.md) | 通知模块详细设计 | 开发团队 |
+| [开发指南](docs/30_DEVELOPMENT.md) | 开发环境、部署指南 | 开发团队 |
+| [用户指南](docs/40_USER_GUIDE.md) | 使用说明和操作指南 | 最终用户 |
 
 ## 🎯 使用场景
 
