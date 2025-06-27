@@ -637,7 +637,11 @@ class DatabaseManager:
             return []
 
     def save_opportunity_cache(self, opportunity: 'OpportunityInfo') -> bool:
-        """保存商机缓存"""
+        """
+        保存商机缓存 - 兼容性方法
+
+        ⚠️ 建议使用 full_refresh_opportunity_cache() 进行批量清空重建
+        """
         try:
             with self.get_session() as session:
                 # 更新缓存信息
@@ -666,6 +670,66 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Failed to save opportunity cache {opportunity.order_num}: {e}")
             return False
+
+    def full_refresh_opportunity_cache(self, opportunities: List['OpportunityInfo']) -> int:
+        """
+        完全刷新商机缓存 - 清空重建模式
+
+        这个方法实现真正的"清空重建"：
+        1. 在事务中清空所有现有缓存数据
+        2. 重新插入新的数据
+        3. 确保数据一致性
+
+        Args:
+            opportunities: 要缓存的商机列表
+
+        Returns:
+            成功缓存的商机数量
+        """
+        try:
+            with self.get_session() as session:
+                logger.info("Starting full cache refresh transaction")
+
+                # 1. 清空所有现有缓存数据
+                deleted_count = session.query(OpportunityCacheTable).delete()
+                logger.info(f"Cleared {deleted_count} existing cache records")
+
+                # 2. 重新插入新数据
+                cached_count = 0
+                for opportunity in opportunities:
+                    if opportunity.should_cache():
+                        # 更新缓存信息
+                        opportunity.update_cache_info()
+
+                        cache_record = OpportunityCacheTable(
+                            order_num=opportunity.order_num,
+                            customer_name=opportunity.name,
+                            address=opportunity.address,
+                            supervisor_name=opportunity.supervisor_name,
+                            create_time=opportunity.create_time,
+                            org_name=opportunity.org_name,
+                            status=opportunity.order_status.value if hasattr(opportunity.order_status, 'value') else str(opportunity.order_status),
+                            elapsed_hours=opportunity.elapsed_hours,
+                            is_overdue=opportunity.is_overdue,
+                            escalation_level=opportunity.escalation_level,
+                            last_updated=opportunity.last_updated,
+                            source_hash=opportunity.source_hash,
+                            cache_version=opportunity.cache_version,
+                            created_at=now_china_naive(),
+                            updated_at=now_china_naive()
+                        )
+                        session.add(cache_record)
+                        cached_count += 1
+
+                # 3. 提交事务
+                session.commit()
+                logger.info(f"Full cache refresh completed: {cached_count} opportunities cached")
+                return cached_count
+
+        except Exception as e:
+            logger.error(f"Failed to perform full cache refresh: {e}")
+            session.rollback()
+            return 0
 
     def get_opportunity_cache(self, order_num: str) -> Optional['OpportunityInfo']:
         """获取商机缓存"""

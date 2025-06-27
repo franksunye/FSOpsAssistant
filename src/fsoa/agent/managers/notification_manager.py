@@ -310,8 +310,8 @@ class NotificationTaskManager:
         """格式化通知消息"""
         try:
             # 获取商机信息
-            opportunities = 
-            
+            opportunities = [task.to_opportunity_info() for task in tasks]
+
             if self.use_llm_formatting and self.llm_client:
                 # 使用LLM格式化
                 return self._format_with_llm(org_name, opportunities, notification_type)
@@ -399,9 +399,6 @@ class NotificationTaskManager:
         try:
             # 格式化消息
             message = self._format_notification_message(org_name, tasks, NotificationTaskType.STANDARD)
-                org_name,
-                
-            )
 
             # 发送到组织对应的企微群
             success = self.wechat_client.send_notification_to_org(
@@ -427,9 +424,6 @@ class NotificationTaskManager:
         try:
             # 格式化消息
             message = self._format_notification_message(org_name, tasks, NotificationTaskType.VIOLATION)
-                org_name,
-                
-            )
 
             # 发送到组织对应的企微群
             success = self.wechat_client.send_notification_to_org(
