@@ -14,7 +14,7 @@ from functools import wraps
 
 from ..data.models import (
     NotificationInfo, NotificationStatus, Priority, OpportunityInfo,
-    TaskStatus, NotificationTask
+    TaskStatus, NotificationTask, TaskInfo
 )
 from ..data.database import get_db_manager
 from ..data.metabase import get_metabase_client, MetabaseError
@@ -266,10 +266,92 @@ def test_wechat_webhook(group_id: str = None) -> bool:
 
 
 @log_function_call
+def get_agent_execution_status() -> Dict[str, Any]:
+    """
+    获取Agent执行状态信息
+
+    Returns:
+        Agent执行状态信息
+    """
+    try:
+        from ..utils.scheduler import get_scheduler
+        from ..utils.config import get_config
+
+        execution_tracker = get_execution_tracker()
+        scheduler = get_scheduler()
+        config = get_config()
+
+        # 获取最近的执行记录
+        recent_runs = execution_tracker.get_recent_runs(limit=1)
+        last_run = recent_runs[0] if recent_runs else None
+
+        # 获取调度器信息
+        jobs_info = scheduler.get_jobs()
+        agent_job = None
+        for job in jobs_info.get("jobs", []):
+            if job["id"] == "agent_execution":
+                agent_job = job
+                break
+
+        # 构建状态信息
+        status = {
+            "last_execution": None,
+            "last_execution_status": "未知",
+            "next_execution": None,
+            "execution_interval": f"{config.agent_execution_interval}分钟",
+            "scheduler_running": jobs_info.get("is_running", False),
+            "total_runs": len(execution_tracker.get_recent_runs(limit=100, hours_back=168))
+        }
+
+        # 设置上次执行信息
+        if last_run:
+            status["last_execution"] = last_run.trigger_time.strftime("%Y-%m-%d %H:%M:%S")
+            status["last_execution_status"] = last_run.status.value
+
+        # 设置下次执行时间
+        if agent_job and agent_job["next_run_time"]:
+            try:
+                from datetime import datetime
+                next_time = datetime.fromisoformat(agent_job["next_run_time"].replace('Z', '+00:00'))
+                # 转换为中国时区显示
+                from ..utils.timezone_utils import utc_to_china
+                next_time_china = utc_to_china(next_time)
+                status["next_execution"] = next_time_china.strftime("%Y-%m-%d %H:%M:%S")
+            except Exception as e:
+                logger.warning(f"Failed to parse next execution time: {e}")
+                status["next_execution"] = "解析失败"
+        else:
+            # 如果没有调度器信息，基于上次执行时间和间隔估算
+            if last_run and last_run.status.value == "completed":
+                try:
+                    from datetime import timedelta
+                    next_estimated = last_run.trigger_time + timedelta(minutes=config.agent_execution_interval)
+                    status["next_execution"] = next_estimated.strftime("%Y-%m-%d %H:%M:%S") + " (估算)"
+                except Exception:
+                    status["next_execution"] = "无法确定"
+            else:
+                status["next_execution"] = "无法确定"
+
+        return status
+
+    except Exception as e:
+        logger.error(f"Failed to get agent execution status: {e}")
+        return {
+            "last_execution": "获取失败",
+            "last_execution_status": "错误",
+            "next_execution": "获取失败",
+            "execution_interval": "60分钟",
+            "scheduler_running": False,
+            "total_runs": 0,
+            "error": str(e)
+        }
+
+
+@log_function_call
 def get_system_health() -> Dict[str, Any]:
     """
     获取系统健康状态
-    
+
     Returns:
         系统健康状态信息
     """
@@ -367,6 +449,95 @@ def send_business_notifications(opportunities: List[OpportunityInfo], run_id: Op
             "errors": [str(e)]
         }
 
+
+
+# ============================================================================
+# 商机数据获取函数 - 基于新架构
+# ============================================================================
+
+@log_function_call
+def fetch_overdue_opportunities(force_refresh: bool = False) -> List[OpportunityInfo]:
+    """
+    获取逾期商机列表
+
+    Args:
+        force_refresh: 是否强制刷新数据
+
+    Returns:
+        逾期商机列表
+    """
+    try:
+        data_strategy = get_data_strategy()
+        return data_strategy.get_overdue_opportunities(force_refresh=force_refresh)
+    except Exception as e:
+        logger.error(f"Failed to fetch overdue opportunities: {e}")
+        raise ToolError(f"Failed to fetch overdue opportunities: {e}")
+
+
+@log_function_call
+def get_all_opportunities(force_refresh: bool = False) -> List[OpportunityInfo]:
+    """
+    获取所有监控的商机列表
+
+    Args:
+        force_refresh: 是否强制刷新数据
+
+    Returns:
+        所有监控的商机列表
+    """
+    try:
+        data_strategy = get_data_strategy()
+        return data_strategy.get_opportunities(force_refresh=force_refresh)
+    except Exception as e:
+        logger.error(f"Failed to get all opportunities: {e}")
+        raise ToolError(f"Failed to get all opportunities: {e}")
+
+
+@log_function_call
+def create_notification_tasks(opportunities: List[OpportunityInfo], run_id: int) -> List:
+    """
+    基于商机创建通知任务
+
+    Args:
+        opportunities: 商机列表
+        run_id: Agent运行ID
+
+    Returns:
+        创建的通知任务列表
+    """
+    try:
+        notification_manager = get_notification_manager()
+        return notification_manager.create_notification_tasks(opportunities, run_id)
+    except Exception as e:
+        logger.error(f"Failed to create notification tasks: {e}")
+        raise ToolError(f"Failed to create notification tasks: {e}")
+
+
+@log_function_call
+def execute_notification_tasks(run_id: int) -> Dict[str, Any]:
+    """
+    执行待处理的通知任务
+
+    Args:
+        run_id: Agent运行ID
+
+    Returns:
+        执行结果统计
+    """
+    try:
+        notification_manager = get_notification_manager()
+        result = notification_manager.execute_pending_tasks(run_id)
+
+        # 转换为字典格式返回
+        return {
+            "total_tasks": result.total_tasks,
+            "sent_count": result.sent_count,
+            "failed_count": result.failed_count,
+            "errors": result.errors
+        }
+    except Exception as e:
+        logger.error(f"Failed to execute notification tasks: {e}")
+        raise ToolError(f"Failed to execute notification tasks: {e}")
 
 
 # ============================================================================

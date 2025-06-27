@@ -306,9 +306,45 @@ def show_dashboard():
     
     with col1:
         st.subheader("Agent执行状态")
-        st.info("上次执行: 2025-06-25 10:00:00")
-        st.info("下次执行: 2025-06-25 11:00:00")
-        st.info("执行间隔: 60分钟")
+
+        # 获取真实的Agent执行状态
+        try:
+            from src.fsoa.agent.tools import get_agent_execution_status
+            agent_status = get_agent_execution_status()
+
+            # 显示上次执行
+            last_exec = agent_status.get("last_execution", "未知")
+            last_status = agent_status.get("last_execution_status", "未知")
+            if last_status == "completed":
+                st.success(f"上次执行: {last_exec} (成功)")
+            elif last_status == "failed":
+                st.error(f"上次执行: {last_exec} (失败)")
+            elif last_status == "running":
+                st.warning(f"上次执行: {last_exec} (运行中)")
+            else:
+                st.info(f"上次执行: {last_exec} ({last_status})")
+
+            # 显示下次执行
+            next_exec = agent_status.get("next_execution", "未知")
+            st.info(f"下次执行: {next_exec}")
+
+            # 显示执行间隔
+            interval = agent_status.get("execution_interval", "60分钟")
+            st.info(f"执行间隔: {interval}")
+
+            # 显示调度器状态
+            scheduler_running = agent_status.get("scheduler_running", False)
+            if scheduler_running:
+                st.success("调度器: 运行中")
+            else:
+                st.error("调度器: 已停止")
+
+        except Exception as e:
+            st.error(f"获取Agent状态失败: {e}")
+            # 降级显示
+            st.info("上次执行: 获取失败")
+            st.info("下次执行: 获取失败")
+            st.info("执行间隔: 60分钟")
 
         if st.button("手动执行Agent", type="primary"):
             with st.spinner("正在执行Agent..."):

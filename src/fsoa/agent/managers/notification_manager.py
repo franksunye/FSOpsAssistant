@@ -4,11 +4,11 @@
 负责创建、管理和执行通知任务
 """
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 # 导入时区工具
 from ...utils.timezone_utils import now_china_naive
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 from dataclasses import dataclass
 
 from ...data.models import (
@@ -310,8 +310,8 @@ class NotificationTaskManager:
         """格式化通知消息"""
         try:
             # 获取商机信息
-            opportunities = 
-            
+            opportunities = [self._get_opportunity_info_for_notification(task) for task in tasks]
+
             if self.use_llm_formatting and self.llm_client:
                 # 使用LLM格式化
                 return self._format_with_llm(org_name, opportunities, notification_type)
@@ -399,9 +399,6 @@ class NotificationTaskManager:
         try:
             # 格式化消息
             message = self._format_notification_message(org_name, tasks, NotificationTaskType.STANDARD)
-                org_name,
-                
-            )
 
             # 发送到组织对应的企微群
             success = self.wechat_client.send_notification_to_org(
@@ -427,9 +424,6 @@ class NotificationTaskManager:
         try:
             # 格式化消息
             message = self._format_notification_message(org_name, tasks, NotificationTaskType.VIOLATION)
-                org_name,
-                
-            )
 
             # 发送到组织对应的企微群
             success = self.wechat_client.send_notification_to_org(
@@ -454,10 +448,8 @@ class NotificationTaskManager:
         """发送升级通知"""
         try:
             # 格式化升级消息
-            message = self.formatter.format_escalation_notification(
-                org_name,
-                
-            )
+            opportunities = [self._get_opportunity_info_for_notification(task) for task in tasks]
+            message = self.formatter.format_escalation_notification(org_name, opportunities)
 
             # 发送到内部运营群
             success = self.wechat_client.send_notification_to_org(

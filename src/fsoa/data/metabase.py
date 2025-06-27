@@ -5,15 +5,13 @@ Metabase集成模块
 """
 
 import requests
-import json
-from datetime import datetime, timedelta
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 from ..utils.logger import get_logger
 from ..utils.config import get_config
-from .models import TaskStatus, Priority, OpportunityInfo, OpportunityStatus
+from .models import OpportunityInfo, OpportunityStatus, TaskInfo
 
 logger = get_logger(__name__)
 
@@ -280,72 +278,20 @@ class MetabaseClient:
         - get_overdue_opportunities() 获取逾期商机
         - get_all_monitored_opportunities() 获取所有监控商机
 
-        此方法将商机数据强制转换为TaskInfo格式，仅用于向后兼容
+        此方法不再返回实际数据，仅保留接口兼容性
 
         Returns:
-            超时任务列表（实际为商机数据的TaskInfo包装）
+            空列表（此方法已废弃）
         """
         logger.warning(
             "get_overdue_tasks() is deprecated due to task-opportunity concept confusion. "
-            "Use get_overdue_opportunities() instead."
+            "Use get_overdue_opportunities() instead. Returning empty list."
         )
 
-        try:
-            # 获取逾期商机
-            overdue_opportunities = self.get_overdue_opportunities()
+        # 不再尝试创建TaskInfo实例，因为它会抛出DeprecationWarning
+        # 直接返回空列表以保持接口兼容性
+        return []
 
-            # 将商机数据包装为TaskInfo格式（仅用于兼容性）
-            tasks = []
-            for opp in overdue_opportunities:
-                try:
-                    task = TaskInfo(
-                        id=hash(opp.order_num) % 1000000,  # 使用工单号生成伪ID
-                        title=f"商机跟进 - {opp.name}",
-                        description=f"地址: {opp.address}, 负责人: {opp.supervisor_name}",
-                        status=TaskStatus.OVERDUE,
-                        priority=Priority.HIGH if opp.escalation_level > 0 else Priority.NORMAL,
-                        sla_hours=opp.sla_threshold_hours or 24,
-                        elapsed_hours=opp.elapsed_hours or 0,
-                        group_id=opp.org_name,
-                        assignee=opp.supervisor_name,
-                        customer=opp.name,
-                        location=opp.address,
-                        created_at=opp.create_time,
-                        updated_at=opp.create_time
-                    )
-                    tasks.append(task)
-                except Exception as e:
-                    logger.warning(f"Failed to convert opportunity to legacy task format: {e}")
-                    continue
-
-            logger.info(f"Found {len(tasks)} overdue tasks (converted from {len(overdue_opportunities)} opportunities)")
-            return tasks
-
-        except Exception as e:
-            logger.error(f"Failed to get overdue tasks: {e}")
-            return []
-    
-    ),
-            title=str(raw_task.get('title', 'Unknown Task')),
-            description=raw_task.get('description'),
-            status=status_mapping.get(
-                raw_task.get('status', '').lower(), 
-                TaskStatus.IN_PROGRESS
-            ),
-            priority=priority_mapping.get(
-                raw_task.get('priority', '').lower(), 
-                Priority.NORMAL
-            ),
-            sla_hours=int(raw_task.get('sla_hours', 8)),
-            elapsed_hours=float(raw_task.get('elapsed_hours', 0)),
-            group_id=raw_task.get('group_id'),
-            assignee=raw_task.get('assignee'),
-            customer=raw_task.get('customer'),
-            location=raw_task.get('location'),
-            created_at=parse_datetime(raw_task.get('created_at')),
-            updated_at=parse_datetime(raw_task.get('updated_at')),
-            last_notification=parse_datetime(raw_task.get('last_notification'))
-        )
     
     def test_connection(self) -> bool:
         """测试连接"""
