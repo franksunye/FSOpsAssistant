@@ -13,7 +13,37 @@ logger = get_logger(__name__)
 
 
 class BusinessNotificationFormatter:
-    """业务通知格式化器 - 两级SLA消息模板"""
+    """业务通知格式化器 - 支持动态SLA阈值的消息模板"""
+
+    @staticmethod
+    def _get_sla_threshold_text(opportunities: List[OpportunityInfo], threshold_type: str = "reminder") -> str:
+        """
+        获取SLA阈值文本描述
+
+        Args:
+            opportunities: 商机列表
+            threshold_type: 阈值类型
+
+        Returns:
+            SLA阈值文本，如"4小时"或"4/8小时"（如果有多种状态）
+        """
+        if not opportunities:
+            return "未知"
+
+        # 收集不同状态的阈值
+        thresholds = set()
+        for opp in opportunities:
+            threshold = opp.get_sla_threshold(threshold_type)
+            if threshold > 0:
+                thresholds.add(threshold)
+
+        if len(thresholds) == 1:
+            return f"{list(thresholds)[0]}小时"
+        elif len(thresholds) > 1:
+            sorted_thresholds = sorted(thresholds)
+            return f"{'/'.join(map(str, sorted_thresholds))}小时"
+        else:
+            return "未知"
 
     @staticmethod
     def format_reminder_notification(org_name: str, opportunities: List[OpportunityInfo]) -> str:
@@ -57,7 +87,7 @@ class BusinessNotificationFormatter:
     @staticmethod
     def format_violation_notification(org_name: str, opportunities: List[OpportunityInfo]) -> str:
         """
-        格式化违规通知（12小时）
+        格式化违规通知（动态SLA阈值）
 
         Args:
             org_name: 组织名称
@@ -77,12 +107,15 @@ class BusinessNotificationFormatter:
                 status_groups[status] = []
             status_groups[status].append(opp)
 
+        # 获取动态SLA阈值文本
+        sla_threshold_text = BusinessNotificationFormatter._get_sla_threshold_text(opportunities, "reminder")
+
         # 构建消息
         message_parts = [f"⚠️ SLA违规提醒 ({org_name})"]
         message_parts.append("")
 
         total_count = len(opportunities)
-        message_parts.append(f"共有 {total_count} 个工单违反12小时SLA规范：")
+        message_parts.append(f"共有 {total_count} 个工单违反{sla_threshold_text}SLA规范：")
         message_parts.append("")
 
         # 按状态显示
