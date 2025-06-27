@@ -13,7 +13,46 @@ logger = get_logger(__name__)
 
 
 class BusinessNotificationFormatter:
-    """业务通知格式化器"""
+    """业务通知格式化器 - 两级SLA消息模板"""
+
+    @staticmethod
+    def format_reminder_notification(org_name: str, opportunities: List[OpportunityInfo]) -> str:
+        """
+        格式化提醒通知（4/8小时）- 发送到服务商群
+
+        Args:
+            org_name: 组织名称
+            opportunities: 需要提醒的商机列表
+
+        Returns:
+            格式化的提醒消息
+        """
+        if not opportunities:
+            return ""
+
+        message_parts = []
+        message_parts.append(f"💡 **服务提醒** ({org_name})")
+        message_parts.append("")
+        message_parts.append(f"有 {len(opportunities)} 个商机需要关注：")
+        message_parts.append("")
+
+        for i, opp in enumerate(opportunities[:5], 1):
+            elapsed_str = f"{opp.elapsed_hours:.1f}小时" if opp.elapsed_hours else "未知"
+            create_time_str = opp.create_time.strftime("%m-%d %H:%M") if opp.create_time else "未知"
+
+            message_parts.append(f"{i:02d}. 工单号：{opp.order_num}")
+            message_parts.append(f"     已用时长：{elapsed_str}")
+            message_parts.append(f"     客户：{opp.name}")
+            message_parts.append(f"     负责人：{opp.supervisor_name}")
+            message_parts.append(f"     状态：{opp.order_status}")
+            message_parts.append("")
+
+        if len(opportunities) > 5:
+            message_parts.append(f"... 还有 {len(opportunities) - 5} 个商机")
+            message_parts.append("")
+
+        message_parts.append("📝 请及时跟进处理，感谢配合！")
+        return "\n".join(message_parts)
 
     @staticmethod
     def format_violation_notification(org_name: str, opportunities: List[OpportunityInfo]) -> str:
@@ -149,55 +188,107 @@ class BusinessNotificationFormatter:
         return "\n".join(message_parts)
     
     @staticmethod
-    def format_escalation_notification(org_name: str, opportunities: List[OpportunityInfo], 
+    def format_escalation_notification(org_name: str, opportunities: List[OpportunityInfo],
                                      mention_users: List[str] = None) -> str:
         """
-        格式化升级通知消息
-        
+        格式化升级通知消息（8/16小时）- 发送到运营群
+
         Args:
             org_name: 组织名称
             opportunities: 需要升级的商机列表
             mention_users: 需要@的用户列表
-            
+
         Returns:
             格式化的升级通知消息
         """
         if not opportunities:
             return ""
-        
+
         message_parts = []
-        message_parts.append("🚨 **升级通知** - 严重逾期工单")
+        message_parts.append("🚨 **运营升级通知**")
         message_parts.append("")
         message_parts.append(f"组织：{org_name}")
-        message_parts.append(f"严重逾期工单数：{len(opportunities)}")
+        message_parts.append(f"需要升级处理的工单数：{len(opportunities)}")
         message_parts.append("")
-        
-        # 显示最严重的几个工单
+
+        # 显示需要升级的工单
         for i, opp in enumerate(opportunities[:5], 1):
-            days_overdue = int(opp.elapsed_hours / 24)
-            hours_overdue = opp.elapsed_hours % 24
-            create_date = opp.create_time.strftime("%m-%d")
-            
+            elapsed_str = f"{opp.elapsed_hours:.1f}小时" if opp.elapsed_hours else "未知"
+            create_date = opp.create_time.strftime("%m-%d %H:%M") if opp.create_time else "未知"
+
             message_parts.append(f"{i}. 工单号：{opp.order_num}")
-            message_parts.append(f"   滞留时长：{days_overdue}天{hours_overdue:.0f}小时")
+            message_parts.append(f"   滞留时长：{elapsed_str}")
             message_parts.append(f"   客户：{opp.name}")
             message_parts.append(f"   负责人：{opp.supervisor_name}")
             message_parts.append(f"   状态：{opp.order_status}")
             message_parts.append(f"   创建时间：{create_date}")
             message_parts.append("")
-        
+
         if len(opportunities) > 5:
             message_parts.append(f"... 还有 {len(opportunities) - 5} 个工单需要处理")
             message_parts.append("")
-        
-        message_parts.append("⚠️ **请立即处理，确保客户服务质量！**")
-        
+
+        message_parts.append("🔧 **请运营人员介入协调处理**")
+
         # 添加@用户
         if mention_users:
             message_parts.append("")
             mentions = " ".join([f"@{user}" for user in mention_users])
             message_parts.append(mentions)
-        
+
+        return "\n".join(message_parts)
+
+    @staticmethod
+    def format_emergency_notification(org_name: str, opportunities: List[OpportunityInfo],
+                                    mention_users: List[str] = None) -> str:
+        """
+        格式化紧急通知消息（24/48小时）- 管理层关注
+
+        Args:
+            org_name: 组织名称
+            opportunities: 紧急处理的商机列表
+            mention_users: 需要@的用户列表
+
+        Returns:
+            格式化的紧急通知消息
+        """
+        if not opportunities:
+            return ""
+
+        message_parts = []
+        message_parts.append("🔥 **紧急通知** - 严重超时")
+        message_parts.append("")
+        message_parts.append(f"组织：{org_name}")
+        message_parts.append(f"严重超时工单数：{len(opportunities)}")
+        message_parts.append("")
+
+        # 显示最严重的工单
+        for i, opp in enumerate(opportunities[:3], 1):
+            days = int(opp.elapsed_hours / 24) if opp.elapsed_hours else 0
+            hours = int(opp.elapsed_hours % 24) if opp.elapsed_hours else 0
+            create_date = opp.create_time.strftime("%m-%d") if opp.create_time else "未知"
+
+            message_parts.append(f"{i}. 工单号：{opp.order_num}")
+            message_parts.append(f"   严重超时：{days}天{hours}小时")
+            message_parts.append(f"   客户：{opp.name}")
+            message_parts.append(f"   负责人：{opp.supervisor_name}")
+            message_parts.append(f"   状态：{opp.order_status}")
+            message_parts.append(f"   创建时间：{create_date}")
+            message_parts.append("")
+
+        if len(opportunities) > 3:
+            message_parts.append(f"... 还有 {len(opportunities) - 3} 个严重超时工单")
+            message_parts.append("")
+
+        message_parts.append("⚡ **需要管理层立即关注和处理！**")
+        message_parts.append("📞 建议直接联系相关负责人")
+
+        # 添加@用户
+        if mention_users:
+            message_parts.append("")
+            mentions = " ".join([f"@{user}" for user in mention_users])
+            message_parts.append(mentions)
+
         return "\n".join(message_parts)
     
     @staticmethod

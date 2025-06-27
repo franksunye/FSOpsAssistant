@@ -9,7 +9,7 @@ import sqlite3
 from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any
 from contextlib import contextmanager
-from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Boolean, Text, JSON
+from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Boolean, Text, JSON, Index
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.exc import SQLAlchemyError
@@ -141,7 +141,7 @@ class SystemConfigTable(Base):
 class GroupConfigTable(Base):
     """群组配置表"""
     __tablename__ = 'group_config'
-    
+
     group_id = Column(String(100), primary_key=True)
     name = Column(String(255), nullable=False)
     webhook_url = Column(String(500), nullable=False)
@@ -150,6 +150,7 @@ class GroupConfigTable(Base):
     notification_cooldown_minutes = Column(Integer, default=30)
     created_at = Column(DateTime, nullable=False)
     updated_at = Column(DateTime, nullable=False)
+
 
 
 class DatabaseManager:
@@ -184,6 +185,12 @@ class DatabaseManager:
             ("escalation_threshold", "4", "升级阈值（小时）"),
             ("use_llm_optimization", "true", "是否使用LLM优化"),
             ("llm_temperature", "0.1", "LLM温度参数"),
+
+            # SLA阈值配置 - 两级体系
+            ("sla_pending_reminder", "4", "待预约提醒阈值（工作小时）→服务商群"),
+            ("sla_pending_escalation", "8", "待预约升级阈值（工作小时）→运营群"),
+            ("sla_not_visiting_reminder", "8", "暂不上门提醒阈值（工作小时）→服务商群"),
+            ("sla_not_visiting_escalation", "16", "暂不上门升级阈值（工作小时）→运营群"),
         ]
         
         with self.get_session() as session:

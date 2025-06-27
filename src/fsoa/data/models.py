@@ -33,10 +33,13 @@ class NotificationTaskStatus(str, Enum):
 
 
 class NotificationTaskType(str, Enum):
-    """通知任务类型枚举"""
-    VIOLATION = "violation"    # 违规通知（12小时）
-    STANDARD = "standard"      # 标准通知（24/48小时）
-    ESCALATION = "escalation"  # 升级通知（24/48小时）
+    """通知任务类型枚举 - 两级SLA体系"""
+    REMINDER = "reminder"      # 提醒通知（4/8小时）→ 服务商群
+    ESCALATION = "escalation"  # 升级通知（8/16小时）→ 运营群
+
+    # 向后兼容的别名
+    VIOLATION = "reminder"     # 兼容原有的violation类型
+    STANDARD = "escalation"    # 兼容原有的standard类型
 
 
 # ============================================================================
@@ -364,8 +367,8 @@ class OpportunityInfo(BaseModel):
 
             if use_business_time:
                 # 使用工作时间计算
-                from ..utils.business_time import calculate_business_elapsed_hours
-                self.elapsed_hours = calculate_business_elapsed_hours(self.create_time, now)
+                from ..utils.business_time import BusinessTimeCalculator
+                self.elapsed_hours = BusinessTimeCalculator.calculate_elapsed_business_hours(self.create_time, now)
             else:
                 # 使用自然时间计算
                 delta = now - self.create_time
@@ -373,75 +376,90 @@ class OpportunityInfo(BaseModel):
 
         return self.elapsed_hours
 
-    def get_sla_threshold(self, threshold_type: str = "standard") -> int:
+    def get_sla_threshold(self, threshold_type: str = "reminder") -> int:
         """
-        获取SLA阈值
+        获取SLA阈值 - 两级体系
 
         Args:
             threshold_type: 阈值类型
-                - "violation": 违规阈值（12小时）
-                - "standard": 标准阈值（24小时待预约，48小时暂不上门）
-                - "escalation": 升级阈值（24小时待预约，48小时暂不上门）
+                - "reminder": 提醒阈值（4/8小时）→ 服务商群
+                - "escalation": 升级阈值（8/16小时）→ 运营群
 
         Returns:
             SLA阈值（工作小时）
         """
-        if self.order_status == OpportunityStatus.PENDING_APPOINTMENT:
-            if threshold_type == "violation":
-                return 12  # 待预约：12小时违规
-            elif threshold_type == "standard":
-                return 24  # 待预约：24小时标准
-            elif threshold_type == "escalation":
-                return 24  # 待预约：24小时升级
-        elif self.order_status == OpportunityStatus.TEMPORARILY_NOT_VISITING:
-            if threshold_type == "violation":
-                return 12  # 暂不上门：12小时违规（与待预约相同）
-            elif threshold_type == "standard":
-                return 48  # 暂不上门：48小时标准
-            elif threshold_type == "escalation":
-                return 48  # 暂不上门：48小时升级
+        # 尝试从数据库获取配置
+        try:
+            from .database import get_database_manager
+            db_manager = get_database_manager()
 
-        return 0  # 其他状态不需要监控
+            if self.order_status == OpportunityStatus.PENDING_APPOINTMENT:
+                config_key = f"sla_pending_{threshold_type}"
+            elif self.order_status == OpportunityStatus.TEMPORARILY_NOT_VISITING:
+                config_key = f"sla_not_visiting_{threshold_type}"
+            else:
+                return 0  # 其他状态不需要监控
+
+            config_value = db_manager.get_system_config(config_key)
+            if config_value:
+                return int(config_value)
+
+        except Exception:
+            # 如果数据库获取失败，使用默认值
+            pass
+
+        # 默认值
+        if self.order_status == OpportunityStatus.PENDING_APPOINTMENT:
+            defaults = {"reminder": 4, "escalation": 8}
+        elif self.order_status == OpportunityStatus.TEMPORARILY_NOT_VISITING:
+            defaults = {"reminder": 8, "escalation": 16}
+        else:
+            return 0
+
+        return defaults.get(threshold_type, 0)
 
     def check_overdue_status(self, use_business_time: bool = True) -> tuple[bool, bool, bool, float, int, float]:
         """
-        检查逾期状态
+        检查逾期状态 - 两级SLA体系
 
         Args:
             use_business_time: 是否使用工作时间计算
 
         Returns:
-            tuple: (是否违规, 是否逾期, 是否即将逾期, 逾期时长, 升级级别, SLA进度比例)
+            tuple: (是否需要提醒, 是否需要升级, 是否即将升级, 逾期时长, 升级级别, SLA进度比例)
         """
-        elapsed = self.calculate_elapsed_hours(use_business_time)
+        # 如果已经有elapsed_hours，使用现有值，否则重新计算
+        if self.elapsed_hours is None:
+            elapsed = self.calculate_elapsed_hours(use_business_time)
+        else:
+            elapsed = self.elapsed_hours
 
-        # 获取各种阈值
-        violation_threshold = self.get_sla_threshold("violation")
-        standard_threshold = self.get_sla_threshold("standard")
+        # 获取两级阈值
+        reminder_threshold = self.get_sla_threshold("reminder")
         escalation_threshold = self.get_sla_threshold("escalation")
 
-        if standard_threshold == 0:
+        if escalation_threshold == 0:
             return False, False, False, 0, 0, 0.0
 
-        # 计算SLA进度比例（基于标准阈值）
-        sla_progress = elapsed / standard_threshold if standard_threshold > 0 else 0.0
+        # 计算SLA进度比例（基于升级阈值）
+        sla_progress = elapsed / escalation_threshold if escalation_threshold > 0 else 0.0
 
-        # 判断是否违规（12小时）
-        is_violation = elapsed > violation_threshold if violation_threshold > 0 else False
+        # 判断是否需要提醒（4/8小时）
+        is_reminder = elapsed > reminder_threshold if reminder_threshold > 0 else False
 
-        # 判断是否逾期（标准阈值）
-        is_overdue = elapsed > standard_threshold
-        overdue_hours = max(0, elapsed - standard_threshold) if is_overdue else 0
+        # 判断是否需要升级（8/16小时）
+        is_escalation = elapsed > escalation_threshold
 
-        # 判断是否即将逾期（达到标准阈值的80%）
-        is_approaching_overdue = not is_overdue and sla_progress >= 0.8
+        # 判断是否即将升级（达到升级阈值的80%）
+        is_approaching_escalation = not is_escalation and sla_progress >= 0.8
 
-        # 判断升级级别（基于升级阈值）
-        escalation_level = 0
-        if escalation_threshold > 0 and elapsed > escalation_threshold:
-            escalation_level = 1
+        # 计算逾期时长（基于升级阈值）
+        overdue_hours = max(0, elapsed - escalation_threshold) if is_escalation else 0
 
-        return is_violation, is_overdue, is_approaching_overdue, overdue_hours, escalation_level, sla_progress
+        # 升级级别：0=正常，1=需要升级
+        escalation_level = 1 if is_escalation else 0
+
+        return is_reminder, is_escalation, is_approaching_escalation, overdue_hours, escalation_level, sla_progress
 
     def update_overdue_info(self, use_business_time: bool = True):
         """
@@ -450,15 +468,15 @@ class OpportunityInfo(BaseModel):
         Args:
             use_business_time: 是否使用工作时间计算
         """
-        is_violation, is_overdue, is_approaching_overdue, overdue_hours, escalation_level, sla_progress = self.check_overdue_status(use_business_time)
+        is_reminder, is_escalation, is_approaching_escalation, overdue_hours, escalation_level, sla_progress = self.check_overdue_status(use_business_time)
 
-        # 更新字段
-        self.is_violation = is_violation
-        self.is_overdue = is_overdue
-        self.is_approaching_overdue = is_approaching_overdue
+        # 更新字段（保持向后兼容）
+        self.is_violation = is_reminder      # 提醒状态映射到原来的违规字段
+        self.is_overdue = is_escalation      # 升级状态映射到原来的逾期字段
+        self.is_approaching_overdue = is_approaching_escalation
         self.overdue_hours = overdue_hours
         self.escalation_level = escalation_level
-        self.sla_threshold_hours = self.get_sla_threshold("standard")
+        self.sla_threshold_hours = self.get_sla_threshold("escalation")  # 使用升级阈值作为主要阈值
         self.sla_progress_ratio = sla_progress
 
     def generate_source_hash(self) -> str:

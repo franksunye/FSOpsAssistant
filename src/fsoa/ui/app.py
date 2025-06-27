@@ -943,22 +943,49 @@ def show_system_settings():
         )
 
         st.markdown("**SLA阈值设置（工作时间）**")
+        st.info("💡 两级SLA体系：提醒→服务商群，升级→运营群")
 
-        violation_threshold = st.number_input(
-            "违规阈值（小时）",
-            min_value=1,
-            max_value=24,
-            value=default_violation_threshold,
-            help="超过此时间算作违规，需要立即处理"
-        )
+        col_sla1, col_sla2 = st.columns(2)
 
-        escalation_threshold = st.number_input(
-            "升级阈值（小时）",
-            min_value=1,
-            max_value=72,
-            value=default_escalation_threshold,
-            help="超过此时间需要运营人员介入"
-        )
+        with col_sla1:
+            st.markdown("**待预约商机**")
+            pending_reminder = st.number_input(
+                "提醒阈值（小时）",
+                min_value=1,
+                max_value=24,
+                value=int(configs.get("sla_pending_reminder", "4")),
+                help="待预约商机提醒阈值，发送到服务商群",
+                key="pending_reminder"
+            )
+
+            pending_escalation = st.number_input(
+                "升级阈值（小时）",
+                min_value=1,
+                max_value=48,
+                value=int(configs.get("sla_pending_escalation", "8")),
+                help="待预约商机升级阈值，发送到运营群",
+                key="pending_escalation"
+            )
+
+        with col_sla2:
+            st.markdown("**暂不上门商机**")
+            not_visiting_reminder = st.number_input(
+                "提醒阈值（小时）",
+                min_value=1,
+                max_value=48,
+                value=int(configs.get("sla_not_visiting_reminder", "8")),
+                help="暂不上门商机提醒阈值，发送到服务商群",
+                key="not_visiting_reminder"
+            )
+
+            not_visiting_escalation = st.number_input(
+                "升级阈值（小时）",
+                min_value=1,
+                max_value=72,
+                value=int(configs.get("sla_not_visiting_escalation", "16")),
+                help="暂不上门商机升级阈值，发送到运营群",
+                key="not_visiting_escalation"
+            )
 
         enable_dedup = st.checkbox("启用智能去重", value=default_enable_dedup)
         
@@ -973,9 +1000,12 @@ def show_system_settings():
                     ("notification_cooldown", str(int(cooldown_hours * 60)), "通知冷却时间（分钟）"),
                     ("max_retry_count", str(max_retry_count), "最大重试次数"),
                     ("webhook_api_interval", str(api_interval_seconds), "Webhook API发送间隔（秒）"),
-                    ("violation_threshold", str(violation_threshold), "违规阈值（小时）"),
-                    ("escalation_threshold", str(escalation_threshold), "升级阈值（小时）"),
                     ("enable_dedup", str(enable_dedup).lower(), "启用智能去重"),
+                    # SLA配置
+                    ("sla_pending_reminder", str(pending_reminder), "待预约提醒阈值（工作小时）→服务商群"),
+                    ("sla_pending_escalation", str(pending_escalation), "待预约升级阈值（工作小时）→运营群"),
+                    ("sla_not_visiting_reminder", str(not_visiting_reminder), "暂不上门提醒阈值（工作小时）→服务商群"),
+                    ("sla_not_visiting_escalation", str(not_visiting_escalation), "暂不上门升级阈值（工作小时）→运营群"),
                 ]
 
                 for key, value, description in configs:
@@ -1301,8 +1331,8 @@ def show_opportunity_list():
                     "状态": opp.order_status,
                     "创建时间": format_china_time(opp.create_time, "%Y-%m-%d %H:%M"),
                     "工作时长(小时)": f"{opp.elapsed_hours:.1f}",
-                    "是否违规": "🚨 是" if getattr(opp, 'is_violation', False) else "否",
-                    "是否逾期": "⚠️ 是" if opp.is_overdue else "否",
+                    "是否提醒": "💡 是" if getattr(opp, 'is_violation', False) else "否",
+                    "是否升级": "🚨 是" if opp.is_overdue else "否",
                     "升级级别": opp.escalation_level,
                     "SLA进度": f"{(getattr(opp, 'sla_progress_ratio', 0) * 100):.1f}%"
                 })
