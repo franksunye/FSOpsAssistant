@@ -11,7 +11,7 @@ from ..utils.timezone_utils import now_china_naive
 from typing import Dict, Any, List, Optional
 from enum import Enum
 
-from ..data.models import TaskInfo, DecisionResult, Priority, DecisionContext
+from ..data.models import OpportunityInfo, DecisionResult, Priority, DecisionContext
 from ..data.database import get_db_manager
 from ..utils.logger import get_logger
 from ..utils.config import get_config
@@ -34,128 +34,123 @@ class RuleEngine:
     def __init__(self):
         self.config = get_config()
     
-    def evaluate_task(self, task: TaskInfo, context: DecisionContext = None) -> DecisionResult:
+    def evaluate_task(self, opportunity: OpportunityInfo, context: DecisionContext = None) -> DecisionResult:
         """
-        基于规则评估任务
-        
+        基于规则评估商机
+
         Args:
-            task: 任务信息
+            opportunity: 商机信息
             context: 决策上下文
-            
+
         Returns:
             决策结果
         """
-        logger.info(f"Evaluating task {task.id} with rules")
-        
+        logger.info(f"Evaluating opportunity {opportunity.order_num} with rules")
+
         # 规则1: 检查是否超时
-        if not task.is_overdue:
+        if not opportunity.is_overdue:
             return DecisionResult(
                 action="skip",
                 priority=Priority.LOW,
-                reasoning="任务未超时，无需处理",
+                reasoning="商机未超时，无需处理",
                 confidence=1.0
             )
-        
+
         # 规则2: 检查通知冷却时间
-        if self._is_in_cooldown(task):
+        if self._is_in_cooldown(opportunity):
             return DecisionResult(
                 action="skip",
                 priority=Priority.LOW,
-                reasoning="任务在通知冷却期内",
+                reasoning="商机在通知冷却期内",
                 confidence=1.0
             )
-        
+
         # 规则3: 基于超时程度决策
-        overdue_ratio = task.overdue_ratio
+        overdue_ratio = opportunity.overdue_hours / opportunity.sla_threshold_hours if opportunity.sla_threshold_hours > 0 else 0
         
         if overdue_ratio >= 2.0:  # 超时100%以上
             return DecisionResult(
                 action="escalate",
                 priority=Priority.URGENT,
-                message=self._generate_escalation_message(task),
-                reasoning=f"任务严重超时{overdue_ratio:.1%}，需要升级处理",
+                message=self._generate_escalation_message(opportunity),
+                reasoning=f"商机严重超时{overdue_ratio:.1%}，需要升级处理",
                 confidence=1.0
             )
         elif overdue_ratio >= 1.5:  # 超时50%以上
             return DecisionResult(
                 action="notify",
                 priority=Priority.HIGH,
-                message=self._generate_high_priority_message(task),
-                reasoning=f"任务超时{overdue_ratio:.1%}，需要高优先级通知",
+                message=self._generate_high_priority_message(opportunity),
+                reasoning=f"商机超时{overdue_ratio:.1%}，需要高优先级通知",
                 confidence=1.0
             )
         elif overdue_ratio >= 1.2:  # 超时20%以上
             return DecisionResult(
                 action="notify",
                 priority=Priority.NORMAL,
-                message=self._generate_normal_message(task),
-                reasoning=f"任务超时{overdue_ratio:.1%}，发送常规通知",
+                message=self._generate_normal_message(opportunity),
+                reasoning=f"商机超时{overdue_ratio:.1%}，发送常规通知",
                 confidence=1.0
             )
         else:  # 刚刚超时
             return DecisionResult(
                 action="notify",
                 priority=Priority.LOW,
-                message=self._generate_gentle_reminder(task),
-                reasoning=f"任务刚刚超时{overdue_ratio:.1%}，发送温和提醒",
+                message=self._generate_gentle_reminder(opportunity),
+                reasoning=f"商机刚刚超时{overdue_ratio:.1%}，发送温和提醒",
                 confidence=1.0
             )
     
-    def _is_in_cooldown(self, task: TaskInfo) -> bool:
+    def _is_in_cooldown(self, opportunity: OpportunityInfo) -> bool:
         """检查是否在冷却期内"""
-        if not task.last_notification:
-            return False
-        
-        cooldown_minutes = self.config.notification_cooldown
-        time_since_last = now_china_naive() - task.last_notification
-        cooldown_period = timedelta(minutes=cooldown_minutes)
-        
-        return time_since_last < cooldown_period
+        # OpportunityInfo没有last_notification字段，这个检查应该在通知管理器中处理
+        # 这里简化为总是返回False，让通知管理器处理冷却逻辑
+        return False
     
-    def _generate_escalation_message(self, task: TaskInfo) -> str:
+    def _generate_escalation_message(self, opportunity: OpportunityInfo) -> str:
         """生成升级消息"""
         return f"""🚨 紧急升级通知
 
-任务ID: {task.id}
-任务标题: {task.title}
-负责人: {task.assignee or '未分配'}
-客户: {task.customer or '未知'}
-超时时间: {task.overdue_hours:.1f}小时
+工单号: {opportunity.order_num}
+客户: {opportunity.name}
+负责人: {opportunity.supervisor_name}
+服务地址: {opportunity.address}
+超时时间: {opportunity.overdue_hours:.1f}小时
 
-⚠️ 任务已严重超时，需要立即处理！
+⚠️ 商机已严重超时，需要立即处理！
 请联系相关负责人并评估是否需要额外资源支持。"""
-    
-    def _generate_high_priority_message(self, task: TaskInfo) -> str:
+
+    def _generate_high_priority_message(self, opportunity: OpportunityInfo) -> str:
         """生成高优先级消息"""
         return f"""⚠️ 高优先级提醒
 
-任务ID: {task.id}
-任务标题: {task.title}
-负责人: {task.assignee or '未分配'}
-超时时间: {task.overdue_hours:.1f}小时
+工单号: {opportunity.order_num}
+客户: {opportunity.name}
+负责人: {opportunity.supervisor_name}
+超时时间: {opportunity.overdue_hours:.1f}小时
 
-请尽快处理此任务，避免进一步延误。"""
-    
-    def _generate_normal_message(self, task: TaskInfo) -> str:
+请尽快处理此商机，避免进一步延误。"""
+
+    def _generate_normal_message(self, opportunity: OpportunityInfo) -> str:
         """生成常规消息"""
-        return f"""⏰ 任务超时提醒
+        return f"""⏰ 商机超时提醒
 
-任务ID: {task.id}
-任务标题: {task.title}
-负责人: {task.assignee or '未分配'}
-超时时间: {task.overdue_hours:.1f}小时
+工单号: {opportunity.order_num}
+客户: {opportunity.name}
+负责人: {opportunity.supervisor_name}
+超时时间: {opportunity.overdue_hours:.1f}小时
 
 请及时处理，确保服务质量。"""
-    
-    def _generate_gentle_reminder(self, task: TaskInfo) -> str:
+
+    def _generate_gentle_reminder(self, opportunity: OpportunityInfo) -> str:
         """生成温和提醒"""
-        return f"""📋 任务时效提醒
+        return f"""📋 商机时效提醒
 
-任务ID: {task.id}
-任务标题: {task.title}
-负责人: {task.assignee or '未分配'}
+工单号: {opportunity.order_num}
+客户: {opportunity.name}
+负责人: {opportunity.supervisor_name}
 
-任务已超过预定时间，请关注进度。"""
+商机已超过预定时间，请关注进度。"""
 
 
 class DecisionEngine:
@@ -166,59 +161,60 @@ class DecisionEngine:
         self.rule_engine = RuleEngine()
         self.config = get_config()
         
-    def make_decision(self, task: TaskInfo, context: DecisionContext = None) -> DecisionResult:
+    def make_decision(self, opportunity: OpportunityInfo, context: DecisionContext = None) -> DecisionResult:
         """
         做出决策
-        
+
         Args:
-            task: 任务信息
+            opportunity: 商机信息
             context: 决策上下文
-            
+
         Returns:
             决策结果
         """
-        logger.info(f"Making decision for task {task.id} with mode {self.mode}")
-        
+        logger.info(f"Making decision for opportunity {opportunity.order_num} with mode {self.mode}")
+
         if self.mode == DecisionMode.RULE_ONLY:
-            return self._rule_only_decision(task, context)
+            return self._rule_only_decision(opportunity, context)
         elif self.mode == DecisionMode.LLM_ONLY:
-            return self._llm_only_decision(task, context)
+            return self._llm_only_decision(opportunity, context)
         elif self.mode == DecisionMode.HYBRID:
-            return self._hybrid_decision(task, context)
+            return self._hybrid_decision(opportunity, context)
         elif self.mode == DecisionMode.LLM_FALLBACK:
-            return self._llm_fallback_decision(task, context)
+            return self._llm_fallback_decision(opportunity, context)
         else:
             logger.warning(f"Unknown decision mode: {self.mode}, using rule only")
-            return self._rule_only_decision(task, context)
+            return self._rule_only_decision(opportunity, context)
     
-    def _rule_only_decision(self, task: TaskInfo, context: DecisionContext = None) -> DecisionResult:
+    def _rule_only_decision(self, opportunity: OpportunityInfo, context: DecisionContext = None) -> DecisionResult:
         """仅使用规则决策"""
-        return self.rule_engine.evaluate_task(task, context)
-    
-    def _llm_only_decision(self, task: TaskInfo, context: DecisionContext = None) -> DecisionResult:
+        return self.rule_engine.evaluate_task(opportunity, context)
+
+    def _llm_only_decision(self, opportunity: OpportunityInfo, context: DecisionContext = None) -> DecisionResult:
         """仅使用LLM决策"""
         try:
             deepseek_client = get_deepseek_client()
-            context_dict = self._build_context_dict(task, context)
-            return deepseek_client.analyze_task_priority(task, context_dict)
+            context_dict = self._build_context_dict(opportunity, context)
+            return deepseek_client.analyze_task_priority(opportunity, context_dict)
         except Exception as e:
             logger.error(f"LLM decision failed: {e}")
             # 降级到规则决策
-            return self.rule_engine.evaluate_task(task, context)
-    
-    def _hybrid_decision(self, task: TaskInfo, context: DecisionContext = None) -> DecisionResult:
+            return self.rule_engine.evaluate_task(opportunity, context)
+
+    def _hybrid_decision(self, opportunity: OpportunityInfo, context: DecisionContext = None) -> DecisionResult:
         """混合决策：规则预筛选 + LLM优化"""
         # 首先使用规则引擎进行基础判断
-        rule_result = self.rule_engine.evaluate_task(task, context)
-        
+        rule_result = self.rule_engine.evaluate_task(opportunity, context)
+
         # 如果规则建议跳过，直接返回
         if rule_result.action == "skip":
             return rule_result
-        
-        # 对于需要处理的任务，使用LLM优化决策
+
+        # 对于需要处理的商机，使用LLM优化决策
         try:
             # 检查是否启用LLM优化 - 从数据库读取配置
-            db_manager = get_db_manager()
+            from ..data.database import get_database_manager
+            db_manager = get_database_manager()
             use_llm_config = db_manager.get_system_config("use_llm_optimization")
             use_llm = use_llm_config and use_llm_config.lower() == "true" if use_llm_config else False
 
