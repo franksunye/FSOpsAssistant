@@ -145,10 +145,14 @@ class TaskScheduler:
                 "trigger": str(job.trigger),
                 "next_run_time": job.next_run_time.isoformat() if job.next_run_time else None
             })
-        
+
+        # 检测调度器的实际运行状态
+        # APScheduler的状态：0=停止, 1=运行, 2=暂停
+        actual_running = self.scheduler.state == 1
+
         return {
             "total_jobs": len(jobs),
-            "is_running": self._is_running,
+            "is_running": actual_running,  # 使用实际状态而不是内部标志
             "jobs": jobs
         }
     

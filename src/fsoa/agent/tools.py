@@ -293,13 +293,27 @@ def get_agent_execution_status() -> Dict[str, Any]:
                 agent_job = job
                 break
 
+        # 智能检测调度器状态（跨进程兼容）
+        scheduler_running = jobs_info.get("is_running", False)
+
+        # 如果当前进程的调度器显示未运行，但有最近的执行记录，
+        # 说明可能有其他进程的调度器在运行
+        if not scheduler_running and last_run:
+            from datetime import datetime, timedelta
+            from ..utils.timezone_utils import now_china_naive
+
+            # 如果最近有执行记录（在过去2小时内），认为调度器可能在运行
+            time_since_last = now_china_naive() - last_run.trigger_time
+            if time_since_last < timedelta(hours=2):
+                scheduler_running = True
+
         # 构建状态信息
         status = {
             "last_execution": None,
             "last_execution_status": "未知",
             "next_execution": None,
             "execution_interval": f"{config.agent_execution_interval}分钟",
-            "scheduler_running": jobs_info.get("is_running", False),
+            "scheduler_running": scheduler_running,
             "total_runs": len(execution_tracker.get_recent_runs(limit=100, hours_back=168))
         }
 
