@@ -73,9 +73,15 @@ def main():
         scheduler = start_scheduler()
         job_id = setup_agent_scheduler()
         
+        # 从数据库读取执行间隔用于显示
+        from src.fsoa.data.database import get_database_manager
+        db_manager = get_database_manager()
+        interval_config = db_manager.get_system_config("agent_execution_interval")
+        interval_minutes = int(interval_config) if interval_config else 60
+
         print(f"✅ 调度器启动成功")
         print(f"📋 任务ID: {job_id}")
-        print(f"⏰ 执行间隔: {config.agent_execution_interval}分钟")
+        print(f"⏰ 执行间隔: {interval_minutes}分钟")
         
         # 注册信号处理器
         signal.signal(signal.SIGINT, signal_handler)

@@ -40,22 +40,18 @@ class Config(BaseSettings):
     log_level: str = Field("INFO", env="LOG_LEVEL")
     log_file: str = Field("logs/fsoa.log", env="LOG_FILE")
     
-    # Agent配置
-    agent_execution_interval: int = Field(60, env="AGENT_EXECUTION_INTERVAL")
-    agent_max_retries: int = Field(3, env="AGENT_MAX_RETRIES")
-    agent_timeout: int = Field(300, env="AGENT_TIMEOUT")
+    # Agent配置（技术配置）
+    # 注意：业务配置如执行间隔、最大重试次数等已迁移到数据库，通过Web UI管理
+    agent_timeout: int = Field(300, env="AGENT_TIMEOUT")  # Agent执行超时时间（秒）
 
-    # LLM配置
-    use_llm_optimization: bool = Field(True, env="USE_LLM_OPTIMIZATION")
-    use_llm_message_formatting: bool = Field(False, env="USE_LLM_MESSAGE_FORMATTING")
-    llm_temperature: float = Field(0.1, env="LLM_TEMPERATURE")
-    llm_max_tokens: int = Field(1000, env="LLM_MAX_TOKENS")
-    
-    # 通知配置
-    notification_cooldown: int = Field(120, env="NOTIFICATION_COOLDOWN")  # 2小时=120分钟
-    max_notifications_per_hour: int = Field(10, env="MAX_NOTIFICATIONS_PER_HOUR")
-    escalation_threshold_hours: int = Field(4, env="ESCALATION_THRESHOLD_HOURS")
-    max_retry_count: int = Field(5, env="MAX_RETRY_COUNT")  # 最大重试次数
+    # LLM配置（技术配置）
+    # 注意：LLM优化开关、温度参数等已迁移到数据库，通过Web UI管理
+    use_llm_message_formatting: bool = Field(False, env="USE_LLM_MESSAGE_FORMATTING")  # 实验性功能
+    llm_max_tokens: int = Field(1000, env="LLM_MAX_TOKENS")  # LLM响应最大token数
+
+    # 通知配置（技术配置）
+    # 注意：大部分通知配置已迁移到数据库，通过Web UI管理
+    max_retry_count: int = Field(5, env="MAX_RETRY_COUNT")  # 降级方案的最大重试次数
     
     # 开发配置
     debug: bool = Field(False, env="DEBUG")
@@ -128,7 +124,7 @@ def reload_config():
     # 清除环境变量缓存
     import os
     for key in list(os.environ.keys()):
-        if key.startswith(('DEEPSEEK_', 'METABASE_', 'WECHAT_', 'AGENT_', 'NOTIFICATION_', 'LLM_', 'DATABASE_', 'LOG_', 'DEBUG', 'TESTING')):
+        if key.startswith(('DEEPSEEK_', 'METABASE_', 'INTERNAL_OPS_', 'AGENT_', 'LLM_', 'DATABASE_', 'LOG_', 'DEBUG', 'TESTING')):
             del os.environ[key]
 
     # 重新加载 .env 文件

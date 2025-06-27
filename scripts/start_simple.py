@@ -128,33 +128,37 @@ def start_web_ui():
 def start_agent_scheduler():
     """启动Agent调度器"""
     print("🤖 启动Agent调度器...")
-    
+
     try:
         from src.fsoa.utils.scheduler import get_scheduler
         from src.fsoa.agent.orchestrator import run_agent_cycle
-        from src.fsoa.utils.config import get_config
-        
-        config = get_config()
+        from src.fsoa.data.database import get_database_manager
+
+        # 从数据库读取执行间隔
+        db_manager = get_database_manager()
+        interval_config = db_manager.get_system_config("agent_execution_interval")
+        interval_minutes = int(interval_config) if interval_config else 60
+
         scheduler = get_scheduler()
-        
+
         # 添加Agent执行任务
         scheduler.add_job(
             func=run_agent_cycle,
             trigger="interval",
-            minutes=config.agent_execution_interval,
+            minutes=interval_minutes,
             id="agent_cycle",
             name="FSOA Agent Cycle",
             replace_existing=True
         )
-        
+
         # 启动调度器
         scheduler.start()
-        
+
         print(f"✅ Agent调度器启动成功")
-        print(f"⏰ 执行间隔: {config.agent_execution_interval} 分钟")
-        
+        print(f"⏰ 执行间隔: {interval_minutes} 分钟")
+
         return scheduler
-        
+
     except Exception as e:
         print(f"❌ Agent调度器启动失败: {e}")
         return None

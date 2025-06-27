@@ -275,11 +275,9 @@ def get_agent_execution_status() -> Dict[str, Any]:
     """
     try:
         from ..utils.scheduler import get_scheduler
-        from ..utils.config import get_config
 
         execution_tracker = get_execution_tracker()
         scheduler = get_scheduler()
-        config = get_config()
 
         # 获取最近的执行记录
         recent_runs = execution_tracker.get_recent_runs(limit=1)
@@ -307,12 +305,18 @@ def get_agent_execution_status() -> Dict[str, Any]:
             if time_since_last < timedelta(hours=2):
                 scheduler_running = True
 
+        # 从数据库读取执行间隔
+        from ..data.database import get_db_manager
+        db_manager = get_db_manager()
+        interval_config = db_manager.get_system_config("agent_execution_interval")
+        interval_minutes = int(interval_config) if interval_config else 60
+
         # 构建状态信息
         status = {
             "last_execution": None,
             "last_execution_status": "未知",
             "next_execution": None,
-            "execution_interval": f"{config.agent_execution_interval}分钟",
+            "execution_interval": f"{interval_minutes}分钟",
             "scheduler_running": scheduler_running,
             "total_runs": len(execution_tracker.get_recent_runs(limit=100, hours_back=168))
         }
@@ -339,7 +343,7 @@ def get_agent_execution_status() -> Dict[str, Any]:
             if last_run and last_run.status.value == "completed":
                 try:
                     from datetime import timedelta
-                    next_estimated = last_run.trigger_time + timedelta(minutes=config.agent_execution_interval)
+                    next_estimated = last_run.trigger_time + timedelta(minutes=interval_minutes)
                     status["next_execution"] = next_estimated.strftime("%Y-%m-%d %H:%M:%S") + " (估算)"
                 except Exception:
                     status["next_execution"] = "无法确定"

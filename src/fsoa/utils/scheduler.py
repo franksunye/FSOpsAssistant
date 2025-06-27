@@ -199,23 +199,27 @@ def get_scheduler() -> TaskScheduler:
 def setup_agent_scheduler():
     """设置Agent定时任务"""
     from ..agent.orchestrator import AgentOrchestrator
-    
+    from ..data.database import get_db_manager
+
     scheduler = get_scheduler()
-    config = get_config()
-    
+
+    # 从数据库读取Agent执行间隔
+    db_manager = get_db_manager()
+    interval_config = db_manager.get_system_config("agent_execution_interval")
+    interval_minutes = int(interval_config) if interval_config else 60
+
     # 创建Agent实例
     agent = AgentOrchestrator()
-    
+
     # 添加定时任务
-    interval_minutes = config.agent_execution_interval
     job_id = scheduler.add_interval_job(
         func=agent.execute,
         interval_minutes=interval_minutes,
         job_id="agent_execution",
         max_instances=1  # 确保同时只有一个实例运行
     )
-    
-    logger.info(f"Agent scheduler setup completed, job_id: {job_id}")
+
+    logger.info(f"Agent scheduler setup completed, job_id: {job_id}, interval: {interval_minutes}min")
     return job_id
 
 
