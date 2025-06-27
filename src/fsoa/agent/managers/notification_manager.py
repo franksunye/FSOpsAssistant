@@ -562,11 +562,46 @@ class NotificationTaskManager:
             return {}
     
     def cleanup_old_tasks(self, days_back: int = 7) -> int:
-        """清理旧的已完成任务"""
+        """清理旧的已完成任务
+
+        Args:
+            days_back: 清理多少天前的任务，默认7天
+
+        Returns:
+            清理的任务数量
+        """
         try:
-            # 这里简化实现，实际需要删除旧的已完成任务
-            logger.info(f"Cleaned up old notification tasks older than {days_back} days")
-            return 0
+            from datetime import timedelta
+            from ...utils.timezone_utils import now_china_naive
+            from ...data.database import NotificationTaskTable
+
+            # 计算截止时间
+            cutoff_time = now_china_naive() - timedelta(days=days_back)
+
+            with self.db_manager.get_session() as session:
+                # 查询要清理的任务（已完成且超过指定天数）
+                old_tasks_query = session.query(NotificationTaskTable).filter(
+                    NotificationTaskTable.created_at < cutoff_time,
+                    NotificationTaskTable.status.in_(['sent', 'confirmed', 'failed'])
+                )
+
+                # 获取要删除的任务数量
+                count_to_delete = old_tasks_query.count()
+
+                if count_to_delete > 0:
+                    # 记录要删除的任务信息
+                    logger.info(f"Found {count_to_delete} old notification tasks to cleanup (older than {days_back} days)")
+
+                    # 执行删除
+                    deleted_count = old_tasks_query.delete()
+                    session.commit()
+
+                    logger.info(f"Successfully cleaned up {deleted_count} old notification tasks")
+                    return deleted_count
+                else:
+                    logger.info(f"No old notification tasks found to cleanup (older than {days_back} days)")
+                    return 0
+
         except Exception as e:
             logger.error(f"Failed to cleanup old tasks: {e}")
             return 0
