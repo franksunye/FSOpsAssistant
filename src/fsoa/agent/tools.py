@@ -540,6 +540,97 @@ def execute_notification_tasks(run_id: int) -> Dict[str, Any]:
         raise ToolError(f"Failed to execute notification tasks: {e}")
 
 
+@log_function_call
+def get_opportunity_statistics() -> Dict[str, Any]:
+    """
+    获取商机统计信息
+
+    Returns:
+        商机统计数据
+    """
+    try:
+        data_strategy = get_data_strategy()
+
+        # 获取所有商机
+        all_opportunities = data_strategy.get_opportunities(force_refresh=False)
+
+        # 获取逾期商机
+        overdue_opportunities = data_strategy.get_overdue_opportunities(force_refresh=False)
+
+        # 基础统计
+        total_count = len(all_opportunities)
+        overdue_count = len(overdue_opportunities)
+        normal_count = total_count - overdue_count
+
+        # 计算即将逾期的商机（这里简化处理，可以根据业务需求调整）
+        approaching_overdue_count = 0
+        escalation_count = 0
+
+        # 统计需要升级的商机
+        for opp in overdue_opportunities:
+            if hasattr(opp, 'escalation_level') and opp.escalation_level > 0:
+                escalation_count += 1
+
+        # 组织统计
+        organization_breakdown = {}
+        for opp in all_opportunities:
+            org_name = opp.org_name or "未知组织"
+            if org_name not in organization_breakdown:
+                organization_breakdown[org_name] = {
+                    "total": 0,
+                    "overdue": 0,
+                    "normal": 0
+                }
+            organization_breakdown[org_name]["total"] += 1
+
+            # 检查是否逾期
+            is_overdue = any(o.order_num == opp.order_num for o in overdue_opportunities)
+            if is_overdue:
+                organization_breakdown[org_name]["overdue"] += 1
+            else:
+                organization_breakdown[org_name]["normal"] += 1
+
+        # 状态统计
+        status_breakdown = {}
+        for opp in all_opportunities:
+            status = opp.status or "未知状态"
+            status_breakdown[status] = status_breakdown.get(status, 0) + 1
+
+        # 计算比例
+        overdue_rate = (overdue_count / total_count * 100) if total_count > 0 else 0
+        approaching_rate = (approaching_overdue_count / total_count * 100) if total_count > 0 else 0
+
+        return {
+            "total_opportunities": total_count,
+            "overdue_count": overdue_count,
+            "normal_count": normal_count,
+            "approaching_overdue_count": approaching_overdue_count,
+            "escalation_count": escalation_count,
+            "overdue_rate": overdue_rate,
+            "approaching_rate": approaching_rate,
+            "organization_breakdown": organization_breakdown,
+            "status_breakdown": status_breakdown,
+            "organization_count": len(organization_breakdown)
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to get opportunity statistics: {e}")
+        # 返回默认值而不是抛出异常
+        return {
+            "total_opportunities": 0,
+            "overdue_count": 0,
+            "normal_count": 0,
+            "approaching_overdue_count": 0,
+            "escalation_count": 0,
+            "overdue_rate": 0,
+            "approaching_rate": 0,
+            "organization_breakdown": {},
+            "status_breakdown": {},
+            "organization_count": 0,
+            "error": str(e)
+        }
+
+
 # ============================================================================
 # 新增的工具函数 - 基于新架构
 # ============================================================================

@@ -175,6 +175,28 @@ def show_dashboard():
         st.error(f"获取系统数据失败: {e}")
         health = {}
         jobs_info = {"is_running": False, "total_jobs": 0}
+        # 设置默认的商机统计数据
+        opportunity_stats = {
+            "total_opportunities": 0,
+            "overdue_count": 0,
+            "normal_count": 0,
+            "approaching_overdue_count": 0,
+            "escalation_count": 0,
+            "overdue_rate": 0,
+            "approaching_rate": 0,
+            "organization_breakdown": {},
+            "status_breakdown": {},
+            "organization_count": 0
+        }
+        # 设置默认的其他变量
+        total_opportunities = 0
+        overdue_opportunities = 0
+        approaching_opportunities = 0
+        normal_opportunities = 0
+        escalation_count = 0
+        org_count = 0
+        org_breakdown = {}
+        status_breakdown = {}
         agent_status = "未知"
         agent_delta = "错误"
         escalation_count = 0
