@@ -607,7 +607,7 @@ def get_opportunity_statistics() -> Dict[str, Any]:
         # 状态统计
         status_breakdown = {}
         for opp in all_opportunities:
-            status = opp.status or "未知状态"
+            status = opp.order_status or "未知状态"
             status_breakdown[status] = status_breakdown.get(status, 0) + 1
 
         # 计算比例
