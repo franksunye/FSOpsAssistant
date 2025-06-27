@@ -549,17 +549,56 @@ class NotificationTaskManager:
     def get_notification_statistics(self, hours_back: int = 24) -> Dict[str, Any]:
         """获取通知统计信息"""
         try:
-            # 这里简化实现，实际需要查询数据库
+            from datetime import timedelta
+            from ...utils.timezone_utils import now_china_naive
+            from ...data.database import NotificationTaskTable
+
+            # 计算时间范围
+            end_time = now_china_naive()
+            start_time = end_time - timedelta(hours=hours_back)
+
+            with self.db_manager.get_session() as session:
+                # 查询指定时间范围内的所有任务
+                all_tasks = session.query(NotificationTaskTable).filter(
+                    NotificationTaskTable.created_at >= start_time
+                ).all()
+
+                # 统计各种状态的任务数量
+                total_tasks = len(all_tasks)
+                sent_count = len([t for t in all_tasks if t.status in ['sent', 'confirmed']])
+                failed_count = len([t for t in all_tasks if t.status == 'failed'])
+                pending_count = len([t for t in all_tasks if t.status == 'pending'])
+
+                # 如果没有指定时间范围的数据，查询所有历史数据
+                if total_tasks == 0:
+                    all_historical_tasks = session.query(NotificationTaskTable).all()
+                    total_tasks = len(all_historical_tasks)
+                    sent_count = len([t for t in all_historical_tasks if t.status in ['sent', 'confirmed']])
+                    failed_count = len([t for t in all_historical_tasks if t.status == 'failed'])
+                    pending_count = len([t for t in all_historical_tasks if t.status == 'pending'])
+
+                logger.info(f"Notification statistics: {total_tasks} total, {sent_count} sent, {failed_count} failed, {pending_count} pending")
+
+                return {
+                    "total_tasks": total_tasks,
+                    "sent_count": sent_count,
+                    "failed_count": failed_count,
+                    "pending_count": pending_count,
+                    "period_hours": hours_back,
+                    "start_time": start_time.strftime("%Y-%m-%d %H:%M:%S"),
+                    "end_time": end_time.strftime("%Y-%m-%d %H:%M:%S")
+                }
+
+        except Exception as e:
+            logger.error(f"Failed to get notification statistics: {e}")
             return {
                 "total_tasks": 0,
                 "sent_count": 0,
                 "failed_count": 0,
                 "pending_count": 0,
-                "period_hours": hours_back
+                "period_hours": hours_back,
+                "error": str(e)
             }
-        except Exception as e:
-            logger.error(f"Failed to get notification statistics: {e}")
-            return {}
     
     def cleanup_old_tasks(self, days_back: int = 7) -> int:
         """清理旧的已完成任务

@@ -1734,130 +1734,203 @@ def show_step_performance(tracker, step_name: str, step_desc: str, hours_back: i
 
 def show_notification_management():
     """显示通知任务管理页面"""
+    st.header("🔔 通知管理")
 
     try:
         from src.fsoa.agent.tools import get_notification_manager
 
         manager = get_notification_manager()
 
+        # 时间范围选择
+        col_time1, col_time2 = st.columns(2)
+        with col_time1:
+            hours_back = st.selectbox("统计时间范围", [1, 6, 12, 24, 48, 168], index=3, format_func=lambda x: f"最近{x}小时")
+        with col_time2:
+            if st.button("🔄 刷新数据"):
+                st.rerun()
+
         # 获取通知统计
-        stats = manager.get_notification_statistics()
+        stats = manager.get_notification_statistics(hours_back=hours_back)
 
         # 显示统计信息
         col1, col2, col3, col4 = st.columns(4)
         with col1:
-            st.metric("总任务数", stats.get("total_tasks", 0))
+            total = stats.get("total_tasks", 0)
+            st.metric("总任务数", total)
         with col2:
-            st.metric("已发送", stats.get("sent_count", 0))
+            sent = stats.get("sent_count", 0)
+            success_rate = (sent / total * 100) if total > 0 else 0
+            st.metric("已发送", sent, delta=f"{success_rate:.1f}%")
         with col3:
-            st.metric("发送失败", stats.get("failed_count", 0))
+            failed = stats.get("failed_count", 0)
+            failure_rate = (failed / total * 100) if total > 0 else 0
+            st.metric("发送失败", failed, delta=f"{failure_rate:.1f}%", delta_color="inverse")
         with col4:
-            st.metric("待处理", stats.get("pending_count", 0))
+            pending = stats.get("pending_count", 0)
+            st.metric("待处理", pending)
+
+        # 显示错误信息（如果有）
+        if "error" in stats:
+            st.error(f"获取统计数据时出错: {stats['error']}")
+
+        # 显示时间范围信息
+        if "start_time" in stats and "end_time" in stats:
+            st.caption(f"📅 统计时间范围: {stats['start_time']} ~ {stats['end_time']}")
 
         st.markdown("---")
 
-        # 待处理任务列表
-        st.subheader("📋 待处理任务")
+        # 创建选项卡
+        tab1, tab2, tab3 = st.tabs(["📋 待处理任务", "📊 任务历史", "🔧 管理操作"])
 
-        pending_tasks = manager.db_manager.get_pending_notification_tasks()
+        with tab1:
+            # 待处理任务列表
+            st.subheader("待处理任务")
+            pending_tasks = manager.db_manager.get_pending_notification_tasks()
 
-        if pending_tasks:
-            for task in pending_tasks:
-                # 根据通知类型设置图标
-                type_icons = {
-                    "violation": "🚨",
-                    "standard": "📬",
-                    "escalation": "🚨"
-                }
-                icon = type_icons.get(task.notification_type.value, "📬")
+            if pending_tasks:
+                for task in pending_tasks:
+                    # 根据通知类型设置图标
+                    type_icons = {
+                        "reminder": "💡",
+                        "escalation": "🚨",
+                        "violation": "🚨",  # 向后兼容
+                        "standard": "📬"   # 向后兼容
+                    }
+                    icon = type_icons.get(task.notification_type.value, "📬")
 
-                # 根据类型设置标题颜色
-                type_names = {
-                    "violation": "违规通知",
-                    "standard": "标准通知",
-                    "escalation": "升级通知"
-                }
-                type_name = type_names.get(task.notification_type.value, task.notification_type.value)
+                    # 根据类型设置标题颜色
+                    type_names = {
+                        "reminder": "提醒通知",
+                        "escalation": "升级通知",
+                        "violation": "违规通知",  # 向后兼容
+                        "standard": "标准通知"   # 向后兼容
+                    }
+                    type_name = type_names.get(task.notification_type.value, task.notification_type.value)
 
-                with st.expander(f"{icon} 任务 {task.id} - {task.order_num} ({type_name})"):
-                    col_a, col_b, col_c = st.columns(3)
-                    with col_a:
-                        st.write(f"**工单号**: {task.order_num}")
-                        st.write(f"**组织**: {task.org_name}")
-                        st.write(f"**类型**: {type_name}")
-                    with col_b:
-                        st.write(f"**状态**: {task.status.value}")
-                        st.write(f"**应发送时间**: {task.due_time}")
-                        st.write(f"**重试次数**: {task.retry_count}/{getattr(task, 'max_retry_count', 5)}")
-                    with col_c:
-                        st.write(f"**冷静时间**: {getattr(task, 'cooldown_hours', 2.0)}小时")
-                        if hasattr(task, 'last_sent_at') and task.last_sent_at:
-                            st.write(f"**最后发送**: {format_china_time(task.last_sent_at, '%m-%d %H:%M')}")
-                        else:
-                            st.write(f"**最后发送**: 未发送")
+                    with st.expander(f"{icon} 任务 {task.id} - {task.order_num} ({type_name})"):
+                        col_a, col_b, col_c = st.columns(3)
+                        with col_a:
+                            st.write(f"**工单号**: {task.order_num}")
+                            st.write(f"**组织**: {task.org_name}")
+                            st.write(f"**类型**: {type_name}")
+                        with col_b:
+                            st.write(f"**状态**: {task.status.value}")
+                            st.write(f"**应发送时间**: {task.due_time}")
+                            st.write(f"**重试次数**: {task.retry_count}/{getattr(task, 'max_retry_count', 5)}")
+                        with col_c:
+                            st.write(f"**冷静时间**: {getattr(task, 'cooldown_hours', 2.0)}小时")
+                            if hasattr(task, 'last_sent_at') and task.last_sent_at:
+                                st.write(f"**最后发送**: {format_china_time(task.last_sent_at, '%m-%d %H:%M')}")
+                            else:
+                                st.write(f"**最后发送**: 未发送")
 
-                        # 显示是否在冷静期
-                        if hasattr(task, 'is_in_cooldown') and task.is_in_cooldown:
-                            st.warning("⏰ 冷静期内")
-                        elif hasattr(task, 'can_retry') and not task.can_retry:
-                            st.error("❌ 无法重试")
-                        else:
-                            st.success("✅ 可发送")
+                            # 显示是否在冷静期
+                            if hasattr(task, 'is_in_cooldown') and task.is_in_cooldown:
+                                st.warning("⏰ 冷静期内")
+                            elif hasattr(task, 'can_retry') and not task.can_retry:
+                                st.error("❌ 无法重试")
+                            else:
+                                st.success("✅ 可发送")
 
-                    if task.message:
-                        st.write(f"**消息内容**: {task.message}")
-        else:
-            st.info("📭 当前没有待处理的通知任务")
-
-        # 企微配置状态检查
-        st.markdown("---")
-        st.subheader("🔧 企微配置状态")
-
-        try:
-            from src.fsoa.data.database import get_database_manager
-            from src.fsoa.utils.config import get_config
-
-            db_manager = get_database_manager()
-            config = get_config()
-
-            # 检查配置状态
-            group_configs = db_manager.get_enabled_group_configs()
-            internal_webhook = config.internal_ops_webhook_url
-
-            total_webhooks = len([gc for gc in group_configs if gc.webhook_url])
-            has_internal = bool(internal_webhook)
-
-            if total_webhooks > 0 and has_internal:
-                st.success("✅ 企微配置正常，通知可以正常发送")
+                        if task.message:
+                            st.write(f"**消息内容**: {task.message}")
             else:
-                missing = []
-                if not has_internal:
-                    missing.append("内部运营群")
-                if total_webhooks == 0:
-                    missing.append("组织群")
-                st.warning(f"⚠️ 企微配置缺少: {'/'.join(missing)}")
-                if st.button("🔧 前往配置"):
+                st.info("📭 当前没有待处理的通知任务")
+
+        with tab2:
+            # 任务历史
+            st.subheader("任务历史")
+
+            # 获取最近的任务历史
+            try:
+                from src.fsoa.data.database import NotificationTaskTable
+                with manager.db_manager.get_session() as session:
+                    recent_tasks = session.query(NotificationTaskTable).order_by(
+                        NotificationTaskTable.created_at.desc()
+                    ).limit(20).all()
+
+                    if recent_tasks:
+                        history_data = []
+                        for task in recent_tasks:
+                            history_data.append({
+                                "任务ID": task.id,
+                                "工单号": task.order_num,
+                                "组织": task.org_name,
+                                "类型": task.notification_type,
+                                "状态": task.status,
+                                "创建时间": task.created_at.strftime("%m-%d %H:%M"),
+                                "发送时间": task.sent_at.strftime("%m-%d %H:%M") if task.sent_at else "-",
+                                "重试次数": task.retry_count
+                            })
+
+                        import pandas as pd
+                        df_history = pd.DataFrame(history_data)
+                        st.dataframe(df_history, use_container_width=True, hide_index=True)
+                    else:
+                        st.info("📭 暂无任务历史")
+            except Exception as e:
+                st.error(f"获取任务历史失败: {e}")
+
+        with tab3:
+            # 管理操作
+            st.subheader("管理操作")
+
+            col_op1, col_op2 = st.columns(2)
+
+            with col_op1:
+                st.markdown("**任务管理**")
+                if st.button("🔄 刷新任务列表", use_container_width=True):
+                    st.rerun()
+
+                if st.button("🧹 清理旧任务", use_container_width=True):
+                    try:
+                        cleaned = manager.cleanup_old_tasks()
+                        st.success(f"✅ 已清理 {cleaned} 个旧任务")
+                    except Exception as e:
+                        st.error(f"清理失败: {e}")
+
+            with col_op2:
+                st.markdown("**配置管理**")
+                if st.button("🔧 企微配置", use_container_width=True):
                     st.session_state.page = "wechat_config"
                     st.rerun()
-        except Exception as e:
-            st.error(f"无法检查企微配置: {e}")
 
-        # 操作按钮
-        col_x, col_y, col_z = st.columns(3)
-        with col_x:
-            if st.button("🔄 刷新任务列表"):
-                st.rerun()
-        with col_y:
-            if st.button("🧹 清理旧任务"):
-                try:
-                    cleaned = manager.cleanup_old_tasks()
-                    st.success(f"✅ 已清理 {cleaned} 个旧任务")
-                except Exception as e:
-                    st.error(f"清理失败: {e}")
-        with col_z:
-            if st.button("🔧 企微配置"):
-                st.session_state.page = "wechat_config"
-                st.rerun()
+                if st.button("⚙️ 系统设置", use_container_width=True):
+                    st.session_state.page = "system_settings"
+                    st.rerun()
+
+            # 企微配置状态检查
+            st.markdown("---")
+            st.markdown("**🔧 企微配置状态**")
+
+            try:
+                from src.fsoa.data.database import get_database_manager
+                from src.fsoa.utils.config import get_config
+
+                db_manager = get_database_manager()
+                config = get_config()
+
+                # 检查配置状态
+                group_configs = db_manager.get_enabled_group_configs()
+                internal_webhook = config.internal_ops_webhook_url
+
+                total_webhooks = len([gc for gc in group_configs if gc.webhook_url])
+                has_internal = bool(internal_webhook)
+
+                if total_webhooks > 0 and has_internal:
+                    st.success("✅ 企微配置正常，通知可以正常发送")
+                    st.info(f"📊 已配置 {total_webhooks} 个组织群 + 1 个运营群")
+                else:
+                    missing = []
+                    if not has_internal:
+                        missing.append("内部运营群")
+                    if total_webhooks == 0:
+                        missing.append("组织群")
+                    st.warning(f"⚠️ 企微配置缺少: {'/'.join(missing)}")
+            except Exception as e:
+                st.error(f"无法检查企微配置: {e}")
+
+
 
     except Exception as e:
         st.error(f"获取通知管理数据失败: {e}")
