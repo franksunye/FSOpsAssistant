@@ -897,8 +897,6 @@ def show_system_settings():
             default_cooldown_minutes = int(configs.get("notification_cooldown", "120"))
             default_max_retry = int(configs.get("max_retry_count", "5"))
             default_api_interval = int(configs.get("webhook_api_interval", "3"))
-            default_violation_threshold = int(configs.get("violation_threshold", "12"))
-            default_escalation_threshold = int(configs.get("escalation_threshold", "24"))
             default_enable_dedup = configs.get("enable_dedup", "true").lower() == "true"
         except Exception as e:
             st.warning(f"无法加载配置，使用默认值: {e}")
@@ -906,8 +904,6 @@ def show_system_settings():
             default_cooldown_minutes = 120
             default_max_retry = 5
             default_api_interval = 3
-            default_violation_threshold = 12
-            default_escalation_threshold = 24
             default_enable_dedup = True
 
         max_notifications = st.number_input(

@@ -182,7 +182,6 @@ class DatabaseManager:
             ("max_notifications_per_hour", "10", "每小时最大通知数"),
             ("notification_cooldown", "30", "通知冷却时间（分钟）"),
             ("webhook_api_interval", "3", "Webhook API发送间隔（秒）"),
-            ("escalation_threshold", "4", "升级阈值（小时）"),
             ("use_llm_optimization", "true", "是否使用LLM优化"),
             ("llm_temperature", "0.1", "LLM温度参数"),
 
