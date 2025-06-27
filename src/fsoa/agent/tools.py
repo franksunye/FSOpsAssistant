@@ -366,6 +366,62 @@ def get_agent_execution_status() -> Dict[str, Any]:
 
 
 @log_function_call
+def detect_fsoa_processes() -> Dict[str, Any]:
+    """
+    检测FSOA相关进程
+
+    Returns:
+        进程检测结果
+    """
+    try:
+        import psutil
+        import os
+
+        current_pid = os.getpid()
+        fsoa_processes = []
+
+        for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+            try:
+                cmdline = proc.info['cmdline']
+                if cmdline and any('fsoa' in str(arg).lower() or 'start_full_app' in str(arg) for arg in cmdline):
+                    if proc.info['pid'] != current_pid:  # 排除当前进程
+                        fsoa_processes.append({
+                            'pid': proc.info['pid'],
+                            'name': proc.info['name'],
+                            'cmdline': ' '.join(cmdline) if cmdline else '',
+                            'is_full_app': 'start_full_app' in ' '.join(cmdline) if cmdline else False
+                        })
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+
+        return {
+            'current_pid': current_pid,
+            'fsoa_processes': fsoa_processes,
+            'has_full_app_process': any(p['is_full_app'] for p in fsoa_processes),
+            'total_fsoa_processes': len(fsoa_processes)
+        }
+
+    except ImportError:
+        # psutil未安装，使用降级检测
+        return {
+            'current_pid': os.getpid() if 'os' in locals() else 0,
+            'fsoa_processes': [],
+            'has_full_app_process': False,
+            'total_fsoa_processes': 0,
+            'note': 'psutil not available, limited detection'
+        }
+    except Exception as e:
+        logger.error(f"Failed to detect FSOA processes: {e}")
+        return {
+            'current_pid': 0,
+            'fsoa_processes': [],
+            'has_full_app_process': False,
+            'total_fsoa_processes': 0,
+            'error': str(e)
+        }
+
+
+@log_function_call
 def get_system_health() -> Dict[str, Any]:
     """
     获取系统健康状态

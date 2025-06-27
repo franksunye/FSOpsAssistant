@@ -145,14 +145,23 @@ def show_dashboard():
         # 获取系统健康状态
         health = get_system_health()
 
-        # 获取调度器状态
-        scheduler = get_scheduler()
-        jobs_info = scheduler.get_jobs()
+        # 获取Agent执行状态 - 使用智能跨进程检测
+        from src.fsoa.agent.tools import get_agent_execution_status, detect_fsoa_processes
+        agent_exec_status = get_agent_execution_status()
+        process_info = detect_fsoa_processes()
 
         # 获取Agent状态 - 区分Web模式和完整模式
-        if jobs_info["is_running"]:
-            agent_status = "运行中"
-            agent_delta = "正常" if health.get("overall_status") == "healthy" else "异常"
+        scheduler_running = agent_exec_status.get("scheduler_running", False)
+        has_full_app_process = process_info.get("has_full_app_process", False)
+        last_execution = agent_exec_status.get("last_execution")
+
+        if scheduler_running or has_full_app_process:
+            agent_status = "完整模式"
+            agent_delta = "Agent + Web界面"
+        elif last_execution and last_execution != "从未执行":
+            # 如果有执行记录但调度器未运行，可能是其他进程在运行
+            agent_status = "完整模式"
+            agent_delta = "Agent + Web界面"
         else:
             agent_status = "Web模式"
             agent_delta = "仅Web界面"
@@ -174,7 +183,7 @@ def show_dashboard():
     except Exception as e:
         st.error(f"获取系统数据失败: {e}")
         health = {}
-        jobs_info = {"is_running": False, "total_jobs": 0}
+        agent_exec_status = {"scheduler_running": False}
         # 设置默认的商机统计数据
         opportunity_stats = {
             "total_opportunities": 0,
@@ -197,8 +206,8 @@ def show_dashboard():
         org_count = 0
         org_breakdown = {}
         status_breakdown = {}
-        agent_status = "未知"
-        agent_delta = "错误"
+        agent_status = "Web模式"
+        agent_delta = "仅Web界面"
         escalation_count = 0
         total_opportunities = 0
         overdue_opportunities = 0
@@ -220,8 +229,12 @@ def show_dashboard():
             delta=agent_delta,
             delta_color="normal" if agent_delta == "正常" else "inverse"
         )
-        if agent_status == "运行中":
+        if agent_status == "完整模式":
             st.success("智能监控运行中")
+            # 显示最后执行时间
+            last_exec = agent_exec_status.get("last_execution")
+            if last_exec:
+                st.caption(f"最后执行: {last_exec}")
         elif agent_status == "Web模式":
             st.info("Web界面模式")
             st.caption("使用 `python scripts/start_full_app.py` 启动完整Agent")
