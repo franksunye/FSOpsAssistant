@@ -11,7 +11,7 @@ from urllib3.util.retry import Retry
 
 from ..utils.logger import get_logger
 from ..utils.config import get_config
-from .models import OpportunityInfo, OpportunityStatus, TaskInfo
+from .models import OpportunityInfo, OpportunityStatus
 
 logger = get_logger(__name__)
 
@@ -268,7 +268,7 @@ class MetabaseClient:
             logger.error(f"Failed to convert raw opportunity data: {e}")
             raise
     
-    def get_overdue_tasks(self) -> List[TaskInfo]:
+    def get_overdue_tasks(self) -> List[Dict[str, Any]]:
         """
         获取超时任务列表 - 已废弃
 
@@ -291,7 +291,6 @@ class MetabaseClient:
         # 不再尝试创建TaskInfo实例，因为它会抛出DeprecationWarning
         # 直接返回空列表以保持接口兼容性
         return []
-
     
     def test_connection(self) -> bool:
         """测试连接"""

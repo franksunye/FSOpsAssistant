@@ -310,7 +310,7 @@ class NotificationTaskManager:
         """格式化通知消息"""
         try:
             # 获取商机信息
-            opportunities = [self._get_opportunity_info_for_notification(task) for task in tasks]
+            opportunities = [task.to_opportunity_info() for task in tasks]
 
             if self.use_llm_formatting and self.llm_client:
                 # 使用LLM格式化

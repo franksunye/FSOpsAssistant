@@ -32,52 +32,58 @@ class BusinessDataStrategy:
     
     @log_function_call
     def get_opportunities(self, force_refresh: bool = False) -> List[OpportunityInfo]:
-        """获取商机数据 - 统一入口"""
+        """
+        获取商机数据 - 重构版本：每次都获取全新数据并清空重建缓存
+
+        Args:
+            force_refresh: 保留参数以兼容现有调用，但实际上每次都是全新获取
+
+        Returns:
+            最新的商机数据列表
+        """
         try:
-            self.force_refresh = force_refresh
-            
-            if self.enable_cache and not force_refresh:
-                return self._get_with_cache()
-            else:
-                return self._get_direct_from_metabase()
-                
+            logger.info("Fetching fresh opportunities from Metabase (full refresh mode)")
+
+            # 每次都从Metabase获取最新数据
+            fresh_opportunities = self._get_direct_from_metabase()
+
+            # 清空重建本地缓存（如果启用缓存）
+            if self.enable_cache:
+                self._full_refresh_cache(fresh_opportunities)
+
+            return fresh_opportunities
+
         except Exception as e:
             logger.error(f"Failed to get opportunities: {e}")
-            # 降级策略：尝试从缓存获取
+            # 降级策略：尝试从缓存获取（仅在启用缓存时）
             if self.enable_cache:
-                logger.info("Falling back to cached data")
+                logger.warning("Falling back to cached data due to Metabase failure")
                 return self._get_from_cache_only()
             raise
     
-    def _get_with_cache(self) -> List[OpportunityInfo]:
-        """使用缓存策略获取数据"""
+    def _full_refresh_cache(self, opportunities: List[OpportunityInfo]) -> None:
+        """
+        完全刷新缓存 - 清空重建模式
+
+        这个方法实现了真正的"清空重建"：
+        1. 清空所有现有缓存数据
+        2. 重新插入新的数据
+        3. 确保每次都是全新的数据状态
+
+        Args:
+            opportunities: 要缓存的商机列表
+        """
         try:
-            # 1. 先尝试从缓存获取有效数据
-            cached_opportunities = self.db_manager.get_cached_opportunities(self.cache_ttl_hours)
-            
-            if cached_opportunities:
-                logger.info(f"Retrieved {len(cached_opportunities)} opportunities from cache")
-                
-                # 检查是否需要部分刷新
-                if self._should_partial_refresh(cached_opportunities):
-                    fresh_opportunities = self._get_direct_from_metabase()
-                    self._update_cache(fresh_opportunities)
-                    return fresh_opportunities
-                
-                return cached_opportunities
-            
-            # 2. 缓存为空或过期，从Metabase获取
-            logger.info("Cache miss or expired, fetching from Metabase")
-            fresh_opportunities = self._get_direct_from_metabase()
-            
-            # 3. 更新缓存
-            self._update_cache(fresh_opportunities)
-            
-            return fresh_opportunities
-            
+            logger.info(f"Starting full cache refresh with {len(opportunities)} opportunities")
+
+            # 使用数据库管理器的新方法进行完全刷新
+            success_count = self.db_manager.full_refresh_opportunity_cache(opportunities)
+
+            logger.info(f"Cache fully refreshed: {success_count}/{len(opportunities)} opportunities cached")
+
         except Exception as e:
-            logger.error(f"Failed to get opportunities with cache: {e}")
-            raise
+            logger.error(f"Failed to perform full cache refresh: {e}")
+            # 缓存失败不应该影响主流程，只记录错误
     
     def _get_direct_from_metabase(self) -> List[OpportunityInfo]:
         """直接从Metabase获取数据"""
@@ -95,59 +101,43 @@ class BusinessDataStrategy:
             raise
     
     def _get_from_cache_only(self) -> List[OpportunityInfo]:
-        """仅从缓存获取数据（降级策略）"""
+        """
+        仅从缓存获取数据（降级策略）
+
+        当Metabase不可用时的应急方案，获取最近的缓存数据
+        """
         try:
-            # 获取所有缓存数据，忽略TTL
+            # 获取所有缓存数据，忽略TTL（应急情况下使用任何可用数据）
             cached_opportunities = self.db_manager.get_cached_opportunities(24 * 7)  # 7天内的缓存
             logger.warning(f"Using fallback cache data: {len(cached_opportunities)} opportunities")
             return cached_opportunities
-            
+
         except Exception as e:
             logger.error(f"Failed to get fallback cache data: {e}")
             return []
     
+    # 移除复杂的缓存更新逻辑，简化为清空重建模式
+    # 以下方法已废弃，保留用于向后兼容
+
     def _update_cache(self, opportunities: List[OpportunityInfo]) -> None:
-        """更新缓存"""
-        try:
-            cached_count = 0
-            
-            for opp in opportunities:
-                # 只缓存需要缓存的商机
-                if opp.should_cache():
-                    success = self.db_manager.save_opportunity_cache(opp)
-                    if success:
-                        cached_count += 1
-            
-            logger.info(f"Updated cache with {cached_count}/{len(opportunities)} opportunities")
-            
-        except Exception as e:
-            logger.error(f"Failed to update cache: {e}")
-    
+        """
+        更新缓存 - 已废弃
+
+        ⚠️ 此方法已废弃，请使用 _full_refresh_cache()
+        保留此方法仅为向后兼容，实际调用 _full_refresh_cache()
+        """
+        logger.warning("_update_cache() is deprecated, using _full_refresh_cache() instead")
+        self._full_refresh_cache(opportunities)
+
     def _should_partial_refresh(self, cached_opportunities: List[OpportunityInfo]) -> bool:
-        """判断是否需要部分刷新"""
-        try:
-            # 检查缓存数据的新鲜度
-            now = datetime.now()
-            old_data_count = 0
-            
-            for opp in cached_opportunities:
-                if opp.last_updated:
-                    age_hours = (now - opp.last_updated).total_seconds() / 3600
-                    if age_hours > self.cache_ttl_hours * 0.8:  # 超过80%的TTL
-                        old_data_count += 1
-            
-            # 如果超过50%的数据较旧，则刷新
-            refresh_threshold = len(cached_opportunities) * 0.5
-            should_refresh = old_data_count > refresh_threshold
-            
-            if should_refresh:
-                logger.info(f"Partial refresh needed: {old_data_count}/{len(cached_opportunities)} old entries")
-            
-            return should_refresh
-            
-        except Exception as e:
-            logger.error(f"Failed to check partial refresh: {e}")
-            return False
+        """
+        判断是否需要部分刷新 - 已废弃
+
+        ⚠️ 此方法已废弃，新的清空重建模式不需要部分刷新判断
+        保留此方法仅为向后兼容，始终返回 True
+        """
+        logger.warning("_should_partial_refresh() is deprecated in full refresh mode")
+        return True  # 在清空重建模式下，始终需要刷新
     
     @log_function_call
     def get_overdue_opportunities(self, force_refresh: bool = False) -> List[OpportunityInfo]:
@@ -285,48 +275,60 @@ class BusinessDataStrategy:
     
     @log_function_call
     def refresh_cache(self) -> Tuple[int, int]:
-        """手动刷新缓存"""
+        """
+        手动刷新缓存 - 重构版本：完全清空重建
+
+        Returns:
+            (old_count, new_count): 刷新前后的缓存条目数量
+        """
         try:
-            logger.info("Manual cache refresh initiated")
-            
+            logger.info("Manual cache refresh initiated (full refresh mode)")
+
+            # 获取刷新前的缓存数量
+            old_count = len(self.db_manager.get_cached_opportunities(24 * 7))  # 获取所有缓存
+
             # 获取最新数据
             fresh_opportunities = self._get_direct_from_metabase()
-            
-            # 更新缓存
-            old_count = len(self.db_manager.get_cached_opportunities(24 * 7))  # 获取所有缓存
-            self._update_cache(fresh_opportunities)
-            new_count = len([opp for opp in fresh_opportunities if opp.should_cache()])
-            
+
+            # 完全刷新缓存
+            if self.enable_cache:
+                self._full_refresh_cache(fresh_opportunities)
+                new_count = len([opp for opp in fresh_opportunities if opp.should_cache()])
+            else:
+                new_count = 0
+
             logger.info(f"Cache refresh completed: {old_count} -> {new_count} entries")
             return old_count, new_count
-            
+
         except Exception as e:
             logger.error(f"Failed to refresh cache: {e}")
             raise
     
     @log_function_call
     def get_cache_statistics(self) -> Dict[str, Any]:
-        """获取缓存统计信息"""
+        """
+        获取缓存统计信息 - 重构版本：简化统计指标
+
+        在清空重建模式下，不再需要复杂的缓存命中率等指标
+        """
         try:
             cached_opportunities = self.db_manager.get_cached_opportunities(24 * 7)  # 7天内
-            valid_cache = self.db_manager.get_cached_opportunities(self.cache_ttl_hours)
-            
+
             stats = {
                 "total_cached": len(cached_opportunities),
-                "valid_cached": len(valid_cache),
-                "cache_ttl_hours": self.cache_ttl_hours,
                 "cache_enabled": self.enable_cache,
-                "cache_hit_ratio": len(valid_cache) / max(len(cached_opportunities), 1),
+                "cache_mode": "full_refresh",  # 标识为清空重建模式
                 "overdue_cached": len([opp for opp in cached_opportunities if opp.is_overdue]),
-                "organizations": len(set(opp.org_name for opp in cached_opportunities))
+                "organizations": len(set(opp.org_name for opp in cached_opportunities)),
+                "last_refresh": max([opp.last_updated for opp in cached_opportunities], default=None)
             }
-            
-            logger.info(f"Cache statistics: {stats}")
+
+            logger.info(f"Cache statistics (full refresh mode): {stats}")
             return stats
-            
+
         except Exception as e:
             logger.error(f"Failed to get cache statistics: {e}")
-            return {}
+            return {"cache_enabled": self.enable_cache, "cache_mode": "full_refresh"}
     
     def clear_cache(self) -> int:
         """清理缓存"""

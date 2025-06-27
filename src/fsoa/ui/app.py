@@ -576,13 +576,13 @@ def show_agent_control():
                     with col_c:
                         st.metric("缓存状态", "启用" if data_strategy.cache_enabled else "禁用")
 
-                    # 显示缓存统计
+                    # 显示缓存统计（重构后的清空重建模式）
                     cache_stats = stats.get("cache_statistics", {})
                     if cache_stats:
-                        st.write("**缓存统计:**")
+                        st.write("**缓存统计 (清空重建模式):**")
                         st.write(f"• 缓存条目: {cache_stats.get('total_cached', 0)}")
-                        st.write(f"• 有效缓存: {cache_stats.get('valid_cached', 0)}")
-                        st.write(f"• 命中率: {cache_stats.get('cache_hit_ratio', 0):.1%}")
+                        st.write(f"• 缓存状态: {'启用' if cache_stats.get('cache_enabled', False) else '禁用'}")
+                        st.write(f"• 数据模式: 每次完全刷新")
 
                 except Exception as e:
                     st.error(f"试运行失败: {e}")
@@ -1778,14 +1778,14 @@ def show_cache_management():
         # 获取缓存统计
         cache_stats = data_strategy.get_cache_statistics()
 
-        # 显示缓存状态
+        # 显示缓存状态（重构后的清空重建模式）
         col1, col2, col3, col4 = st.columns(4)
         with col1:
             st.metric("缓存状态", "启用" if cache_stats.get("cache_enabled", False) else "禁用")
         with col2:
             st.metric("缓存条目", cache_stats.get("total_cached", 0))
         with col3:
-            st.metric("有效缓存", cache_stats.get("valid_cached", 0))
+            st.metric("数据模式", "清空重建")
         with col4:
             st.metric("命中率", f"{cache_stats.get('cache_hit_ratio', 0):.1%}")
 
@@ -1810,22 +1810,24 @@ def show_cache_management():
         col_x, col_y, col_z = st.columns(3)
 
         with col_x:
-            if st.button("🔄 刷新缓存"):
+            if st.button("🔄 完全刷新缓存"):
                 try:
-                    with st.spinner("正在刷新缓存..."):
+                    with st.spinner("正在从Metabase获取最新数据并完全刷新缓存..."):
                         old_count, new_count = data_strategy.refresh_cache()
-                        st.success(f"✅ 缓存已刷新: {old_count} → {new_count}")
+                        st.success(f"✅ 缓存已完全刷新: {old_count} → {new_count}")
+                        st.info("💡 采用清空重建模式，确保数据完全同步")
                 except Exception as e:
                     st.error(f"刷新缓存失败: {e}")
 
         with col_y:
-            if st.button("🧹 清理缓存"):
+            if st.button("🧹 清空缓存"):
                 try:
-                    with st.spinner("正在清理缓存..."):
+                    with st.spinner("正在清空所有缓存数据..."):
                         cleared = data_strategy.clear_cache()
-                        st.success(f"✅ 已清理 {cleared} 个缓存条目")
+                        st.success(f"✅ 已清空 {cleared} 个缓存条目")
+                        st.info("💡 下次获取数据时将直接从Metabase同步")
                 except Exception as e:
-                    st.error(f"清理缓存失败: {e}")
+                    st.error(f"清空缓存失败: {e}")
 
         with col_z:
             if st.button("🔍 验证一致性"):
