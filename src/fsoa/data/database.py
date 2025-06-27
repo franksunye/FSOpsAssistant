@@ -588,6 +588,24 @@ class DatabaseManager:
             logger.error(f"Failed to update notification task retry info {task_id}: {e}")
             return False
 
+    def update_notification_task_message(self, task_id: int, message: str) -> bool:
+        """更新通知任务消息内容"""
+        try:
+            with self.get_session() as session:
+                task_record = session.query(NotificationTaskTable).filter_by(id=task_id).first()
+                if task_record:
+                    task_record.message = message
+                    task_record.updated_at = now_china_naive()
+                    session.commit()
+                    logger.info(f"Updated message for notification task {task_id}")
+                    return True
+                else:
+                    logger.warning(f"Notification task {task_id} not found for message update")
+                    return False
+        except Exception as e:
+            logger.error(f"Failed to update notification task message {task_id}: {e}")
+            return False
+
     def get_recent_notification_tasks(self, order_num: str, since: datetime,
                                     notification_type: str = None) -> List['NotificationTask']:
         """获取指定订单在指定时间之后的通知任务

@@ -400,6 +400,12 @@ class NotificationTaskManager:
             # 格式化消息
             message = self._format_notification_message(org_name, tasks, NotificationTaskType.STANDARD)
 
+            # 保存消息内容到任务记录中
+            for task in tasks:
+                if not task.message:  # 只在首次发送时保存消息
+                    task.message = message
+                    self.db_manager.update_notification_task_message(task.id, message)
+
             # 发送到组织对应的企微群
             success = self.wechat_client.send_notification_to_org(
                 org_name=org_name,
@@ -424,6 +430,12 @@ class NotificationTaskManager:
         try:
             # 格式化消息
             message = self._format_notification_message(org_name, tasks, NotificationTaskType.VIOLATION)
+
+            # 保存消息内容到任务记录中
+            for task in tasks:
+                if not task.message:  # 只在首次发送时保存消息
+                    task.message = message
+                    self.db_manager.update_notification_task_message(task.id, message)
 
             # 发送到组织对应的企微群
             success = self.wechat_client.send_notification_to_org(
@@ -450,6 +462,12 @@ class NotificationTaskManager:
             # 格式化升级消息
             opportunities = [self._get_opportunity_info_for_notification(task) for task in tasks]
             message = self.formatter.format_escalation_notification(org_name, opportunities)
+
+            # 保存消息内容到任务记录中
+            for task in tasks:
+                if not task.message:  # 只在首次发送时保存消息
+                    task.message = message
+                    self.db_manager.update_notification_task_message(task.id, message)
 
             # 发送到内部运营群
             success = self.wechat_client.send_notification_to_org(
