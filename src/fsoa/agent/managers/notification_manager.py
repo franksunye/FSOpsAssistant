@@ -77,14 +77,19 @@ class NotificationTaskManager:
         tasks = []
         
         try:
+            # 用于跟踪当前批次中已创建的任务，避免重复
+            created_tasks_tracker = set()
+
             for opp in opportunities:
                 # 更新商机的计算字段
                 opp.update_overdue_info(use_business_time=True)
 
                 # 创建违规通知任务（12小时）
                 if opp.is_violation:
-                    # 检查是否已存在相同类型的待处理任务或在冷却期内
-                    if not self._has_pending_task(opp.order_num, NotificationTaskType.VIOLATION):
+                    task_key = (opp.order_num, NotificationTaskType.VIOLATION)
+                    # 检查数据库中是否已存在 + 检查当前批次中是否已创建
+                    if (not self._has_pending_task(opp.order_num, NotificationTaskType.VIOLATION) and
+                        task_key not in created_tasks_tracker):
                         violation_task = NotificationTask(
                             order_num=opp.order_num,
                             org_name=opp.org_name,
@@ -95,13 +100,16 @@ class NotificationTaskManager:
                             max_retry_count=self.max_retry_count
                         )
                         tasks.append(violation_task)
+                        created_tasks_tracker.add(task_key)
                     else:
                         logger.info(f"Order {opp.order_num} already has pending/recent VIOLATION notification")
 
                 # 创建标准通知任务（24/48小时）
                 if opp.is_overdue:
-                    # 检查是否已存在相同类型的待处理任务或在冷却期内
-                    if not self._has_pending_task(opp.order_num, NotificationTaskType.STANDARD):
+                    task_key = (opp.order_num, NotificationTaskType.STANDARD)
+                    # 检查数据库中是否已存在 + 检查当前批次中是否已创建
+                    if (not self._has_pending_task(opp.order_num, NotificationTaskType.STANDARD) and
+                        task_key not in created_tasks_tracker):
                         standard_task = NotificationTask(
                             order_num=opp.order_num,
                             org_name=opp.org_name,
@@ -112,13 +120,16 @@ class NotificationTaskManager:
                             max_retry_count=self.max_retry_count
                         )
                         tasks.append(standard_task)
+                        created_tasks_tracker.add(task_key)
                     else:
                         logger.info(f"Order {opp.order_num} already has pending/recent STANDARD notification")
 
                 # 如果需要升级，创建升级通知任务
                 if opp.escalation_level > 0:
-                    # 检查是否已存在相同类型的待处理任务或在冷却期内
-                    if not self._has_pending_task(opp.order_num, NotificationTaskType.ESCALATION):
+                    task_key = (opp.order_num, NotificationTaskType.ESCALATION)
+                    # 检查数据库中是否已存在 + 检查当前批次中是否已创建
+                    if (not self._has_pending_task(opp.order_num, NotificationTaskType.ESCALATION) and
+                        task_key not in created_tasks_tracker):
                         escalation_task = NotificationTask(
                             order_num=opp.order_num,
                             org_name=opp.org_name,
@@ -129,6 +140,7 @@ class NotificationTaskManager:
                             max_retry_count=self.max_retry_count
                         )
                         tasks.append(escalation_task)
+                        created_tasks_tracker.add(task_key)
                     else:
                         logger.info(f"Order {opp.order_num} already has pending/recent ESCALATION notification")
             
@@ -309,8 +321,13 @@ class NotificationTaskManager:
                                    notification_type: NotificationTaskType) -> str:
         """格式化通知消息"""
         try:
-            # 获取商机信息
-            opportunities = [task.to_opportunity_info() for task in tasks]
+            # 获取商机信息并按工单号去重
+            opportunities_dict = {}
+            for task in tasks:
+                if task.order_num not in opportunities_dict:
+                    opportunities_dict[task.order_num] = task.to_opportunity_info()
+
+            opportunities = list(opportunities_dict.values())
 
             if self.use_llm_formatting and self.llm_client:
                 # 使用LLM格式化
@@ -318,10 +335,11 @@ class NotificationTaskManager:
             else:
                 # 使用标准模板
                 return self._format_with_template(org_name, opportunities, notification_type)
-                
+
         except Exception as e:
             logger.error(f"Failed to format message: {e}")
-            # 降级到标准模板
+            # 降级到标准模板 - 使用简化的商机信息
+            opportunities = [self._get_opportunity_info_for_notification(tasks[0])] if tasks else []
             return self._format_with_template(org_name, opportunities, notification_type)
     
     def _format_with_llm(self, org_name: str, opportunities: List[OpportunityInfo],
@@ -459,8 +477,13 @@ class NotificationTaskManager:
                                     run_id: int) -> bool:
         """发送升级通知"""
         try:
-            # 格式化升级消息
-            opportunities = [self._get_opportunity_info_for_notification(task) for task in tasks]
+            # 格式化升级消息 - 按工单号去重
+            opportunities_dict = {}
+            for task in tasks:
+                if task.order_num not in opportunities_dict:
+                    opportunities_dict[task.order_num] = self._get_opportunity_info_for_notification(task)
+
+            opportunities = list(opportunities_dict.values())
             message = self.formatter.format_escalation_notification(org_name, opportunities)
 
             # 保存消息内容到任务记录中
@@ -528,7 +551,20 @@ class NotificationTaskManager:
         except Exception as e:
             logger.warning(f"Failed to get cached opportunity for {task.order_num}: {e}")
 
-        # 如果缓存中没有，创建基础的商机信息用于通知
+        # 尝试从数据策略管理器获取最新数据
+        try:
+            from .data_strategy import get_data_strategy_manager
+            data_manager = get_data_strategy_manager()
+            all_opportunities = data_manager.get_opportunities()
+
+            # 查找匹配的商机
+            for opp in all_opportunities:
+                if opp.order_num == task.order_num:
+                    return opp
+        except Exception as e:
+            logger.warning(f"Failed to get opportunity from data manager for {task.order_num}: {e}")
+
+        # 如果都获取不到，创建基础的商机信息用于通知
         # 注意：这里创建的是用于通知显示的基础信息，不是完整的业务数据
         opp = OpportunityInfo(
             order_num=task.order_num,
