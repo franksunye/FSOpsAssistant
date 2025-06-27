@@ -867,7 +867,14 @@ def show_system_settings():
         if st.button("💾 保存Agent设置"):
             try:
                 from src.fsoa.data.database import get_database_manager
+                from src.fsoa.utils.scheduler import get_scheduler, stop_scheduler, start_scheduler, setup_agent_scheduler
+
                 db_manager = get_database_manager()
+
+                # 获取当前执行间隔以检查是否有变化
+                current_interval_config = db_manager.get_system_config("agent_execution_interval")
+                current_interval = int(current_interval_config) if current_interval_config else 60
+                interval_changed = (execution_interval != current_interval)
 
                 # 保存Agent配置到数据库
                 agent_configs = [
@@ -880,7 +887,28 @@ def show_system_settings():
                 for key, value, description in agent_configs:
                     db_manager.set_system_config(key, value, description)
 
-                st.success("✅ Agent设置已保存")
+                # 如果执行间隔发生变化且调度器正在运行，自动重启调度器
+                if interval_changed:
+                    try:
+                        scheduler = get_scheduler()
+                        if hasattr(scheduler, 'scheduler') and scheduler.scheduler and scheduler.scheduler.running:
+                            st.info("🔄 检测到执行间隔变化，正在重启调度器...")
+
+                            # 重启调度器
+                            stop_scheduler()
+                            start_scheduler()
+                            setup_agent_scheduler()
+
+                            st.success(f"✅ Agent设置已保存，调度器已自动重启（新间隔：{execution_interval}分钟）")
+                        else:
+                            st.success("✅ Agent设置已保存")
+                            st.info("💡 调度器未运行，新的执行间隔将在下次启动时生效")
+                    except Exception as restart_error:
+                        st.warning(f"⚠️ 配置已保存，但调度器重启失败: {restart_error}")
+                        st.info("💡 请手动点击'🔄 重启调度器'按钮使新配置生效")
+                else:
+                    st.success("✅ Agent设置已保存")
+
             except Exception as e:
                 st.error(f"❌ 保存失败: {e}")
     
