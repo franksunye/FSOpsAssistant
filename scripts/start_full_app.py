@@ -75,7 +75,13 @@ def check_environment():
         except Exception as e:
             print(f"📱 企微Webhook数量: 检查中... ({e})")
 
-        print(f"⏰ Agent执行间隔: {config.agent_execution_interval} 分钟")
+        # 从数据库读取Agent执行间隔
+        try:
+            interval_config = db_manager.get_system_config("agent_execution_interval")
+            interval_minutes = int(interval_config) if interval_config else 60
+            print(f"⏰ Agent执行间隔: {interval_minutes} 分钟")
+        except Exception as e:
+            print(f"⏰ Agent执行间隔: 60 分钟 (默认值，读取配置失败: {e})")
         return True
     except Exception as e:
         print(f"❌ 配置加载失败: {e}")
