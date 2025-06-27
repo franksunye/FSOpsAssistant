@@ -1037,57 +1037,104 @@ def show_system_test():
 
 def show_business_analytics():
     """显示业务分析页面"""
+    st.markdown("深入分析商机处理效率和组织绩效表现")
+
+    # 添加说明
+    with st.expander("📋 数据说明", expanded=False):
+        st.markdown("""
+        **数据统计逻辑说明：**
+
+        - **全局统计**：基于所有商机数据，与首页仪表板保持一致
+        - **逾期分析**：专注于需要关注的逾期商机，提供问题导向的深度分析
+        - **组织对比**：展示各组织的整体表现和逾期情况
+
+        **指标含义：**
+        - 涉及组织数：有商机的所有组织数量
+        - 逾期涉及组织：有逾期商机的组织数量
+        - SLA达成率：按时处理的商机比例
+        """)
 
     try:
-        # 获取逾期商机数据
-        opportunities = fetch_overdue_opportunities()
+        # 获取全量商机数据用于全局统计
+        from src.fsoa.agent.tools import get_opportunity_statistics
 
-        if not opportunities:
-            st.info("暂无逾期商机数据")
-            return
+        # 获取全局统计信息
+        global_stats = get_opportunity_statistics()
+
+        # 获取逾期商机数据用于详细分析
+        overdue_opportunities = fetch_overdue_opportunities()
+
+        if not overdue_opportunities:
+            st.info("暂无逾期商机数据进行详细分析")
+            # 但仍显示全局统计
 
         calculator = BusinessMetricsCalculator()
 
-        # 生成综合报告
-        report = calculator.generate_summary_report(opportunities)
-
-        # 基础统计
+        # 基础统计 - 使用全局数据保持与首页一致
         st.subheader("📊 基础统计")
-        col1, col2, col3, col4 = st.columns(4)
+        col1, col2, col3, col4, col5 = st.columns(5)
 
         with col1:
-            st.metric("总商机数", report["基础统计"]["总商机数"])
+            st.metric("总商机数", global_stats["total_opportunities"])
         with col2:
-            st.metric("逾期商机数", report["基础统计"]["逾期商机数"])
+            st.metric("逾期商机数", global_stats["overdue_count"])
         with col3:
-            st.metric("升级商机数", report["基础统计"]["升级商机数"])
+            st.metric("升级商机数", global_stats["escalation_count"])
         with col4:
-            st.metric("涉及组织数", report["基础统计"]["涉及组织数"])
+            st.metric("涉及组织数", global_stats["organization_count"])
+            st.caption("全部组织")
+        with col5:
+            overdue_org_count = len(set(opp.org_name for opp in overdue_opportunities)) if overdue_opportunities else 0
+            st.metric("逾期涉及组织", overdue_org_count)
+            st.caption("有逾期商机的组织")
 
         st.markdown("---")
 
-        # PoC阶段暂时移除逾期率分析
-        # 未来可以添加更完善的业务分析功能
+        # 全局组织概览
+        st.subheader("🌐 全局组织概览")
+        if global_stats["organization_breakdown"]:
+            org_overview_data = []
+            for org_name, org_data in global_stats["organization_breakdown"].items():
+                org_overview_data.append({
+                    "组织名称": org_name,
+                    "总商机数": org_data["total"],
+                    "逾期商机数": org_data["overdue"],
+                    "正常商机数": org_data["normal"],
+                    "逾期率": f"{(org_data['overdue'] / org_data['total'] * 100):.1f}%" if org_data["total"] > 0 else "0%"
+                })
 
-        # 组织绩效对比
-        st.subheader("🏢 组织绩效对比")
-        org_performance = report["组织绩效"]
-        if org_performance:
-            df_org = pd.DataFrame.from_dict(org_performance, orient='index')
-            st.dataframe(df_org, use_container_width=True)
+            df_overview = pd.DataFrame(org_overview_data)
+            st.dataframe(df_overview, use_container_width=True)
 
-            # 绩效排名图表
-            if "SLA达成率" in df_org.columns:
-                st.subheader("SLA达成率排名")
-                df_sorted = df_org.sort_values("SLA达成率", ascending=False)
-                st.bar_chart(df_sorted["SLA达成率"])
+        # 逾期商机详细分析（仅当有逾期数据时显示）
+        if overdue_opportunities:
+            st.markdown("---")
+            st.subheader("🚨 逾期商机详细分析")
 
-        # 时长分布
-        st.subheader("⏱️ 逾期时长分布")
-        time_distribution = report["时长分布"]
-        if time_distribution:
-            df_time = pd.DataFrame(list(time_distribution.items()), columns=["时长区间", "数量"])
-            st.bar_chart(df_time.set_index("时长区间"))
+            # 生成逾期商机报告
+            report = calculator.generate_summary_report(overdue_opportunities)
+
+            # 组织绩效对比（基于逾期商机）
+            st.subheader("🏢 逾期商机组织分布")
+            org_performance = report["组织绩效"]
+            if org_performance:
+                df_org = pd.DataFrame.from_dict(org_performance, orient='index')
+                st.dataframe(df_org, use_container_width=True)
+
+                # 绩效排名图表
+                if "SLA达成率" in df_org.columns:
+                    st.subheader("SLA达成率排名")
+                    df_sorted = df_org.sort_values("SLA达成率", ascending=False)
+                    st.bar_chart(df_sorted["SLA达成率"])
+
+            # 时长分布
+            st.subheader("⏱️ 逾期时长分布")
+            time_distribution = report["时长分布"]
+            if time_distribution:
+                df_time = pd.DataFrame(list(time_distribution.items()), columns=["时长区间", "数量"])
+                st.bar_chart(df_time.set_index("时长区间"))
+        else:
+            st.success("🎉 当前没有逾期商机，系统运行良好！")
 
     except Exception as e:
         st.error(f"获取业务分析数据失败: {e}")
