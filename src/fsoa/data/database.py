@@ -707,47 +707,52 @@ class DatabaseManager:
         """
         try:
             with self.get_session() as session:
-                logger.info("Starting full cache refresh transaction")
+                try:
+                    logger.info("Starting full cache refresh transaction")
 
-                # 1. 清空所有现有缓存数据
-                deleted_count = session.query(OpportunityCacheTable).delete()
-                logger.info(f"Cleared {deleted_count} existing cache records")
+                    # 1. 清空所有现有缓存数据
+                    deleted_count = session.query(OpportunityCacheTable).delete()
+                    logger.info(f"Cleared {deleted_count} existing cache records")
 
-                # 2. 重新插入新数据
-                cached_count = 0
-                for opportunity in opportunities:
-                    if opportunity.should_cache():
-                        # 更新缓存信息
-                        opportunity.update_cache_info()
+                    # 2. 重新插入新数据
+                    cached_count = 0
+                    for opportunity in opportunities:
+                        if opportunity.should_cache():
+                            # 更新缓存信息
+                            opportunity.update_cache_info()
 
-                        cache_record = OpportunityCacheTable(
-                            order_num=opportunity.order_num,
-                            customer_name=opportunity.name,
-                            address=opportunity.address,
-                            supervisor_name=opportunity.supervisor_name,
-                            create_time=opportunity.create_time,
-                            org_name=opportunity.org_name,
-                            status=opportunity.order_status.value if hasattr(opportunity.order_status, 'value') else str(opportunity.order_status),
-                            elapsed_hours=opportunity.elapsed_hours,
-                            is_overdue=opportunity.is_overdue,
-                            escalation_level=opportunity.escalation_level,
-                            last_updated=opportunity.last_updated,
-                            source_hash=opportunity.source_hash,
-                            cache_version=opportunity.cache_version,
-                            created_at=now_china_naive(),
-                            updated_at=now_china_naive()
-                        )
-                        session.add(cache_record)
-                        cached_count += 1
+                            cache_record = OpportunityCacheTable(
+                                order_num=opportunity.order_num,
+                                customer_name=opportunity.name,
+                                address=opportunity.address,
+                                supervisor_name=opportunity.supervisor_name,
+                                create_time=opportunity.create_time,
+                                org_name=opportunity.org_name,
+                                status=opportunity.order_status.value if hasattr(opportunity.order_status, 'value') else str(opportunity.order_status),
+                                elapsed_hours=opportunity.elapsed_hours,
+                                is_overdue=opportunity.is_overdue,
+                                escalation_level=opportunity.escalation_level,
+                                last_updated=opportunity.last_updated,
+                                source_hash=opportunity.source_hash,
+                                cache_version=opportunity.cache_version,
+                                created_at=now_china_naive(),
+                                updated_at=now_china_naive()
+                            )
+                            session.add(cache_record)
+                            cached_count += 1
 
-                # 3. 提交事务
-                session.commit()
-                logger.info(f"Full cache refresh completed: {cached_count} opportunities cached")
-                return cached_count
+                    # 3. 提交事务
+                    session.commit()
+                    logger.info(f"Full cache refresh completed: {cached_count} opportunities cached")
+                    return cached_count
+
+                except Exception as e:
+                    logger.error(f"Failed to perform full cache refresh: {e}")
+                    session.rollback()
+                    raise
 
         except Exception as e:
-            logger.error(f"Failed to perform full cache refresh: {e}")
-            session.rollback()
+            logger.error(f"Full cache refresh failed: {e}")
             return 0
 
     def get_opportunity_cache(self, order_num: str) -> Optional['OpportunityInfo']:

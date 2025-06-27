@@ -284,18 +284,29 @@ class BusinessDataStrategy:
         try:
             logger.info("Manual cache refresh initiated (full refresh mode)")
 
-            # 获取刷新前的缓存数量
-            old_count = len(self.db_manager.get_cached_opportunities(24 * 7))  # 获取所有缓存
+            # 获取刷新前的缓存数量（不使用TTL过滤，获取所有缓存记录）
+            from ...data.database import OpportunityCacheTable
+            with self.db_manager.get_session() as session:
+                old_count = session.query(OpportunityCacheTable).count()
+
+            logger.info(f"Current cache count before refresh: {old_count}")
 
             # 获取最新数据
             fresh_opportunities = self._get_direct_from_metabase()
+            logger.info(f"Fetched {len(fresh_opportunities)} opportunities from Metabase")
 
             # 完全刷新缓存
             if self.enable_cache:
-                self._full_refresh_cache(fresh_opportunities)
-                new_count = len([opp for opp in fresh_opportunities if opp.should_cache()])
+                new_count = self.db_manager.full_refresh_opportunity_cache(fresh_opportunities)
+                logger.info(f"Cache refresh result: {new_count} opportunities cached")
             else:
                 new_count = 0
+                logger.info("Cache disabled, no data cached")
+
+            # 验证实际的数据库状态
+            with self.db_manager.get_session() as session:
+                actual_count = session.query(OpportunityCacheTable).count()
+                logger.info(f"Actual database count after refresh: {actual_count}")
 
             logger.info(f"Cache refresh completed: {old_count} -> {new_count} entries")
             return old_count, new_count
@@ -312,15 +323,29 @@ class BusinessDataStrategy:
         在清空重建模式下，不再需要复杂的缓存命中率等指标
         """
         try:
-            cached_opportunities = self.db_manager.get_cached_opportunities(24 * 7)  # 7天内
+            # 直接从数据库获取所有缓存记录，不使用TTL过滤
+            from ...data.database import OpportunityCacheTable
+            with self.db_manager.get_session() as session:
+                total_cached = session.query(OpportunityCacheTable).count()
+
+                # 获取详细统计信息
+                if total_cached > 0:
+                    cached_opportunities = self.db_manager.get_cached_opportunities(24 * 365)  # 获取所有缓存
+                    overdue_cached = len([opp for opp in cached_opportunities if opp.is_overdue])
+                    organizations = len(set(opp.org_name for opp in cached_opportunities))
+                    last_refresh = max([opp.last_updated for opp in cached_opportunities], default=None)
+                else:
+                    overdue_cached = 0
+                    organizations = 0
+                    last_refresh = None
 
             stats = {
-                "total_cached": len(cached_opportunities),
+                "total_cached": total_cached,
                 "cache_enabled": self.enable_cache,
                 "cache_mode": "full_refresh",  # 标识为清空重建模式
-                "overdue_cached": len([opp for opp in cached_opportunities if opp.is_overdue]),
-                "organizations": len(set(opp.org_name for opp in cached_opportunities)),
-                "last_refresh": max([opp.last_updated for opp in cached_opportunities], default=None)
+                "overdue_cached": overdue_cached,
+                "organizations": organizations,
+                "last_refresh": last_refresh
             }
 
             logger.info(f"Cache statistics (full refresh mode): {stats}")
@@ -333,17 +358,21 @@ class BusinessDataStrategy:
     def clear_cache(self) -> int:
         """清理缓存"""
         try:
-            # 获取当前缓存数量
-            cached_opportunities = self.db_manager.get_cached_opportunities(24 * 7)  # 7天内
-            count = len(cached_opportunities)
-
-            # 删除缓存记录
+            # 删除缓存记录并获取删除数量
             from ...data.database import OpportunityCacheTable
             with self.db_manager.get_session() as session:
+                # 先获取当前记录数
+                current_count = session.query(OpportunityCacheTable).count()
+                logger.info(f"Current cache records before clear: {current_count}")
+
+                # 删除所有记录
                 deleted = session.query(OpportunityCacheTable).delete()
                 session.commit()
 
-            logger.info(f"Cache cleared: {deleted} records deleted")
+                # 验证删除结果
+                remaining_count = session.query(OpportunityCacheTable).count()
+                logger.info(f"Cache cleared: {deleted} records deleted, {remaining_count} remaining")
+
             return deleted
 
         except Exception as e:
