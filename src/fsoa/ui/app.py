@@ -367,9 +367,13 @@ def show_dashboard():
             interval = agent_status.get("execution_interval", "60分钟")
             st.info(f"执行间隔: {interval}")
 
-            # 显示调度器状态
+            # 显示调度器状态 - 使用智能跨进程检测
+            from src.fsoa.agent.tools import detect_fsoa_processes
+            process_info = detect_fsoa_processes()
             scheduler_running = agent_status.get("scheduler_running", False)
-            if scheduler_running:
+            has_full_app_process = process_info.get("has_full_app_process", False)
+
+            if scheduler_running or has_full_app_process:
                 st.success("调度器: 运行中")
             else:
                 st.error("调度器: 已停止")
@@ -436,24 +440,59 @@ def show_agent_control():
         st.subheader("📊 Agent状态")
 
         try:
-            scheduler = get_scheduler()
-            jobs_info = scheduler.get_jobs()
+            # 使用智能跨进程检测
+            from src.fsoa.agent.tools import get_agent_execution_status, detect_fsoa_processes
+            agent_exec_status = get_agent_execution_status()
+            process_info = detect_fsoa_processes()
 
-            if jobs_info["is_running"]:
+            # 获取调度器状态
+            scheduler_running = agent_exec_status.get("scheduler_running", False)
+            has_full_app_process = process_info.get("has_full_app_process", False)
+
+            # 显示调度器状态
+            if scheduler_running or has_full_app_process:
                 st.success("🟢 调度器运行中")
+                if has_full_app_process and not scheduler_running:
+                    st.info("💡 检测到完整应用进程运行中")
             else:
                 st.error("🔴 调度器已停止")
 
-            st.info(f"📋 活跃任务数: {jobs_info['total_jobs']}")
+            # 显示详细状态信息
+            last_execution = agent_exec_status.get("last_execution", "从未执行")
+            last_status = agent_exec_status.get("last_execution_status", "未知")
+            next_execution = agent_exec_status.get("next_execution", "未知")
+            execution_interval = agent_exec_status.get("execution_interval", "60分钟")
+            total_runs = agent_exec_status.get("total_runs", 0)
 
-            # 显示任务列表
-            if jobs_info["jobs"]:
-                st.write("**定时任务列表:**")
-                for job in jobs_info["jobs"]:
-                    with st.expander(f"📅 {job['id']}"):
-                        st.write(f"**函数**: {job['func']}")
-                        st.write(f"**触发器**: {job['trigger']}")
-                        st.write(f"**下次执行**: {job['next_run_time'] or '未知'}")
+            st.info(f"📋 总执行次数: {total_runs}")
+            st.info(f"⏰ 执行间隔: {execution_interval}")
+            st.info(f"📅 最后执行: {last_execution}")
+            st.info(f"🔮 下次执行: {next_execution}")
+
+            # 显示进程信息
+            if process_info.get("total_fsoa_processes", 0) > 0:
+                st.write("**检测到的FSOA进程:**")
+                for proc in process_info.get("fsoa_processes", []):
+                    status_icon = "🟢" if proc.get("is_full_app") else "🔵"
+                    proc_type = "完整应用" if proc.get("is_full_app") else "其他进程"
+                    st.write(f"{status_icon} PID {proc['pid']}: {proc_type}")
+
+            # 获取当前进程的调度器信息
+            try:
+                scheduler = get_scheduler()
+                jobs_info = scheduler.get_jobs()
+
+                if jobs_info["jobs"]:
+                    st.write("**当前进程的定时任务:**")
+                    for job in jobs_info["jobs"]:
+                        with st.expander(f"📅 {job['id']}"):
+                            st.write(f"**函数**: {job['func']}")
+                            st.write(f"**触发器**: {job['trigger']}")
+                            st.write(f"**下次执行**: {job['next_run_time'] or '未知'}")
+                else:
+                    st.info("当前进程无活跃任务")
+            except Exception as e:
+                st.warning(f"获取当前进程调度器信息失败: {e}")
 
         except Exception as e:
             st.error(f"获取Agent状态失败: {e}")
@@ -554,6 +593,17 @@ def show_agent_control():
 
     # 调度器控制
     st.subheader("⏰ 调度器管理")
+
+    # 检查是否有完整应用进程运行
+    try:
+        from src.fsoa.agent.tools import detect_fsoa_processes
+        process_info = detect_fsoa_processes()
+        has_full_app_process = process_info.get("has_full_app_process", False)
+
+        if has_full_app_process:
+            st.info("💡 检测到完整应用进程运行中。Web界面的调度器控制仅影响当前进程，不会影响完整应用的调度器。")
+    except Exception:
+        pass
 
     col1, col2, col3, col4 = st.columns(4)
 
