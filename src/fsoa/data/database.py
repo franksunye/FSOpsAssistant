@@ -177,6 +177,7 @@ class DatabaseManager:
         """初始化默认配置"""
         default_configs = [
             ("agent_execution_interval", "60", "Agent执行间隔（分钟）"),
+            ("agent_max_retries", "3", "Agent最大重试次数"),
             ("max_notifications_per_hour", "10", "每小时最大通知数"),
             ("notification_cooldown", "30", "通知冷却时间（分钟）"),
             ("webhook_api_interval", "3", "Webhook API发送间隔（秒）"),

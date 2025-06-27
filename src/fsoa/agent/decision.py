@@ -217,8 +217,11 @@ class DecisionEngine:
         
         # 对于需要处理的任务，使用LLM优化决策
         try:
-            # 检查是否启用LLM优化
-            use_llm = getattr(self.config, 'use_llm_optimization', False)
+            # 检查是否启用LLM优化 - 从数据库读取配置
+            db_manager = get_db_manager()
+            use_llm_config = db_manager.get_system_config("use_llm_optimization")
+            use_llm = use_llm_config and use_llm_config.lower() == "true" if use_llm_config else False
+
             if use_llm:
                 deepseek_client = get_deepseek_client()
                 context_dict = self._build_context_dict(task, context)
@@ -323,19 +326,20 @@ class DecisionEngine:
 def create_decision_engine(mode: str = None) -> DecisionEngine:
     """
     创建决策引擎实例
-    
+
     Args:
         mode: 决策模式
-        
+
     Returns:
         决策引擎实例
     """
     if mode:
         decision_mode = DecisionMode(mode)
     else:
-        # 从配置中读取默认模式
-        config = get_config()
-        use_llm = getattr(config, 'use_llm_optimization', True)
+        # 从数据库读取默认模式
+        db_manager = get_db_manager()
+        use_llm_config = db_manager.get_system_config("use_llm_optimization")
+        use_llm = use_llm_config and use_llm_config.lower() == "true" if use_llm_config else True
         decision_mode = DecisionMode.HYBRID if use_llm else DecisionMode.RULE_ONLY
-    
+
     return DecisionEngine(decision_mode)

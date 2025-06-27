@@ -58,11 +58,17 @@ class DeepSeekClient:
         """
         try:
             prompt = self._build_priority_analysis_prompt(task, context)
-            
+
+            # 从数据库读取LLM温度参数
+            from ..data.database import get_db_manager
+            db_manager = get_db_manager()
+            temperature_config = db_manager.get_system_config("llm_temperature")
+            temperature = float(temperature_config) if temperature_config else 0.1
+
             response = self.client.chat.completions.create(
                 model="deepseek-chat",
                 messages=[{"role": "user", "content": prompt}],
-                temperature=0.1,
+                temperature=temperature,
                 max_tokens=1000
             )
             
@@ -111,11 +117,18 @@ class DeepSeekClient:
         """
         try:
             prompt = self._build_strategy_optimization_prompt(task, history)
-            
+
+            # 从数据库读取LLM温度参数，策略优化使用稍高的温度
+            from ..data.database import get_db_manager
+            db_manager = get_db_manager()
+            temperature_config = db_manager.get_system_config("llm_temperature")
+            base_temperature = float(temperature_config) if temperature_config else 0.1
+            temperature = min(base_temperature + 0.1, 1.0)  # 策略优化使用稍高的温度
+
             response = self.client.chat.completions.create(
                 model="deepseek-chat",
                 messages=[{"role": "user", "content": prompt}],
-                temperature=0.2,
+                temperature=temperature,
                 max_tokens=800
             )
             
