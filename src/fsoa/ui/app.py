@@ -33,7 +33,7 @@ sys.path.insert(0, str(project_root))
 # 导入模块
 try:
     from src.fsoa.agent.tools import (
-        fetch_overdue_tasks, fetch_overdue_opportunities, test_metabase_connection,
+        fetch_overdue_opportunities, test_metabase_connection,
         test_wechat_webhook, test_deepseek_connection, get_system_health, send_business_notifications
     )
     from src.fsoa.agent.orchestrator import AgentOrchestrator
