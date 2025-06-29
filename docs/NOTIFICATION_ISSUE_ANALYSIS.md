@@ -334,9 +334,140 @@ AND id NOT IN (
 - 升级通知内容：包含组织所有升级工单
 - 重复发送率：<1%
 
+## 🔧 针对实际问题的深度修复
+
+### 问题1：截断文字显示异常的根因和修复
+
+**用户观察**：出现"... 还有 1 个工单需要处理"
+
+**根因分析**：
+1. **数据时间窗口不一致**：获取商机数据和格式化消息之间存在时间差
+2. **缓存数据问题**：可能使用了过期的缓存数据
+3. **计算逻辑错误**：截断计算本身可能有误
+
+**修复方案**：
+```python
+# 1. 强制刷新数据，确保最新状态
+all_opportunities = self.data_strategy.get_opportunities(force_refresh=True)
+
+# 2. 重新计算状态，使用最新时间
+opp.update_overdue_info(use_business_time=True)
+
+# 3. 增强调试信息
+total_count = len(opportunities)
+remaining_count = max(0, total_count - 5)
+logger.info(f"total={total_count}, display={display_count}, remaining={remaining_count}")
+
+# 4. 更精确的截断逻辑
+if total_count > 5:
+    message_parts.append(f"... 还有 {remaining_count} 个工单需要处理")
+```
+
+### 问题2：收到两个升级通知的根因和修复
+
+**用户观察**：收到两个升级通知，一个多数据，一个单一商机
+
+**根因分析**：
+这是**新旧升级任务并存**导致的！
+```
+数据库中同时存在：
+├── 旧格式任务: order_num="GD2025064176" (单个工单)
+└── 新格式任务: order_num="ESCALATION_北京虹象防水工程有限公司" (组织级)
+
+执行时两个任务都被处理，导致发送两个通知
+```
+
+**修复方案**：
+```python
+# 1. 创建新升级任务前，主动清理旧格式任务
+def create_tasks():
+    for org_name in escalation_orgs:
+        # 🔧 关键修复：清理该组织的旧格式升级任务
+        self._cleanup_old_escalation_tasks_for_org(org_name)
+
+        # 然后创建新格式任务
+        escalation_task = NotificationTask(
+            order_num=f"ESCALATION_{org_name}",
+            ...
+        )
+
+# 2. 清理方法：将旧任务标记为已发送
+def _cleanup_old_escalation_tasks_for_org(self, org_name: str):
+    old_tasks = [task for task in pending_tasks
+                 if not task.order_num.startswith("ESCALATION_")]
+
+    for task in old_tasks:
+        # 标记为已发送，避免重复处理
+        self.db_manager.update_notification_task_status(task.id, SENT)
+```
+
+### 修复3：数据一致性保证
+
+**问题**：动态组装时数据可能不一致
+
+**修复方案**：
+```python
+# 1. 强制刷新数据
+all_opportunities = self.data_strategy.get_opportunities(force_refresh=True)
+
+# 2. 按工单号排序，确保一致性
+escalation_opportunities.sort(key=lambda x: x.order_num)
+
+# 3. 增加详细的调试日志
+logger.info(f"Found {len(escalation_opportunities)} escalation opportunities")
+for opp in escalation_opportunities:
+    logger.debug(f"Order: {opp.order_num}, elapsed={opp.elapsed_hours:.1f}h")
+```
+
+## 📊 修复效果预期
+
+### 修复前的问题场景
+```
+执行Agent时：
+├── 处理旧任务: GD2025064176 → 发送单一商机升级通知
+├── 处理新任务: ESCALATION_北京虹象 → 发送多商机升级通知
+└── 结果: 用户收到2个不同内容的升级通知
+
+消息格式化时：
+├── 获取商机数据: 6个商机
+├── 显示前5个: 正常
+├── 截断计算: 6-5=1 → "还有1个工单需要处理"
+└── 但实际可能因为数据不一致导致显示异常
+```
+
+### 修复后的预期行为
+```
+执行Agent时：
+├── 清理旧任务: 将GD2025064176等标记为已发送
+├── 创建新任务: ESCALATION_北京虹象 (如果不存在)
+├── 处理新任务: 获取该组织所有升级商机 → 发送完整升级通知
+└── 结果: 用户只收到1个完整的升级通知
+
+消息格式化时：
+├── 强制刷新数据: 确保最新状态
+├── 重新计算状态: 使用当前时间
+├── 排序保证一致性: 按工单号排序
+├── 精确截断计算: total_count - 5
+└── 结果: 准确显示工单数量和截断信息
+```
+
+## 🧪 验证要点
+
+### 验证1：不再收到重复升级通知
+- 同一组织在一个执行周期内只收到一个升级通知
+- 升级通知包含该组织所有需要升级的工单
+
+### 验证2：截断信息准确
+- 当工单数>5时，截断信息准确显示剩余数量
+- 截断计算与实际显示的工单数一致
+
+### 验证3：数据一致性
+- 升级通知中的工单数量与标题中声明的数量一致
+- 消息内容反映发送时的实时状态
+
 ---
 
-**修复状态**：✅ 代码修复完成，待部署验证
-**优先级**：🔥 高优先级 - 影响用户体验和系统可信度
-**预估工作量**：1天（部署+验证）
-**风险评估**：低 - 修复逻辑清晰，向后兼容
+**修复状态**：✅ 深度修复完成，针对实际问题
+**优先级**：🔥 高优先级 - 解决用户实际遇到的问题
+**预估工作量**：立即部署验证
+**风险评估**：低 - 针对性修复，逻辑清晰

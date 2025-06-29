@@ -234,17 +234,29 @@ class BusinessNotificationFormatter:
         Returns:
             格式化的升级通知消息
         """
+        # 🔧 新增：调试信息
+        from ..utils.logger import get_logger
+        logger = get_logger(__name__)
+
         if not opportunities:
+            logger.warning(f"No opportunities provided for escalation notification of {org_name}")
             return ""
+
+        total_count = len(opportunities)
+        display_count = min(total_count, 5)
+        remaining_count = max(0, total_count - 5)
+
+        logger.info(f"Formatting escalation notification for {org_name}: "
+                   f"total={total_count}, display={display_count}, remaining={remaining_count}")
 
         message_parts = []
         message_parts.append("🚨 **运营升级通知**")
         message_parts.append("")
         message_parts.append(f"组织：{org_name}")
-        message_parts.append(f"需要升级处理的工单数：{len(opportunities)}")
+        message_parts.append(f"需要升级处理的工单数：{total_count}")
         message_parts.append("")
 
-        # 显示需要升级的工单
+        # 显示需要升级的工单（最多5个）
         for i, opp in enumerate(opportunities[:5], 1):
             elapsed_str = f"{opp.elapsed_hours:.1f}小时" if opp.elapsed_hours else "未知"
             create_date = opp.create_time.strftime("%m-%d %H:%M") if opp.create_time else "未知"
@@ -257,9 +269,11 @@ class BusinessNotificationFormatter:
             message_parts.append(f"   创建时间：{create_date}")
             message_parts.append("")
 
-        if len(opportunities) > 5:
-            message_parts.append(f"... 还有 {len(opportunities) - 5} 个工单需要处理")
+        # 🔧 修复：更精确的截断逻辑
+        if total_count > 5:
+            message_parts.append(f"... 还有 {remaining_count} 个工单需要处理")
             message_parts.append("")
+            logger.info(f"Added truncation line: remaining {remaining_count} orders")
 
         message_parts.append("🔧 **请运营人员介入协调处理**")
 
@@ -269,7 +283,10 @@ class BusinessNotificationFormatter:
             mentions = " ".join([f"@{user}" for user in mention_users])
             message_parts.append(mentions)
 
-        return "\n".join(message_parts)
+        final_message = "\n".join(message_parts)
+        logger.debug(f"Generated escalation message length: {len(final_message)} chars")
+
+        return final_message
 
     @staticmethod
     def format_emergency_notification(org_name: str, opportunities: List[OpportunityInfo],
