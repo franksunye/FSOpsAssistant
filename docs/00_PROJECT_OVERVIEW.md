@@ -355,5 +355,48 @@ def decide_action(task):
 - **监控告警**：完善的系统监控和异常告警
 - **人工干预**：保留人工审核和调整能力
 
+## 10. 文档导航
+
+### 10.1 核心设计文档
+- **[10_ARCHITECTURE.md](10_ARCHITECTURE.md)** - 系统整体架构设计
+- **[15_AGENT_DESIGN.md](15_AGENT_DESIGN.md)** - Agent核心机制详细设计 ⭐
+- **[14_LLM_OPTIMIZATION_DESIGN.md](14_LLM_OPTIMIZATION_DESIGN.md)** - LLM优化机制设计
+- **[12_SLA_DESIGN.md](12_SLA_DESIGN.md)** - SLA规则和时间计算设计
+- **[13_NOTIFICATION_DESIGN.md](13_NOTIFICATION_DESIGN.md)** - 通知系统设计
+
+### 10.2 功能设计文档
+- **[11_DATA_IMPORT_DESIGN.md](11_DATA_IMPORT_DESIGN.md)** - 数据导入和处理设计
+- **[20_API.md](20_API.md)** - API接口文档
+- **[40_USER_GUIDE.md](40_USER_GUIDE.md)** - 用户使用指南
+
+### 10.3 开发运维文档
+- **[30_DEVELOPMENT.md](30_DEVELOPMENT.md)** - 开发环境和规范
+- **[31_TESTING.md](31_TESTING.md)** - 测试策略和用例
+- **[50_DEPLOYMENT.md](50_DEPLOYMENT.md)** - 部署和运维指南
+
+### 10.4 项目管理文档
+- **[00_SYSTEM_STATUS.md](00_SYSTEM_STATUS.md)** - 系统状态和监控
+- **[01_CHANGELOG.md](01_CHANGELOG.md)** - 版本变更记录
+- **[00_BACKLOG.md](00_BACKLOG.md)** - 功能需求和待办事项
+
+### 10.5 文档阅读建议
+
+**对于新开发者**：
+1. 先阅读本概述文档了解项目背景
+2. 阅读 `10_ARCHITECTURE.md` 了解整体架构
+3. 重点阅读 `15_AGENT_DESIGN.md` 理解Agent核心机制 ⭐
+4. 根据工作需要阅读相关的功能设计文档
+
+**对于产品经理**：
+1. 重点关注业务目标和核心特性部分
+2. 阅读 `40_USER_GUIDE.md` 了解功能使用
+3. 关注 `00_SYSTEM_STATUS.md` 了解系统状态
+
+**对于运维人员**：
+1. 重点阅读 `50_DEPLOYMENT.md` 部署指南
+2. 关注 `00_SYSTEM_STATUS.md` 监控指标
+3. 了解 `10_ARCHITECTURE.md` 中的部署架构
+
 ---
 > 项目概述文档作为项目的北极星，指导整个开发过程
+> ⭐ 标记的文档是理解系统核心机制的关键文档
