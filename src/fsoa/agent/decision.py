@@ -238,17 +238,17 @@ class DecisionEngine:
             logger.error(f"LLM optimization failed: {e}")
             return rule_result
     
-    def _llm_fallback_decision(self, task: TaskInfo, context: DecisionContext = None) -> DecisionResult:
+    def _llm_fallback_decision(self, opportunity: OpportunityInfo, context: DecisionContext = None) -> DecisionResult:
         """LLM优先，规则降级"""
         try:
             deepseek_client = get_deepseek_client()
-            context_dict = self._build_context_dict(task, context)
-            return deepseek_client.analyze_task_priority(task, context_dict)
+            context_dict = self._build_context_dict(opportunity, context)
+            return deepseek_client.analyze_task_priority(opportunity, context_dict)
         except Exception as e:
             logger.warning(f"LLM decision failed, falling back to rules: {e}")
-            return self.rule_engine.evaluate_task(task, context)
-    
-    def _build_context_dict(self, task: TaskInfo, context: DecisionContext = None) -> Dict[str, Any]:
+            return self.rule_engine.evaluate_task(opportunity, context)
+
+    def _build_context_dict(self, opportunity: OpportunityInfo, context: DecisionContext = None) -> Dict[str, Any]:
         """构建上下文字典"""
         context_dict = {}
         

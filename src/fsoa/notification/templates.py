@@ -1,14 +1,17 @@
 """
-消息模板模块
+消息模板模块 - 已废弃
 
-提供各种通知消息的模板
+⚠️ 此模块已废弃，请使用 BusinessNotificationFormatter 替代
+
+提供各种通知消息的模板（兼容性保留）
 """
 
 from datetime import datetime
 from typing import Dict, Any, Optional
 from enum import Enum
+import warnings
 
-from ..data.models import TaskInfo, Priority
+from ..data.models import OpportunityInfo, Priority
 
 
 class MessageTemplate(str, Enum):
@@ -20,265 +23,124 @@ class MessageTemplate(str, Enum):
 
 
 class MessageFormatter:
-    """消息格式化器"""
-    
+    """消息格式化器 - 已废弃，请使用BusinessNotificationFormatter"""
+
     @staticmethod
-    def format_overdue_alert(task: TaskInfo, custom_message: str = None) -> str:
+    def format_overdue_alert(opportunity: OpportunityInfo, custom_message: str = None) -> str:
         """
-        格式化超时告警消息
-        
+        格式化超时告警消息 - 已废弃
+
         Args:
-            task: 任务信息
-            custom_message: 自定义消息
-            
+            opportunity: 商机信息
+            custom_message: 自定义消息内容
+
         Returns:
-            格式化的消息
+            格式化的消息字符串
         """
+        warnings.warn(
+            "MessageFormatter.format_overdue_alert is deprecated. Use BusinessNotificationFormatter instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
+
         if custom_message:
             return custom_message
-        
-        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
-        # 根据超时程度选择不同的紧急程度
-        if task.overdue_hours > task.sla_hours:
-            urgency_icon = "🔥"
-            urgency_text = "严重超时"
-        elif task.overdue_hours > task.sla_hours * 0.5:
-            urgency_icon = "⚠️"
-            urgency_text = "超时较多"
-        else:
-            urgency_icon = "⏰"
-            urgency_text = "刚刚超时"
-        
-        message = f"""{urgency_icon} **现场服务{urgency_text}提醒**
 
-📋 **任务信息**
-• 任务ID: {task.id}
-• 任务标题: {task.title}
-• 负责人: {task.assignee or '未分配'}
-• 客户: {task.customer or 'N/A'}
-• 优先级: {MessageFormatter._get_priority_text(task.priority)}
+        # 简化的兼容性实现
+        return f"""⚠️ 商机超时提醒
 
-⏰ **时效信息**
-• SLA时间: {task.sla_hours}小时
-• 已用时间: {task.elapsed_hours:.1f}小时
-• 超时时间: {task.overdue_hours:.1f}小时
-• 超时比例: {task.overdue_ratio:.1%}
+工单号: {opportunity.order_num}
+客户: {opportunity.name}
+负责人: {opportunity.supervisor_name}
+超时时间: {opportunity.overdue_hours:.1f}小时
 
-📍 **服务地点**: {task.location or 'N/A'}
+请及时处理，确保服务质量！"""
 
-{MessageFormatter._get_action_suggestion(task)}
-
-🕐 发送时间: {current_time}
-🤖 来源: FSOA智能助手"""
-        
-        return message
-    
     @staticmethod
-    def format_escalation_alert(task: TaskInfo, escalation_level: int = 1) -> str:
-        """
-        格式化升级告警消息
-        
-        Args:
-            task: 任务信息
-            escalation_level: 升级级别
-            
-        Returns:
-            格式化的消息
-        """
-        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
-        escalation_text = {
-            1: "一级升级",
-            2: "二级升级", 
-            3: "紧急升级"
-        }.get(escalation_level, "升级")
-        
-        message = f"""🚨 **{escalation_text}通知**
+    def format_escalation_alert(opportunity: OpportunityInfo, escalation_level: int = 1) -> str:
+        """格式化升级告警消息 - 已废弃"""
+        warnings.warn(
+            "MessageFormatter.format_escalation_alert is deprecated. Use BusinessNotificationFormatter instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
 
-📋 **任务信息**
-• 任务ID: {task.id}
-• 任务标题: {task.title}
-• 负责人: {task.assignee or '未分配'}
-• 客户: {task.customer or 'N/A'}
+        return f"""🚨 升级通知 (级别 {escalation_level})
 
-⚠️ **升级原因**
-• 任务已超时 {task.overdue_hours:.1f} 小时
-• 超出SLA时间 {task.overdue_ratio:.1%}
-• 需要立即关注和处理
+工单号: {opportunity.order_num}
+客户: {opportunity.name}
+负责人: {opportunity.supervisor_name}
 
-📞 **建议行动**
-• 立即联系现场人员
-• 评估是否需要额外资源
-• 及时向客户说明情况
+需要立即处理！"""
 
-🕐 升级时间: {current_time}
-🤖 来源: FSOA智能助手"""
-        
-        return message
-    
     @staticmethod
-    def format_completion_reminder(task: TaskInfo) -> str:
-        """
-        格式化完成提醒消息
-        
-        Args:
-            task: 任务信息
-            
-        Returns:
-            格式化的消息
-        """
-        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
-        message = f"""✅ **任务完成确认**
+    def format_completion_reminder(opportunity: OpportunityInfo) -> str:
+        """格式化完成提醒消息 - 已废弃"""
+        warnings.warn(
+            "MessageFormatter.format_completion_reminder is deprecated. Use BusinessNotificationFormatter instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
 
-📋 **任务信息**
-• 任务ID: {task.id}
-• 任务标题: {task.title}
-• 负责人: {task.assignee or '未分配'}
+        return f"""📋 完成提醒
 
-⏰ **时效统计**
-• 总用时: {task.elapsed_hours:.1f}小时
-• SLA达成: {'✅ 是' if not task.is_overdue else '❌ 否'}
+工单号: {opportunity.order_num}
+客户: {opportunity.name}
 
-📝 **请确认**
-• 任务是否真正完成？
-• 客户是否满意？
-• 是否需要后续跟进？
+请确认处理状态。"""
 
-🕐 提醒时间: {current_time}
-🤖 来源: FSOA智能助手"""
-        
-        return message
-    
     @staticmethod
-    def format_system_notification(title: str, content: str, 
-                                 notification_type: str = "info") -> str:
-        """
-        格式化系统通知消息
-        
-        Args:
-            title: 通知标题
-            content: 通知内容
-            notification_type: 通知类型 (info, warning, error, success)
-            
-        Returns:
-            格式化的消息
-        """
-        icons = {
-            "info": "ℹ️",
-            "warning": "⚠️", 
-            "error": "❌",
-            "success": "✅"
-        }
-        
-        icon = icons.get(notification_type, "📢")
-        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
-        message = f"""{icon} **{title}**
+    def format_markdown_alert(opportunity: OpportunityInfo) -> str:
+        """格式化Markdown告警消息 - 已废弃"""
+        warnings.warn(
+            "MessageFormatter.format_markdown_alert is deprecated. Use BusinessNotificationFormatter instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
 
-{content}
+        return f"""**⚠️ 商机超时提醒**
 
-🕐 通知时间: {current_time}
-🤖 来源: FSOA智能助手"""
-        
-        return message
-    
+- **工单号**: {opportunity.order_num}
+- **客户**: {opportunity.name}
+- **负责人**: {opportunity.supervisor_name}
+
+请及时处理！"""
+
     @staticmethod
-    def format_markdown_alert(task: TaskInfo) -> str:
-        """
-        格式化Markdown告警消息
-        
-        Args:
-            task: 任务信息
-            
-        Returns:
-            Markdown格式的消息
-        """
-        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
-        message = f"""## 🚨 现场服务超时提醒
-
-### 📋 任务信息
-- **任务ID**: {task.id}
-- **任务标题**: {task.title}
-- **负责人**: {task.assignee or '未分配'}
-- **客户**: {task.customer or 'N/A'}
-- **优先级**: {MessageFormatter._get_priority_text(task.priority)}
-
-### ⏰ 时效信息
-- **SLA时间**: {task.sla_hours}小时
-- **已用时间**: {task.elapsed_hours:.1f}小时
-- **超时时间**: <font color="warning">{task.overdue_hours:.1f}小时</font>
-- **超时比例**: <font color="warning">{task.overdue_ratio:.1%}</font>
-
-### 📍 服务地点
-{task.location or 'N/A'}
-
-### 💡 建议行动
-{MessageFormatter._get_action_suggestion(task)}
-
----
-🕐 **发送时间**: {current_time}  
-🤖 **来源**: FSOA智能助手"""
-        
-        return message
-    
-    @staticmethod
-    def _get_priority_text(priority: Priority) -> str:
-        """获取优先级文本"""
-        priority_map = {
-            Priority.LOW: "🟢 低",
-            Priority.NORMAL: "🟡 普通", 
-            Priority.HIGH: "🟠 高",
-            Priority.URGENT: "🔴 紧急"
-        }
-        return priority_map.get(priority, "🟡 普通")
-    
-    @staticmethod
-    def _get_action_suggestion(task: TaskInfo) -> str:
-        """获取行动建议"""
-        if task.overdue_hours > task.sla_hours:
-            return """🔥 **立即行动**
-• 马上联系现场人员
-• 评估是否需要额外支持
-• 准备向客户解释延误原因"""
-        elif task.overdue_hours > task.sla_hours * 0.5:
-            return """⚠️ **尽快处理**
-• 联系现场人员了解进度
-• 评估完成时间
-• 必要时通知客户"""
-        else:
-            return """⏰ **及时跟进**
-• 提醒现场人员注意时效
-• 监控任务进展
-• 确保按时完成"""
+    def _get_action_suggestion(opportunity: OpportunityInfo) -> str:
+        """获取行动建议 - 已废弃"""
+        warnings.warn(
+            "MessageFormatter._get_action_suggestion is deprecated.",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        return "请联系相关负责人处理。"
 
 
-def get_message_template(template_type: MessageTemplate, task: TaskInfo, 
+def get_message_template(template_type: MessageTemplate, opportunity: OpportunityInfo,
                         **kwargs) -> str:
     """
-    获取消息模板
-    
+    获取消息模板 - 已废弃
+
     Args:
         template_type: 模板类型
-        task: 任务信息
+        opportunity: 商机信息
         **kwargs: 额外参数
-        
+
     Returns:
         格式化的消息
     """
+    warnings.warn(
+        "get_message_template is deprecated. Use BusinessNotificationFormatter instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+
     if template_type == MessageTemplate.OVERDUE_ALERT:
-        return MessageFormatter.format_overdue_alert(task, kwargs.get('custom_message'))
+        return MessageFormatter.format_overdue_alert(opportunity, kwargs.get('custom_message'))
     elif template_type == MessageTemplate.ESCALATION_ALERT:
-        return MessageFormatter.format_escalation_alert(task, kwargs.get('escalation_level', 1))
+        return MessageFormatter.format_escalation_alert(opportunity, kwargs.get('escalation_level', 1))
     elif template_type == MessageTemplate.COMPLETION_REMINDER:
-        return MessageFormatter.format_completion_reminder(task)
-    elif template_type == MessageTemplate.SYSTEM_NOTIFICATION:
-        return MessageFormatter.format_system_notification(
-            kwargs.get('title', '系统通知'),
-            kwargs.get('content', ''),
-            kwargs.get('notification_type', 'info')
-        )
+        return MessageFormatter.format_completion_reminder(opportunity)
     else:
-        return MessageFormatter.format_overdue_alert(task)
+        return f"工单 {opportunity.order_num} 需要关注"

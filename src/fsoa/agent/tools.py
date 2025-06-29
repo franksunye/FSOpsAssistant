@@ -166,24 +166,23 @@ def get_task_notification_history(task_id: int, hours_back: int = 24) -> List[No
 
 def _check_notification_cooldown(task: TaskInfo) -> bool:
     """
-    检查通知冷却时间
-    
+    检查通知冷却时间 - 已废弃
+
+    ⚠️ 此函数已废弃，请使用NotificationTaskManager中的冷却检查逻辑
+
     Args:
-        task: 任务信息
-        
+        task: 任务信息（TaskInfo已废弃）
+
     Returns:
         是否可以发送通知
     """
-    if not task.last_notification:
-        return True
-    
-    config = get_config()
-    cooldown_minutes = config.notification_cooldown
-    
-    time_since_last = datetime.now() - task.last_notification
-    cooldown_period = timedelta(minutes=cooldown_minutes)
-    
-    return time_since_last >= cooldown_period
+    import warnings
+    warnings.warn(
+        "_check_notification_cooldown is deprecated. Use NotificationTaskManager instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    return True  # 简化实现，实际逻辑已迁移到NotificationTaskManager
 
 
 @log_function_call

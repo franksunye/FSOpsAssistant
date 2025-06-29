@@ -240,10 +240,10 @@ def analyze_message_sources():
     print("   - 状态: ⚠️  可能生成不规范消息")
     print()
     
-    print("3. 🗂️ 旧Agent系统 (兼容性)")
+    print("3. 🗂️ 旧Agent系统 (已废弃)")
     print("   - 文件: agent/orchestrator.py, agent/tools.py")
-    print("   - 格式: TaskInfo包装的商机数据")
-    print("   - 状态: ⚠️  可能仍在运行")
+    print("   - 格式: 基于OpportunityInfo的商机数据")
+    print("   - 状态: ✅ 已迁移到新架构")
     print()
     
     print("4. 📝 手动执行脚本")

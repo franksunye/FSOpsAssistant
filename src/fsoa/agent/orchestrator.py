@@ -49,10 +49,10 @@ class AgentState(TypedDict):
     decision_result: Optional[DecisionResult]
     context: Dict[str, Any]
 
-    # 兼容性字段
-    tasks: Optional[List[TaskInfo]]  # 保持向后兼容
-    processed_tasks: Optional[List[TaskInfo]]
-    current_task: Optional[TaskInfo]
+    # 兼容性字段（已废弃，仅保留以避免导入错误）
+    tasks: Optional[List[TaskInfo]]  # 废弃：使用opportunities替代
+    processed_tasks: Optional[List[TaskInfo]]  # 废弃：使用processed_opportunities替代
+    current_task: Optional[TaskInfo]  # 废弃：使用current_opportunity替代
 
 
 class AgentOrchestrator:

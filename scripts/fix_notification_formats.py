@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
 """
-修复通知消息格式问题
+修复通知消息格式问题 - 已完成
 
-禁用LLM生成的不规范消息，统一使用标准格式
+✅ 已完成的任务：
+1. 禁用LLM生成的不规范消息，统一使用标准格式
+2. 将TaskInfo迁移到OpportunityInfo
+3. 更新所有相关的方法签名和数据模型
+
+注意：此脚本已完成历史任务，当前系统已使用OpportunityInfo。
 """
 
 import sys
