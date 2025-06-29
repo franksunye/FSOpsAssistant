@@ -394,7 +394,7 @@ class NotificationTaskType(str, Enum):
 **位置**: `src/fsoa/agent/decision.py`
 
 ```python
-def evaluate_task(self, task: TaskInfo, context: DecisionContext = None) -> DecisionResult:
+def evaluate_task(self, opportunity: OpportunityInfo, context: DecisionContext = None) -> DecisionResult:
     """基于规则评估任务"""
     
     # 规则1: 检查是否超时
@@ -437,7 +437,7 @@ def evaluate_task(self, task: TaskInfo, context: DecisionContext = None) -> Deci
 ### 8.2 混合决策模式
 
 ```python
-def _hybrid_decision(self, task: TaskInfo, context: DecisionContext = None) -> DecisionResult:
+def _hybrid_decision(self, opportunity: OpportunityInfo, context: DecisionContext = None) -> DecisionResult:
     """混合决策：规则优先，LLM优化"""
     # 首先使用规则引擎
     rule_result = self.rule_engine.evaluate_task(task, context)

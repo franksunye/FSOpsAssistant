@@ -69,7 +69,7 @@ tests/unit/
 import pytest
 from unittest.mock import Mock, patch
 from fsoa.agent.tools import fetch_overdue_tasks, send_notification
-from fsoa.data.models import TaskInfo
+from fsoa.data.models import OpportunityInfo, OpportunityStatus
 
 class TestFetchOverdueTasks:
     """测试任务获取功能"""
@@ -142,12 +142,16 @@ class TestSendNotification:
         mock_post.return_value.status_code = 200
         mock_post.return_value.json.return_value = {"errcode": 0}
 
-        task = TaskInfo(
-            id=1,
-            title="测试任务",
-            status="in_progress",
-            sla_hours=8,
+        opportunity = OpportunityInfo(
+            order_num="GD20250001",
+            name="测试客户",
+            address="测试地址",
+            supervisor_name="测试销售",
+            create_time=datetime.now(),
+            org_name="测试公司",
+            order_status=OpportunityStatus.PENDING_APPOINTMENT,
             elapsed_hours=10,
+            sla_threshold_hours=8
             group_id="group_001"
         )
 
@@ -164,8 +168,17 @@ class TestSendNotification:
         # Arrange
         mock_post.side_effect = requests.RequestException("Webhook error")
 
-        task = TaskInfo(id=1, title="测试", status="in_progress",
-                       sla_hours=8, elapsed_hours=10, group_id="group_001")
+        opportunity = OpportunityInfo(
+            order_num="GD20250001",
+            name="测试客户",
+            address="测试地址",
+            supervisor_name="测试销售",
+            create_time=datetime.now(),
+            org_name="测试公司",
+            order_status=OpportunityStatus.PENDING_APPOINTMENT,
+            elapsed_hours=10,
+            sla_threshold_hours=8
+        )
 
         # Act & Assert
         with pytest.raises(NotificationError):
@@ -392,42 +405,52 @@ class TestAgentPerformance:
 # tests/fixtures/test_data.py
 import pytest
 from faker import Faker
-from fsoa.data.models import TaskInfo
+from fsoa.data.models import OpportunityInfo, OpportunityStatus
+from datetime import datetime
 
 fake = Faker('zh_CN')
 
 @pytest.fixture
-def sample_tasks():
-    """示例任务数据"""
+def sample_opportunities():
+    """示例商机数据"""
     return [
-        TaskInfo(
-            id=1,
-            title="设备维护任务",
-            status="in_progress",
-            sla_hours=8,
+        OpportunityInfo(
+            order_num="GD20250001",
+            name="张三",
+            address="北京市朝阳区",
+            supervisor_name="李销售",
+            create_time=datetime.now(),
+            org_name="测试公司A",
+            order_status=OpportunityStatus.PENDING_APPOINTMENT,
             elapsed_hours=10,
-            group_id="group_001"
+            sla_threshold_hours=8
         ),
-        TaskInfo(
-            id=2,
-            title="故障排查任务",
-            status="in_progress",
-            sla_hours=4,
+        OpportunityInfo(
+            order_num="GD20250002",
+            name="李四",
+            address="上海市浦东新区",
+            supervisor_name="王销售",
+            create_time=datetime.now(),
+            org_name="测试公司B",
+            order_status=OpportunityStatus.TEMPORARILY_NOT_VISITING,
             elapsed_hours=6,
-            group_id="group_002"
+            sla_threshold_hours=4
         )
     ]
 
 @pytest.fixture
-def random_task():
-    """随机任务数据"""
-    return TaskInfo(
-        id=fake.random_int(min=1, max=1000),
-        title=fake.sentence(),
-        status=fake.random_element(["in_progress", "completed", "cancelled"]),
-        sla_hours=fake.random_int(min=1, max=24),
-        elapsed_hours=fake.random_int(min=0, max=48),
-        group_id=f"group_{fake.random_int(min=1, max=10):03d}"
+def random_opportunity():
+    """随机商机数据"""
+    return OpportunityInfo(
+        order_num=f"GD{fake.random_int(min=20250001, max=20259999)}",
+        name=fake.name(),
+        address=fake.address(),
+        supervisor_name=fake.name(),
+        create_time=fake.date_time(),
+        org_name=fake.company(),
+        order_status=fake.random_element(list(OpportunityStatus)),
+        elapsed_hours=fake.random_int(min=1, max=48),
+        sla_threshold_hours=fake.random_int(min=4, max=24)
     )
 ```
 

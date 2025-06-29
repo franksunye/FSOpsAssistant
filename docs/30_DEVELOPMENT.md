@@ -260,34 +260,36 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-class TaskInfo(BaseModel):
-    """任务信息模型"""
-    id: int
-    title: str
-    status: str
-    sla_hours: int
-    elapsed_hours: float
-    group_id: Optional[str] = None
+class OpportunityInfo(BaseModel):
+    """商机信息模型"""
+    order_num: str
+    name: str
+    address: str
+    supervisor_name: str
+    org_name: str
+    order_status: OpportunityStatus
+    elapsed_hours: Optional[float] = None
+    sla_threshold_hours: Optional[int] = None
 
-def fetch_overdue_tasks(sla_threshold: float = 1.0) -> List[TaskInfo]:
+def get_overdue_opportunities(sla_threshold: float = 1.0) -> List[OpportunityInfo]:
     """
-    获取超时任务列表
+    获取超时商机列表
 
     Args:
         sla_threshold: SLA阈值倍数，默认1.0表示刚好超时
 
     Returns:
-        超时任务列表
+        超时商机列表
 
     Raises:
         ConnectionError: 当无法连接到数据源时
     """
     try:
         # 实现逻辑
-        logger.info(f"Fetching overdue tasks with threshold: {sla_threshold}")
+        logger.info(f"Fetching overdue opportunities with threshold: {sla_threshold}")
         return []
     except Exception as e:
-        logger.error(f"Failed to fetch overdue tasks: {e}")
+        logger.error(f"Failed to fetch overdue opportunities: {e}")
         raise
 ```
 
@@ -324,7 +326,7 @@ from typing import TypedDict
 
 class AgentState(TypedDict):
     """Agent状态定义"""
-    tasks: List[TaskInfo]
+    opportunities: List[OpportunityInfo]
     notifications_sent: int
     errors: List[str]
 
@@ -392,17 +394,17 @@ class DecisionEngine:
             base_url="https://api.deepseek.com"
         )
 
-    def analyze_task_priority(self, task: TaskInfo) -> dict:
-        """分析任务优先级"""
+    def analyze_task_priority(self, opportunity: OpportunityInfo) -> dict:
+        """分析商机优先级"""
         prompt = f"""
-        分析以下任务的紧急程度和处理建议：
+        分析以下商机的紧急程度和处理建议：
 
-        任务ID: {task.id}
-        任务标题: {task.title}
-        当前状态: {task.status}
-        SLA时间: {task.sla_hours}小时
-        已用时间: {task.elapsed_hours}小时
-        超时程度: {task.elapsed_hours / task.sla_hours:.1f}倍
+        工单号: {opportunity.order_num}
+        客户: {opportunity.name}
+        当前状态: {opportunity.order_status}
+        SLA阈值: {opportunity.sla_threshold_hours}小时
+        已用时间: {opportunity.elapsed_hours}小时
+        超时程度: {opportunity.elapsed_hours / opportunity.sla_threshold_hours:.1f}倍
 
         请返回JSON格式：
         {{

@@ -89,7 +89,7 @@ graph TB
 #### 3.1.1 决策流程
 
 ```python
-def make_decision(self, task: TaskInfo, context: DecisionContext = None) -> DecisionResult:
+def make_decision(self, opportunity: OpportunityInfo, context: DecisionContext = None) -> DecisionResult:
     """智能决策主入口"""
     # 1. 检查LLM优化配置
     use_llm = self._check_llm_optimization_enabled()
@@ -105,7 +105,7 @@ def make_decision(self, task: TaskInfo, context: DecisionContext = None) -> Deci
 #### 3.1.2 混合决策机制
 
 ```python
-def _hybrid_decision(self, task: TaskInfo, context: DecisionContext = None) -> DecisionResult:
+def _hybrid_decision(self, opportunity: OpportunityInfo, context: DecisionContext = None) -> DecisionResult:
     """混合决策：规则预筛选 + LLM优化"""
     # 第一步：规则引擎基础判断
     rule_result = self.rule_engine.evaluate_task(task, context)
@@ -130,7 +130,7 @@ DeepSeekClient封装了与DeepSeek API的交互，提供三个核心功能。
 #### 3.2.1 任务优先级分析
 
 ```python
-def analyze_task_priority(self, task: TaskInfo, context: Dict[str, Any] = None) -> DecisionResult:
+def analyze_task_priority(self, opportunity: OpportunityInfo, context: Dict[str, Any] = None) -> DecisionResult:
     """分析任务优先级和处理建议"""
     
     # 构建分析提示词
@@ -160,7 +160,7 @@ def analyze_task_priority(self, task: TaskInfo, context: Dict[str, Any] = None) 
 #### 3.2.2 LLM提示词模板
 
 ```python
-def _build_priority_analysis_prompt(self, task: TaskInfo, context: Dict[str, Any] = None) -> str:
+def _build_priority_analysis_prompt(self, opportunity: OpportunityInfo, context: Dict[str, Any] = None) -> str:
     """构建优先级分析提示词"""
     
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -381,7 +381,7 @@ graph TD
 ### 7.2 降级策略
 
 ```python
-def _handle_llm_failure(self, task: TaskInfo, error: Exception) -> DecisionResult:
+def _handle_llm_failure(self, opportunity: OpportunityInfo, error: Exception) -> DecisionResult:
     """LLM失败时的降级处理"""
     
     # 记录错误
@@ -548,7 +548,7 @@ def _parse_decision_result(self, result_text: str) -> Dict[str, Any]:
 ### 10.3 上下文构建策略
 
 ```python
-def _build_context_dict(self, task: TaskInfo, context: DecisionContext = None) -> Dict[str, Any]:
+def _build_context_dict(self, opportunity: OpportunityInfo, context: DecisionContext = None) -> Dict[str, Any]:
     """构建LLM分析的上下文信息"""
     context_dict = {
         "task_info": {
