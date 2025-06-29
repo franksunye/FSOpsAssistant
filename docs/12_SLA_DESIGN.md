@@ -1046,9 +1046,244 @@ graph TD
 - 去重机制：避免重复通知
 - 分组路由：orgName智能路由
 
-## 13. 总结
+## 13. 可配置通知功能设计
 
-### 13.1 SLA模块完成度
+### 13.1 需求背景
+
+当前系统实现了两级SLA体系：
+- 提醒通知（4/8小时）→ 服务商群
+- 升级通知（8/16小时）→ 运营群
+
+但在实际业务场景中，可能只需要发送提醒通知到服务商群，而不需要升级通知到运营群。因此需要设计一个可配置的通知开关功能。
+
+### 13.2 设计原则
+
+1. **敏捷开发**：最小化代码改动，复用现有架构
+2. **向后兼容**：保持现有API和数据结构不变
+3. **配置驱动**：通过数据库配置控制通知行为
+4. **灵活可控**：支持细粒度的通知类型控制
+
+### 13.3 技术设计
+
+#### 13.3.1 配置项设计
+
+在`system_config`表中新增以下配置项：
+
+```sql
+-- 通知开关配置
+INSERT INTO system_config (config_key, config_value, description) VALUES
+('notification_reminder_enabled', 'true', '是否启用提醒通知（4/8小时）→服务商群'),
+('notification_escalation_enabled', 'false', '是否启用升级通知（8/16小时）→运营群');
+```
+
+**配置说明**：
+- `notification_reminder_enabled`: 控制是否发送提醒通知
+- `notification_escalation_enabled`: 控制是否发送升级通知
+- 默认值：提醒通知开启，升级通知关闭
+
+#### 13.3.2 NotificationManager改动
+
+**位置**: `src/fsoa/agent/managers/notification_manager.py`
+
+在`NotificationTaskManager`类中添加配置加载和检查逻辑：
+
+```python
+class NotificationTaskManager:
+    def __init__(self):
+        # ... 现有代码 ...
+
+        # 通知开关配置
+        self.reminder_enabled = True
+        self.escalation_enabled = False
+
+        # 从数据库加载配置
+        self._load_config_from_db()
+
+    def _load_config_from_db(self):
+        """从数据库加载配置参数"""
+        try:
+            configs = self.db_manager.get_all_system_configs()
+
+            # 现有配置加载...
+
+            # 新增：通知开关配置
+            self.reminder_enabled = configs.get("notification_reminder_enabled", "true").lower() == "true"
+            self.escalation_enabled = configs.get("notification_escalation_enabled", "false").lower() == "true"
+
+            logger.info(f"Loaded notification switches: reminder={self.reminder_enabled}, "
+                       f"escalation={self.escalation_enabled}")
+        except Exception as e:
+            logger.warning(f"Failed to load config from database, using defaults: {e}")
+
+    def create_notification_tasks(self, opportunities: List[OpportunityInfo],
+                                run_id: int) -> List[NotificationTask]:
+        """基于商机创建通知任务"""
+        tasks = []
+        created_tasks_tracker = set()
+
+        try:
+            for opp in opportunities:
+                opp.update_overdue_info(use_business_time=True)
+
+                # 创建提醒通知任务（4/8小时）→ 服务商群
+                if opp.is_violation and self.reminder_enabled:  # 新增配置检查
+                    task_key = (opp.order_num, NotificationTaskType.REMINDER)
+                    if (not self._has_pending_task(opp.order_num, NotificationTaskType.REMINDER) and
+                        task_key not in created_tasks_tracker):
+                        # ... 创建提醒任务的现有代码 ...
+
+                # 创建升级通知任务（8/16小时）→ 运营群
+                if opp.escalation_level > 0 and self.escalation_enabled:  # 新增配置检查
+                    # ... 创建升级任务的现有代码 ...
+
+        except Exception as e:
+            logger.error(f"Failed to create notification tasks: {e}")
+
+        return tasks
+```
+
+#### 13.3.3 数据库初始化更新
+
+**位置**: `src/fsoa/data/database.py`
+
+在`_init_default_config`方法中添加新配置项：
+
+```python
+def _init_default_config(self):
+    """初始化默认配置"""
+    default_configs = [
+        # ... 现有配置 ...
+
+        # 通知开关配置
+        ("notification_reminder_enabled", "true", "是否启用提醒通知（4/8小时）→服务商群"),
+        ("notification_escalation_enabled", "false", "是否启用升级通知（8/16小时）→运营群"),
+    ]
+    # ... 现有代码 ...
+```
+
+#### 13.3.4 Web界面配置
+
+在系统管理页面添加通知开关配置界面，允许用户通过Web UI控制通知行为。
+
+**位置**: `src/fsoa/ui/app.py` - 系统管理页面
+
+```python
+def show_system_management():
+    """显示系统管理页面"""
+    # ... 现有代码 ...
+
+    # 通知配置部分
+    st.subheader("📢 通知配置")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        current_reminder = db_manager.get_system_config("notification_reminder_enabled") == "true"
+        reminder_enabled = st.checkbox(
+            "启用提醒通知（4/8小时）→ 服务商群",
+            value=current_reminder,
+            help="是否发送SLA提醒通知到服务商群"
+        )
+
+    with col2:
+        current_escalation = db_manager.get_system_config("notification_escalation_enabled") == "true"
+        escalation_enabled = st.checkbox(
+            "启用升级通知（8/16小时）→ 运营群",
+            value=current_escalation,
+            help="是否发送SLA升级通知到运营群"
+        )
+
+    if st.button("保存通知配置"):
+        db_manager.set_system_config(
+            "notification_reminder_enabled",
+            "true" if reminder_enabled else "false",
+            "是否启用提醒通知（4/8小时）→服务商群"
+        )
+        db_manager.set_system_config(
+            "notification_escalation_enabled",
+            "true" if escalation_enabled else "false",
+            "是否启用升级通知（8/16小时）→运营群"
+        )
+        st.success("通知配置已保存")
+        st.rerun()
+```
+
+### 13.4 实现步骤
+
+#### 阶段1：数据库配置（最小改动）
+1. 在`database.py`中添加新的默认配置项
+2. 运行数据库初始化，添加配置记录
+
+#### 阶段2：通知管理器改动
+1. 在`NotificationTaskManager`中添加配置加载逻辑
+2. 在`create_notification_tasks`方法中添加配置检查
+3. 测试通知开关功能
+
+#### 阶段3：Web界面配置
+1. 在系统管理页面添加通知开关配置
+2. 测试配置保存和生效
+
+### 13.5 配置场景
+
+#### 场景1：只发送提醒通知（推荐）
+```
+notification_reminder_enabled = true
+notification_escalation_enabled = false
+```
+- 发送4/8小时提醒通知到服务商群
+- 不发送8/16小时升级通知到运营群
+
+#### 场景2：完整两级通知
+```
+notification_reminder_enabled = true
+notification_escalation_enabled = true
+```
+- 发送4/8小时提醒通知到服务商群
+- 发送8/16小时升级通知到运营群
+
+#### 场景3：只发送升级通知
+```
+notification_reminder_enabled = false
+notification_escalation_enabled = true
+```
+- 不发送4/8小时提醒通知
+- 只发送8/16小时升级通知到运营群
+
+#### 场景4：关闭所有通知
+```
+notification_reminder_enabled = false
+notification_escalation_enabled = false
+```
+- 不发送任何SLA通知（仅计算SLA状态）
+
+### 13.6 向后兼容性
+
+1. **默认行为**：提醒通知开启，升级通知关闭，满足当前需求
+2. **API兼容**：不改变现有的通知任务创建API
+3. **数据兼容**：不改变现有的数据库表结构
+4. **配置兼容**：新配置项为可选，不影响现有配置
+
+### 13.7 监控和日志
+
+在通知任务创建时记录配置状态：
+
+```python
+logger.info(f"Notification config: reminder={self.reminder_enabled}, "
+           f"escalation={self.escalation_enabled}")
+logger.info(f"Created {len(reminder_tasks)} reminder tasks, "
+           f"{len(escalation_tasks)} escalation tasks")
+```
+
+### 13.8 测试验证
+
+1. **配置测试**：验证配置项的加载和保存
+2. **通知测试**：验证不同配置下的通知创建行为
+3. **界面测试**：验证Web界面的配置功能
+4. **兼容性测试**：验证现有功能不受影响
+
+## 14. 总结
+
+### 14.1 SLA模块完成度
 
 FSOA系统的SLA模块已经完全按照架构设计实现，并在以下方面超出了原始设计：
 
@@ -1057,14 +1292,14 @@ FSOA系统的SLA模块已经完全按照架构设计实现，并在以下方面�
 3. **业务适配性**: 符合现场服务业务特点
 4. **扩展增强**: 三级SLA体系和智能决策
 
-### 13.2 核心价值
+### 14.2 核心价值
 
 1. **精确监控**: 基于工作时间的精确SLA计算
 2. **智能决策**: 规则+LLM的混合决策机制
 3. **分级处理**: 提醒/升级的两级渐进式处理
 4. **实时响应**: 动态SLA状态更新和通知触发
 
-### 13.3 技术亮点
+### 14.3 技术亮点
 
 1. **工作时间计算**: 跨日跨周末的精确时间计算
 2. **两级SLA体系**: 4/8小时提醒 + 8/16小时升级机制
@@ -1077,6 +1312,6 @@ FSOA系统的SLA模块已经完全按照架构设计实现，并在以下方面�
 >
 > 通过精确的工作时间计算和两级SLA体系，实现了智能化的现场服务监控
 >
-> 文档版本: v2.0 - 两级SLA体系
+> 文档版本: v2.1 - 两级SLA体系 + 可配置通知
 >
 > 最后更新: 2025-06-29
