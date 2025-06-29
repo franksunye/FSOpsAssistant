@@ -79,6 +79,7 @@ class NotificationTaskManager:
         try:
             # 用于跟踪当前批次中已创建的任务，避免重复
             created_tasks_tracker = set()
+            escalation_orgs = set()  # 🔧 新增：收集需要升级通知的组织
 
             for opp in opportunities:
                 # 更新商机的计算字段
@@ -124,26 +125,34 @@ class NotificationTaskManager:
                     else:
                         logger.info(f"Order {opp.order_num} already has pending/recent STANDARD notification")
 
-                # 如果需要升级，创建升级通知任务
+                # 🔧 修复：收集需要升级的组织，而不是为每个工单创建升级任务
                 if opp.escalation_level > 0:
-                    task_key = (opp.order_num, NotificationTaskType.ESCALATION)
-                    # 检查数据库中是否已存在 + 检查当前批次中是否已创建
-                    if (not self._has_pending_task(opp.order_num, NotificationTaskType.ESCALATION) and
-                        task_key not in created_tasks_tracker):
-                        escalation_task = NotificationTask(
-                            order_num=opp.order_num,
-                            org_name=opp.org_name,
-                            notification_type=NotificationTaskType.ESCALATION,
-                            due_time=now_china_naive(),
-                            created_run_id=run_id,
-                            cooldown_hours=self.notification_cooldown_hours,
-                            max_retry_count=self.max_retry_count
-                        )
-                        tasks.append(escalation_task)
-                        created_tasks_tracker.add(task_key)
-                    else:
-                        logger.info(f"Order {opp.order_num} already has pending/recent ESCALATION notification")
-            
+                    escalation_orgs.add(opp.org_name)
+
+            # 🔧 新增：为每个需要升级的组织创建一个升级通知任务
+            for org_name in escalation_orgs:
+                # 使用组织名作为order_num的标识符，确保每个组织只有一个升级任务
+                escalation_order_key = f"ESCALATION_{org_name}"
+                task_key = (escalation_order_key, NotificationTaskType.ESCALATION)
+
+                # 检查是否已存在该组织的升级任务
+                if (not self._has_pending_escalation_task_for_org(org_name) and
+                    task_key not in created_tasks_tracker):
+                    escalation_task = NotificationTask(
+                        order_num=escalation_order_key,  # 使用特殊标识符
+                        org_name=org_name,
+                        notification_type=NotificationTaskType.ESCALATION,
+                        due_time=now_china_naive(),
+                        created_run_id=run_id,
+                        cooldown_hours=self.notification_cooldown_hours,
+                        max_retry_count=self.max_retry_count
+                    )
+                    tasks.append(escalation_task)
+                    created_tasks_tracker.add(task_key)
+                    logger.info(f"Created escalation task for org {org_name}")
+                else:
+                    logger.info(f"Org {org_name} already has pending/recent ESCALATION notification")
+
             # 批量保存任务
             for task in tasks:
                 task_id = self.db_manager.save_notification_task(task)
@@ -475,16 +484,17 @@ class NotificationTaskManager:
     
     def _send_escalation_notification(self, org_name: str, tasks: List[NotificationTask],
                                     run_id: int) -> bool:
-        """发送升级通知"""
+        """发送升级通知 - 修复版本：聚合该组织所有需要升级的工单"""
         try:
-            # 格式化升级消息 - 按工单号去重
-            opportunities_dict = {}
-            for task in tasks:
-                if task.order_num not in opportunities_dict:
-                    opportunities_dict[task.order_num] = self._get_opportunity_info_for_notification(task)
+            # 🔧 修复：获取该组织所有需要升级的商机，而不仅仅是当前任务
+            all_escalation_opportunities = self._get_all_escalation_opportunities_for_org(org_name)
 
-            opportunities = list(opportunities_dict.values())
-            message = self.formatter.format_escalation_notification(org_name, opportunities)
+            if not all_escalation_opportunities:
+                logger.warning(f"No escalation opportunities found for org {org_name}")
+                return False
+
+            # 格式化升级消息 - 包含该组织所有需要升级的工单
+            message = self.formatter.format_escalation_notification(org_name, all_escalation_opportunities)
 
             # 保存消息内容到任务记录中
             for task in tasks:
@@ -500,7 +510,7 @@ class NotificationTaskManager:
             )
 
             if success:
-                logger.info(f"Sent escalation notification for {org_name} with {len(tasks)} tasks")
+                logger.info(f"Sent escalation notification for {org_name} with {len(all_escalation_opportunities)} opportunities (from {len(tasks)} tasks)")
             else:
                 logger.error(f"Failed to send escalation notification for {org_name}")
 
@@ -508,6 +518,39 @@ class NotificationTaskManager:
 
         except Exception as e:
             logger.error(f"Failed to send escalation notification for {org_name}: {e}")
+            return False
+
+    def _get_all_escalation_opportunities_for_org(self, org_name: str) -> List[OpportunityInfo]:
+        """获取该组织所有需要升级的商机"""
+        try:
+            # 从数据策略获取该组织的所有商机
+            all_opportunities = self.data_strategy.get_opportunities()
+
+            # 筛选出该组织需要升级的商机
+            escalation_opportunities = []
+            for opp in all_opportunities:
+                if opp.org_name == org_name:
+                    # 更新商机的计算字段
+                    opp.update_overdue_info(use_business_time=True)
+
+                    # 检查是否需要升级
+                    if opp.escalation_level > 0:
+                        escalation_opportunities.append(opp)
+
+            logger.info(f"Found {len(escalation_opportunities)} escalation opportunities for org {org_name}")
+            return escalation_opportunities
+
+        except Exception as e:
+            logger.error(f"Failed to get escalation opportunities for org {org_name}: {e}")
+            return []
+
+    def _has_pending_escalation_task_for_org(self, org_name: str) -> bool:
+        """检查组织是否已有待处理的升级任务"""
+        try:
+            escalation_order_key = f"ESCALATION_{org_name}"
+            return self._has_pending_task(escalation_order_key, NotificationTaskType.ESCALATION)
+        except Exception as e:
+            logger.error(f"Failed to check pending escalation task for org {org_name}: {e}")
             return False
 
     def _update_task_after_send(self, task: NotificationTask, run_id: int, success: bool):
