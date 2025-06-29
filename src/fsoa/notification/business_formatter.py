@@ -16,6 +16,28 @@ class BusinessNotificationFormatter:
     """业务通知格式化器 - 支持动态SLA阈值的消息模板"""
 
     @staticmethod
+    def _get_display_config() -> Dict[str, int]:
+        """获取消息显示配置"""
+        try:
+            from ..data.database import get_database_manager
+            db_manager = get_database_manager()
+
+            return {
+                'notification_max': int(db_manager.get_system_config("notification_max_display_orders") or "5"),
+                'escalation_max': int(db_manager.get_system_config("escalation_max_display_orders") or "5"),
+                'emergency_max': int(db_manager.get_system_config("emergency_max_display_orders") or "3"),
+                'standard_max': int(db_manager.get_system_config("standard_max_display_orders") or "10"),
+            }
+        except Exception:
+            # 降级到默认值
+            return {
+                'notification_max': 5,
+                'escalation_max': 5,
+                'emergency_max': 3,
+                'standard_max': 10,
+            }
+
+    @staticmethod
     def _get_sla_threshold_text(opportunities: List[OpportunityInfo], threshold_type: str = "reminder") -> str:
         """
         获取SLA阈值文本描述
@@ -66,9 +88,12 @@ class BusinessNotificationFormatter:
         message_parts.append(f"有 {len(opportunities)} 个商机需要关注：")
         message_parts.append("")
 
-        for i, opp in enumerate(opportunities[:5], 1):
+        # 获取显示配置
+        display_config = BusinessNotificationFormatter._get_display_config()
+        max_display = display_config['notification_max']
+
+        for i, opp in enumerate(opportunities[:max_display], 1):
             elapsed_str = f"{opp.elapsed_hours:.1f}小时" if opp.elapsed_hours else "未知"
-            create_time_str = opp.create_time.strftime("%m-%d %H:%M") if opp.create_time else "未知"
 
             message_parts.append(f"{i:02d}. 工单号：{opp.order_num}")
             message_parts.append(f"     已用时长：{elapsed_str}")
@@ -77,8 +102,8 @@ class BusinessNotificationFormatter:
             message_parts.append(f"     状态：{opp.order_status}")
             message_parts.append("")
 
-        if len(opportunities) > 5:
-            message_parts.append(f"... 还有 {len(opportunities) - 5} 个商机")
+        if len(opportunities) > max_display:
+            message_parts.append(f"... 还有 {len(opportunities) - max_display} 个商机")
             message_parts.append("")
 
         message_parts.append("📝 请及时跟进处理，感谢配合！")
@@ -202,10 +227,14 @@ class BusinessNotificationFormatter:
             message_parts.append(f"共有 {len(not_visiting)} 个工单需跟进：")
             message_parts.append("")
             
-            for i, opp in enumerate(not_visiting[:10], 1):  # 最多显示10个
+            # 获取显示配置
+            display_config = BusinessNotificationFormatter._get_display_config()
+            max_display = display_config['standard_max']
+
+            for i, opp in enumerate(not_visiting[:max_display], 1):
                 days_overdue = int(opp.elapsed_hours / 24)
                 create_date = opp.create_time.strftime("%m-%d")
-                
+
                 message_parts.append(f"{i:02d}. 工单号：{opp.order_num}")
                 message_parts.append(f"     滞留时长：{days_overdue}天")
                 message_parts.append(f"     客户：{opp.name}")
@@ -213,6 +242,10 @@ class BusinessNotificationFormatter:
                 message_parts.append(f"     负责人：{opp.supervisor_name}")
                 message_parts.append(f"     创建时间：{create_date}")
                 message_parts.append(f"     状态：{opp.order_status}")
+                message_parts.append("")
+
+            if len(not_visiting) > max_display:
+                message_parts.append(f"... 还有 {len(not_visiting) - max_display} 个工单需跟进")
                 message_parts.append("")
         
         # 添加结尾
@@ -242,9 +275,13 @@ class BusinessNotificationFormatter:
             logger.warning(f"No opportunities provided for escalation notification of {org_name}")
             return ""
 
+        # 获取显示配置
+        display_config = BusinessNotificationFormatter._get_display_config()
+        max_display = display_config['escalation_max']
+
         total_count = len(opportunities)
-        display_count = min(total_count, 5)
-        remaining_count = max(0, total_count - 5)
+        display_count = min(total_count, max_display)
+        remaining_count = max(0, total_count - max_display)
 
         logger.info(f"Formatting escalation notification for {org_name}: "
                    f"total={total_count}, display={display_count}, remaining={remaining_count}")
@@ -256,8 +293,8 @@ class BusinessNotificationFormatter:
         message_parts.append(f"需要升级处理的工单数：{total_count}")
         message_parts.append("")
 
-        # 显示需要升级的工单（最多5个）
-        for i, opp in enumerate(opportunities[:5], 1):
+        # 显示需要升级的工单
+        for i, opp in enumerate(opportunities[:max_display], 1):
             elapsed_str = f"{opp.elapsed_hours:.1f}小时" if opp.elapsed_hours else "未知"
             create_date = opp.create_time.strftime("%m-%d %H:%M") if opp.create_time else "未知"
 
@@ -270,7 +307,7 @@ class BusinessNotificationFormatter:
             message_parts.append("")
 
         # 🔧 修复：更精确的截断逻辑
-        if total_count > 5:
+        if total_count > max_display:
             message_parts.append(f"... 还有 {remaining_count} 个工单需要处理")
             message_parts.append("")
             logger.info(f"Added truncation line: remaining {remaining_count} orders")
@@ -305,6 +342,10 @@ class BusinessNotificationFormatter:
         if not opportunities:
             return ""
 
+        # 获取显示配置
+        display_config = BusinessNotificationFormatter._get_display_config()
+        max_display = display_config['emergency_max']
+
         message_parts = []
         message_parts.append("🔥 **紧急通知** - 严重超时")
         message_parts.append("")
@@ -313,7 +354,7 @@ class BusinessNotificationFormatter:
         message_parts.append("")
 
         # 显示最严重的工单
-        for i, opp in enumerate(opportunities[:3], 1):
+        for i, opp in enumerate(opportunities[:max_display], 1):
             days = int(opp.elapsed_hours / 24) if opp.elapsed_hours else 0
             hours = int(opp.elapsed_hours % 24) if opp.elapsed_hours else 0
             create_date = opp.create_time.strftime("%m-%d") if opp.create_time else "未知"
@@ -326,8 +367,8 @@ class BusinessNotificationFormatter:
             message_parts.append(f"   创建时间：{create_date}")
             message_parts.append("")
 
-        if len(opportunities) > 3:
-            message_parts.append(f"... 还有 {len(opportunities) - 3} 个严重超时工单")
+        if len(opportunities) > max_display:
+            message_parts.append(f"... 还有 {len(opportunities) - max_display} 个严重超时工单")
             message_parts.append("")
 
         message_parts.append("⚡ **需要管理层立即关注和处理！**")

@@ -85,45 +85,29 @@ class NotificationTaskManager:
                 # 更新商机的计算字段
                 opp.update_overdue_info(use_business_time=True)
 
-                # 创建违规通知任务（12小时）
+                # 创建提醒通知任务（4/8小时）→ 服务商群
                 if opp.is_violation:
-                    task_key = (opp.order_num, NotificationTaskType.VIOLATION)
+                    task_key = (opp.order_num, NotificationTaskType.REMINDER)
                     # 检查数据库中是否已存在 + 检查当前批次中是否已创建
-                    if (not self._has_pending_task(opp.order_num, NotificationTaskType.VIOLATION) and
+                    if (not self._has_pending_task(opp.order_num, NotificationTaskType.REMINDER) and
                         task_key not in created_tasks_tracker):
-                        violation_task = NotificationTask(
+                        reminder_task = NotificationTask(
                             order_num=opp.order_num,
                             org_name=opp.org_name,
-                            notification_type=NotificationTaskType.VIOLATION,
+                            notification_type=NotificationTaskType.REMINDER,
                             due_time=now_china_naive(),
                             created_run_id=run_id,
                             cooldown_hours=self.notification_cooldown_hours,
                             max_retry_count=self.max_retry_count
                         )
-                        tasks.append(violation_task)
+                        tasks.append(reminder_task)
                         created_tasks_tracker.add(task_key)
                     else:
-                        logger.info(f"Order {opp.order_num} already has pending/recent VIOLATION notification")
+                        logger.info(f"Order {opp.order_num} already has pending/recent REMINDER notification")
 
-                # 创建标准通知任务（24/48小时）
-                if opp.is_overdue:
-                    task_key = (opp.order_num, NotificationTaskType.STANDARD)
-                    # 检查数据库中是否已存在 + 检查当前批次中是否已创建
-                    if (not self._has_pending_task(opp.order_num, NotificationTaskType.STANDARD) and
-                        task_key not in created_tasks_tracker):
-                        standard_task = NotificationTask(
-                            order_num=opp.order_num,
-                            org_name=opp.org_name,
-                            notification_type=NotificationTaskType.STANDARD,
-                            due_time=now_china_naive(),
-                            created_run_id=run_id,
-                            cooldown_hours=self.notification_cooldown_hours,
-                            max_retry_count=self.max_retry_count
-                        )
-                        tasks.append(standard_task)
-                        created_tasks_tracker.add(task_key)
-                    else:
-                        logger.info(f"Order {opp.order_num} already has pending/recent STANDARD notification")
+                # 🔧 修复：不再为每个工单创建标准通知任务
+                # 标准通知现在通过升级通知统一处理
+                # 保留此注释以说明逻辑变更
 
                 # 🔧 修复：收集需要升级的组织，而不是为每个工单创建升级任务
                 if opp.escalation_level > 0:
@@ -282,11 +266,18 @@ class NotificationTaskManager:
 
         try:
             # 分离不同类型的通知
-            violation_tasks = [t for t in tasks if t.notification_type == NotificationTaskType.VIOLATION]
-            standard_tasks = [t for t in tasks if t.notification_type == NotificationTaskType.STANDARD]
+            reminder_tasks = [t for t in tasks if t.notification_type == NotificationTaskType.REMINDER]
             escalation_tasks = [t for t in tasks if t.notification_type == NotificationTaskType.ESCALATION]
 
-            # 检查是否有升级通知，如果有则发送到内部运营群
+            # 🔧 向后兼容：处理旧的通知类型
+            legacy_violation_tasks = [t for t in tasks if t.notification_type == NotificationTaskType.VIOLATION]
+            legacy_standard_tasks = [t for t in tasks if t.notification_type == NotificationTaskType.STANDARD]
+
+            # 合并到新的类型中
+            reminder_tasks.extend(legacy_violation_tasks)
+            escalation_tasks.extend(legacy_standard_tasks)
+
+            # 发送升级通知到内部运营群
             if escalation_tasks:
                 success = self._send_escalation_notification(org_name, escalation_tasks, run_id)
                 if success:
@@ -298,27 +289,16 @@ class NotificationTaskManager:
                     for task in escalation_tasks:
                         self._update_task_after_send(task, run_id, success=False)
 
-            # 分别发送违规通知和标准通知
-            if violation_tasks:
-                success = self._send_violation_notification(org_name, violation_tasks, run_id)
+            # 发送提醒通知到服务商群
+            if reminder_tasks:
+                success = self._send_reminder_notification(org_name, reminder_tasks, run_id)
                 if success:
-                    result.sent_count += len(violation_tasks)
-                    for task in violation_tasks:
+                    result.sent_count += len(reminder_tasks)
+                    for task in reminder_tasks:
                         self._update_task_after_send(task, run_id, success=True)
                 else:
-                    result.failed_count += len(violation_tasks)
-                    for task in violation_tasks:
-                        self._update_task_after_send(task, run_id, success=False)
-
-            if standard_tasks:
-                success = self._send_standard_notification(org_name, standard_tasks, run_id)
-                if success:
-                    result.sent_count += len(standard_tasks)
-                    for task in standard_tasks:
-                        self._update_task_after_send(task, run_id, success=True)
-                else:
-                    result.failed_count += len(standard_tasks)
-                    for task in standard_tasks:
+                    result.failed_count += len(reminder_tasks)
+                    for task in reminder_tasks:
                         self._update_task_after_send(task, run_id, success=False)
             
             return result
@@ -380,9 +360,14 @@ class NotificationTaskManager:
     def _format_with_template(self, org_name: str, opportunities: List[OpportunityInfo],
                             notification_type: NotificationTaskType) -> str:
         """使用标准模板格式化消息"""
-        if notification_type == NotificationTaskType.VIOLATION:
+        if notification_type == NotificationTaskType.REMINDER:
             return self.formatter.format_violation_notification(org_name, opportunities)
         elif notification_type == NotificationTaskType.ESCALATION:
+            return self.formatter.format_escalation_notification(org_name, opportunities)
+        # 🔧 向后兼容
+        elif notification_type == NotificationTaskType.VIOLATION:
+            return self.formatter.format_violation_notification(org_name, opportunities)
+        elif notification_type == NotificationTaskType.STANDARD:
             return self.formatter.format_escalation_notification(org_name, opportunities)
         else:
             return self.formatter.format_org_overdue_notification(org_name, opportunities)
@@ -391,9 +376,11 @@ class NotificationTaskManager:
                                    notification_type: NotificationTaskType) -> str:
         """构建LLM格式化提示词"""
         type_desc = {
-            NotificationTaskType.VIOLATION: "违规通知（12小时未处理）",
-            NotificationTaskType.STANDARD: "逾期提醒（24/48小时）",
-            NotificationTaskType.ESCALATION: "升级通知（运营介入）"
+            NotificationTaskType.REMINDER: "提醒通知（4/8小时未处理）",
+            NotificationTaskType.ESCALATION: "升级通知（运营介入）",
+            # 🔧 向后兼容
+            NotificationTaskType.VIOLATION: "提醒通知（4/8小时未处理）",
+            NotificationTaskType.STANDARD: "升级通知（运营介入）"
         }
         
         opp_list = []
@@ -454,12 +441,12 @@ class NotificationTaskManager:
             logger.error(f"Failed to send standard notification to {org_name}: {e}")
             return False
 
-    def _send_violation_notification(self, org_name: str, tasks: List[NotificationTask],
-                                   run_id: int) -> bool:
-        """发送违规通知（12小时）"""
+    def _send_reminder_notification(self, org_name: str, tasks: List[NotificationTask],
+                                  run_id: int) -> bool:
+        """发送提醒通知（4/8小时）→ 服务商群"""
         try:
             # 格式化消息
-            message = self._format_notification_message(org_name, tasks, NotificationTaskType.VIOLATION)
+            message = self._format_notification_message(org_name, tasks, NotificationTaskType.REMINDER)
 
             # 保存消息内容到任务记录中
             for task in tasks:
@@ -475,14 +462,14 @@ class NotificationTaskManager:
             )
 
             if success:
-                logger.info(f"Sent violation notification to {org_name} for {len(tasks)} tasks")
+                logger.info(f"Sent reminder notification to {org_name} for {len(tasks)} tasks")
             else:
-                logger.error(f"Failed to send violation notification to {org_name}")
+                logger.error(f"Failed to send reminder notification to {org_name}")
 
             return success
 
         except Exception as e:
-            logger.error(f"Failed to send violation notification to {org_name}: {e}")
+            logger.error(f"Failed to send reminder notification to {org_name}: {e}")
             return False
     
     def _send_escalation_notification(self, org_name: str, tasks: List[NotificationTask],
@@ -566,6 +553,8 @@ class NotificationTaskManager:
         try:
             # 获取该组织所有待处理的升级任务
             pending_tasks = self.db_manager.get_pending_notification_tasks()
+
+            # 🔧 增强：清理所有旧格式的升级任务（包括按工单号创建的）
             old_escalation_tasks = [
                 task for task in pending_tasks
                 if (task.org_name == org_name and
@@ -573,10 +562,19 @@ class NotificationTaskManager:
                     not task.order_num.startswith("ESCALATION_"))  # 旧格式任务
             ]
 
-            if old_escalation_tasks:
-                logger.info(f"Found {len(old_escalation_tasks)} old escalation tasks for org {org_name}, cleaning up...")
+            # 🔧 新增：同时清理使用旧类型别名的任务
+            legacy_standard_tasks = [
+                task for task in pending_tasks
+                if (task.org_name == org_name and
+                    task.notification_type == NotificationTaskType.STANDARD)  # 旧的STANDARD类型
+            ]
 
-                for task in old_escalation_tasks:
+            all_old_tasks = old_escalation_tasks + legacy_standard_tasks
+
+            if all_old_tasks:
+                logger.info(f"Found {len(all_old_tasks)} old escalation tasks for org {org_name}, cleaning up...")
+
+                for task in all_old_tasks:
                     # 将旧任务标记为已发送，避免重复处理
                     success = self.db_manager.update_notification_task_status(
                         task.id,
@@ -584,7 +582,7 @@ class NotificationTaskManager:
                         sent_run_id=None
                     )
                     if success:
-                        logger.info(f"Cleaned up old escalation task {task.id} (order_num: {task.order_num})")
+                        logger.info(f"Cleaned up old escalation task {task.id} (order_num: {task.order_num}, type: {task.notification_type})")
                     else:
                         logger.error(f"Failed to cleanup old escalation task {task.id}")
 
