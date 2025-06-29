@@ -7,7 +7,7 @@ FSOA系统的SLA（Service Level Agreement）模块是Agent工作流的核心决
 ### 1.1 设计目标
 
 - **精确时间计算**：基于工作时间的精确SLA计算
-- **分级监控**：违规、逾期、升级的三级SLA体系
+- **分级监控**：提醒、升级的两级SLA体系
 - **智能决策**：基于规则+LLM的混合决策机制
 - **实时响应**：动态SLA状态更新和通知触发
 - **业务导向**：符合现场服务业务特点的SLA规则
@@ -18,20 +18,29 @@ FSOA系统的SLA（Service Level Agreement）模块是Agent工作流的核心决
 
 ```python
 class BusinessTimeCalculator:
-    WORK_START_HOUR = 9   # 早上9点
-    WORK_END_HOUR = 19    # 晚上7点（不包含）
-    WORK_HOURS_PER_DAY = 10  # 每天工作10小时
-    
-    # 工作日：周一到周五
-    # 非工作时间：周末、晚上7点到早上9点
+    # 默认工作时间配置（支持数据库动态配置）
+    DEFAULT_WORK_START_HOUR = 9   # 早上9点
+    DEFAULT_WORK_END_HOUR = 19    # 晚上7点（不包含）
+    DEFAULT_WORK_DAYS = [1, 2, 3, 4, 5]  # 周一到周五
+
+    @classmethod
+    def _get_work_config(cls):
+        """从数据库获取工作时间配置，如果不可用则使用默认值"""
+        # 支持动态配置：work_start_hour, work_end_hour, work_days
+
+    @classmethod
+    def get_work_hours_per_day(cls):
+        """获取每日工作小时数"""
+        work_start_hour, work_end_hour, _ = cls._get_work_config()
+        return work_end_hour - work_start_hour  # 默认10小时
 ```
 
 ### 2.2 SLA阈值矩阵
 
-| 商机状态 | 违规阈值 | 标准阈值 | 升级阈值 | 业务含义 |
+| 商机状态 | 提醒阈值 | 升级阈值 | 通知目标 | 业务含义 |
 |---------|---------|---------|---------|---------|
-| 待预约 | 12小时 | 24小时 | 24小时 | 销售需要及时联系客户并预约 |
-| 暂不上门 | 12小时 | 48小时 | 48小时 | 客户首次拒绝，需要持续跟进 |
+| 待预约 | 4小时 | 8小时 | 服务商群 → 运营群 | 销售需要及时联系客户并预约 |
+| 暂不上门 | 8小时 | 16小时 | 服务商群 → 运营群 | 客户首次拒绝，需要持续跟进 |
 | 其他状态 | - | - | - | 不监控 |
 
 ### 2.3 SLA状态分级
@@ -40,19 +49,16 @@ class BusinessTimeCalculator:
 graph TD
     START[商机创建] --> CALC[工作时间计算]
     CALC --> CHECK{SLA检查}
-    
-    CHECK -->|< 12h| NORMAL[正常状态]
-    CHECK -->|≥ 12h| VIOLATION[违规状态]
-    CHECK -->|≥ 24h/48h| OVERDUE[逾期状态]
-    CHECK -->|≥ 24h/48h| ESCALATION[升级状态]
-    
-    VIOLATION --> NOTIFY1[发送违规通知]
-    OVERDUE --> NOTIFY2[发送标准通知]
-    ESCALATION --> NOTIFY3[发送升级通知]
-    
+
+    CHECK -->|< 4h/8h| NORMAL[正常状态]
+    CHECK -->|≥ 4h/8h| REMINDER[提醒状态]
+    CHECK -->|≥ 8h/16h| ESCALATION[升级状态]
+
+    REMINDER --> NOTIFY1[发送提醒通知<br/>→ 服务商群]
+    ESCALATION --> NOTIFY2[发送升级通知<br/>→ 运营群]
+
     NOTIFY1 --> COOLDOWN1[2小时冷静期]
     NOTIFY2 --> COOLDOWN2[2小时冷静期]
-    NOTIFY3 --> COOLDOWN3[2小时冷静期]
 ```
 
 ## 3. 核心组件架构
@@ -192,72 +198,118 @@ class OpportunityInfo(BaseModel):
     
     # SLA计算字段
     elapsed_hours: Optional[float] = None
-    is_violation: Optional[bool] = None
-    is_overdue: Optional[bool] = None
-    is_approaching_overdue: Optional[bool] = None
-    overdue_hours: Optional[float] = None
-    sla_threshold_hours: Optional[int] = None
-    escalation_level: Optional[int] = 0
-    sla_progress_ratio: Optional[float] = None
+    is_violation: Optional[bool] = None          # 是否需要提醒（兼容字段）
+    is_overdue: Optional[bool] = None            # 是否需要升级（兼容字段）
+    is_approaching_overdue: Optional[bool] = None  # 是否即将升级
+    overdue_hours: Optional[float] = None        # 逾期时长（基于升级阈值）
+    sla_threshold_hours: Optional[int] = None    # SLA阈值（升级阈值）
+    escalation_level: Optional[int] = 0          # 升级级别：0=正常，1=需要升级
+    sla_progress_ratio: Optional[float] = None   # SLA进度比例（基于升级阈值）
 ```
 
-### 5.2 SLA阈值获取
+### 5.2 数据库配置
+
+系统支持通过数据库动态配置SLA阈值，配置项如下：
+
+```sql
+-- SLA阈值配置 - 两级体系
+INSERT INTO system_config (config_key, config_value, description) VALUES
+('sla_pending_reminder', '4', '待预约提醒阈值（工作小时）→服务商群'),
+('sla_pending_escalation', '8', '待预约升级阈值（工作小时）→运营群'),
+('sla_not_visiting_reminder', '8', '暂不上门提醒阈值（工作小时）→服务商群'),
+('sla_not_visiting_escalation', '16', '暂不上门升级阈值（工作小时）→运营群');
+```
+
+### 5.3 SLA阈值获取
 
 ```python
-def get_sla_threshold(self, threshold_type: str = "standard") -> int:
-    """获取SLA阈值"""
+def get_sla_threshold(self, threshold_type: str = "reminder") -> int:
+    """
+    获取SLA阈值 - 两级体系
+
+    Args:
+        threshold_type: 阈值类型
+            - "reminder": 提醒阈值（4/8小时）→ 服务商群
+            - "escalation": 升级阈值（8/16小时）→ 运营群
+
+    Returns:
+        SLA阈值（工作小时）
+    """
+    # 尝试从数据库获取配置
+    try:
+        from .database import get_database_manager
+        db_manager = get_database_manager()
+
+        if self.order_status == OpportunityStatus.PENDING_APPOINTMENT:
+            config_key = f"sla_pending_{threshold_type}"
+        elif self.order_status == OpportunityStatus.TEMPORARILY_NOT_VISITING:
+            config_key = f"sla_not_visiting_{threshold_type}"
+        else:
+            return 0  # 其他状态不需要监控
+
+        config_value = db_manager.get_system_config(config_key)
+        if config_value:
+            return int(config_value)
+    except Exception:
+        # 如果数据库获取失败，使用默认值
+        pass
+
+    # 默认值
     if self.order_status == OpportunityStatus.PENDING_APPOINTMENT:
-        if threshold_type == "violation":
-            return 12  # 待预约：12小时违规
-        elif threshold_type == "standard":
-            return 24  # 待预约：24小时标准
-        elif threshold_type == "escalation":
-            return 24  # 待预约：24小时升级
+        defaults = {"reminder": 4, "escalation": 8}
     elif self.order_status == OpportunityStatus.TEMPORARILY_NOT_VISITING:
-        if threshold_type == "violation":
-            return 12  # 暂不上门：12小时违规
-        elif threshold_type == "standard":
-            return 48  # 暂不上门：48小时标准
-        elif threshold_type == "escalation":
-            return 48  # 暂不上门：48小时升级
-    
-    return 0  # 其他状态不需要监控
+        defaults = {"reminder": 8, "escalation": 16}
+    else:
+        return 0
+
+    return defaults.get(threshold_type, 0)
 ```
 
-### 5.3 SLA状态检查
+### 5.4 SLA状态检查
 
 ```python
 def check_overdue_status(self, use_business_time: bool = True) -> tuple[bool, bool, bool, float, int, float]:
-    """检查逾期状态"""
-    elapsed = self.calculate_elapsed_hours(use_business_time)
-    
-    # 获取各种阈值
-    violation_threshold = self.get_sla_threshold("violation")
-    standard_threshold = self.get_sla_threshold("standard")
+    """
+    检查逾期状态 - 两级SLA体系
+
+    Args:
+        use_business_time: 是否使用工作时间计算
+
+    Returns:
+        tuple: (是否需要提醒, 是否需要升级, 是否即将升级, 逾期时长, 升级级别, SLA进度比例)
+    """
+    # 如果已经有elapsed_hours，使用现有值，否则重新计算
+    if self.elapsed_hours is None:
+        elapsed = self.calculate_elapsed_hours(use_business_time)
+    else:
+        elapsed = self.elapsed_hours
+
+    # 获取两级阈值
+    reminder_threshold = self.get_sla_threshold("reminder")
     escalation_threshold = self.get_sla_threshold("escalation")
-    
-    if standard_threshold == 0:
+
+    if escalation_threshold == 0:
         return False, False, False, 0, 0, 0.0
-    
-    # 计算SLA进度比例（基于标准阈值）
-    sla_progress = elapsed / standard_threshold if standard_threshold > 0 else 0.0
-    
-    # 判断是否违规（12小时）
-    is_violation = elapsed > violation_threshold if violation_threshold > 0 else False
-    
-    # 判断是否逾期（标准阈值）
-    is_overdue = elapsed > standard_threshold
-    overdue_hours = max(0, elapsed - standard_threshold) if is_overdue else 0
-    
-    # 判断是否即将逾期（达到标准阈值的80%）
-    is_approaching_overdue = not is_overdue and sla_progress >= 0.8
-    
-    # 判断升级级别（基于升级阈值）
-    escalation_level = 0
-    if escalation_threshold > 0 and elapsed > escalation_threshold:
-        escalation_level = 1
-    
-    return is_violation, is_overdue, is_approaching_overdue, overdue_hours, escalation_level, sla_progress
+
+    # 计算SLA进度比例（基于升级阈值）
+    sla_progress = elapsed / escalation_threshold if escalation_threshold > 0 else 0.0
+
+    # 判断是否需要提醒（4/8小时）
+    is_reminder = elapsed > reminder_threshold if reminder_threshold > 0 else False
+
+    # 判断是否需要升级（8/16小时）
+    is_escalation = elapsed > escalation_threshold
+
+    # 判断是否即将升级（达到升级阈值的80%）
+    is_approaching_escalation = not is_escalation and sla_progress >= 0.8
+
+    # 计算逾期时长（基于升级阈值）
+    overdue_hours = max(0, elapsed - escalation_threshold) if is_escalation else 0
+
+    # 升级级别：0=正常，1=需要升级
+    escalation_level = 1 if is_escalation else 0
+
+    return is_reminder, is_escalation, is_approaching_escalation, overdue_hours, escalation_level, sla_progress
 ```
 
 ## 6. Agent工作流中的SLA处理
@@ -272,25 +324,25 @@ def _analyze_status_node(self, state: AgentState) -> AgentState:
     with self.execution_tracker.track_step("analyze_status", {"run_id": run_id}) as output:
         opportunities = state.get("opportunities", [])
         
-        # 分析超时状态
-        overdue_opportunities = [opp for opp in opportunities if opp.is_overdue]
-        escalation_opportunities = [opp for opp in opportunities if opp.escalation_level > 0]
-        
+        # 分析SLA状态
+        reminder_opportunities = [opp for opp in opportunities if getattr(opp, 'is_violation', False)]  # 提醒状态
+        escalation_opportunities = [opp for opp in opportunities if opp.escalation_level > 0]  # 升级状态
+
         # 按组织分组统计
         org_stats = {}
         for opp in opportunities:
             if opp.org_name not in org_stats:
-                org_stats[opp.org_name] = {"total": 0, "overdue": 0, "escalation": 0}
+                org_stats[opp.org_name] = {"total": 0, "reminder": 0, "escalation": 0}
             org_stats[opp.org_name]["total"] += 1
-            if opp.is_overdue:
-                org_stats[opp.org_name]["overdue"] += 1
+            if getattr(opp, 'is_violation', False):  # 提醒状态
+                org_stats[opp.org_name]["reminder"] += 1
             if opp.escalation_level > 0:
                 org_stats[opp.org_name]["escalation"] += 1
-        
+
         # 更新状态
         state["context"]["analysis_result"] = {
             "total_opportunities": len(opportunities),
-            "overdue_count": len(overdue_opportunities),
+            "reminder_count": len(reminder_opportunities),
             "escalation_count": len(escalation_opportunities),
             "organization_stats": org_stats
         }
@@ -314,7 +366,7 @@ def _make_decision_node(self, state: AgentState) -> AgentState:
         
         # 输出决策结果
         output["notification_tasks_created"] = len(notification_tasks)
-        output["standard_tasks"] = len([t for t in notification_tasks if t.notification_type.value == "standard"])
+        output["reminder_tasks"] = len([t for t in notification_tasks if t.notification_type.value == "reminder"])
         output["escalation_tasks"] = len([t for t in notification_tasks if t.notification_type.value == "escalation"])
 ```
 
@@ -333,35 +385,21 @@ def create_notification_tasks(self, opportunities: List[OpportunityInfo], run_id
         # 更新商机的计算字段
         opp.update_overdue_info(use_business_time=True)
 
-        # 创建违规通知任务（12小时）
-        if opp.is_violation:
-            if not self._has_pending_task(opp.order_num, NotificationTaskType.VIOLATION):
-                violation_task = NotificationTask(
+        # 创建提醒通知任务（4/8小时）→ 服务商群
+        if getattr(opp, 'is_violation', False):  # 提醒状态
+            if not self._has_pending_task(opp.order_num, NotificationTaskType.REMINDER):
+                reminder_task = NotificationTask(
                     order_num=opp.order_num,
                     org_name=opp.org_name,
-                    notification_type=NotificationTaskType.VIOLATION,
+                    notification_type=NotificationTaskType.REMINDER,
                     due_time=now_china_naive(),
                     created_run_id=run_id,
                     cooldown_hours=self.notification_cooldown_hours,
                     max_retry_count=self.max_retry_count
                 )
-                tasks.append(violation_task)
+                tasks.append(reminder_task)
 
-        # 创建标准通知任务（24/48小时）
-        if opp.is_overdue:
-            if not self._has_pending_task(opp.order_num, NotificationTaskType.STANDARD):
-                standard_task = NotificationTask(
-                    order_num=opp.order_num,
-                    org_name=opp.org_name,
-                    notification_type=NotificationTaskType.STANDARD,
-                    due_time=now_china_naive(),
-                    created_run_id=run_id,
-                    cooldown_hours=self.notification_cooldown_hours,
-                    max_retry_count=self.max_retry_count
-                )
-                tasks.append(standard_task)
-
-        # 如果需要升级，创建升级通知任务
+        # 创建升级通知任务（8/16小时）→ 运营群
         if opp.escalation_level > 0:
             if not self._has_pending_task(opp.order_num, NotificationTaskType.ESCALATION):
                 escalation_task = NotificationTask(
@@ -382,9 +420,13 @@ def create_notification_tasks(self, opportunities: List[OpportunityInfo], run_id
 
 ```python
 class NotificationTaskType(str, Enum):
-    VIOLATION = "violation"      # 违规通知（12小时）
-    STANDARD = "standard"        # 标准通知（24/48小时）
-    ESCALATION = "escalation"    # 升级通知（运营介入）
+    """通知任务类型枚举 - 两级SLA体系"""
+    REMINDER = "reminder"      # 提醒通知（4/8小时）→ 服务商群
+    ESCALATION = "escalation"  # 升级通知（8/16小时）→ 运营群
+
+    # 向后兼容的别名
+    VIOLATION = "reminder"     # 兼容原有的violation类型
+    STANDARD = "escalation"    # 兼容原有的standard类型
 ```
 
 ## 8. 决策引擎
@@ -397,41 +439,40 @@ class NotificationTaskType(str, Enum):
 def evaluate_task(self, opportunity: OpportunityInfo, context: DecisionContext = None) -> DecisionResult:
     """基于规则评估任务"""
     
-    # 规则1: 检查是否超时
-    if not task.is_overdue:
-        return DecisionResult(
-            action="skip",
-            priority=Priority.LOW,
-            reasoning="任务未超时，无需处理",
-            confidence=1.0
-        )
-    
-    # 规则2: 检查通知冷却时间
-    if self._is_in_cooldown(task):
-        return DecisionResult(
-            action="skip",
-            priority=Priority.LOW,
-            reasoning="任务在通知冷却期内",
-            confidence=1.0
-        )
-    
-    # 规则3: 基于超时程度决策
-    overdue_ratio = task.overdue_ratio
-    
-    if overdue_ratio >= 2.0:  # 超时100%以上
+    # 规则1: 检查是否需要升级
+    if opportunity.escalation_level > 0:
         return DecisionResult(
             action="escalate",
             priority=Priority.URGENT,
-            reasoning=f"任务严重超时{overdue_ratio:.1%}，需要升级处理",
+            reasoning=f"商机已达到升级阈值，需要运营介入",
             confidence=1.0
         )
-    elif overdue_ratio >= 1.5:  # 超时50%以上
+
+    # 规则2: 检查是否需要提醒
+    if getattr(opportunity, 'is_violation', False):
         return DecisionResult(
             action="notify",
             priority=Priority.HIGH,
-            reasoning=f"任务超时{overdue_ratio:.1%}，需要高优先级通知",
+            reasoning=f"商机已达到提醒阈值，需要发送提醒",
             confidence=1.0
         )
+
+    # 规则3: 检查通知冷却时间
+    if self._is_in_cooldown(opportunity):
+        return DecisionResult(
+            action="skip",
+            priority=Priority.LOW,
+            reasoning="商机在通知冷却期内",
+            confidence=1.0
+        )
+
+    # 规则4: 正常状态，无需处理
+    return DecisionResult(
+        action="skip",
+        priority=Priority.LOW,
+        reasoning="商机未达到SLA阈值，无需处理",
+        confidence=1.0
+    )
 ```
 
 ### 8.2 混合决策模式
@@ -494,8 +535,8 @@ def show_opportunity_list():
             "状态": opp.order_status,
             "创建时间": format_china_time(opp.create_time, "%Y-%m-%d %H:%M"),
             "工作时长(小时)": f"{opp.elapsed_hours:.1f}",
-            "是否违规": "🚨 是" if getattr(opp, 'is_violation', False) else "否",
-            "是否逾期": "⚠️ 是" if opp.is_overdue else "否",
+            "是否需要提醒": "🚨 是" if getattr(opp, 'is_violation', False) else "否",
+            "是否需要升级": "⚠️ 是" if opp.escalation_level > 0 else "否",
             "升级级别": opp.escalation_level,
             "SLA进度": f"{(getattr(opp, 'sla_progress_ratio', 0) * 100):.1f}%"
         })
@@ -530,14 +571,14 @@ col1, col2, col3, col4 = st.columns(4)
 
 with col2:
     st.metric(
-        label="逾期商机",
-        value=str(overdue_opportunities),
+        label="需要提醒",
+        value=str(reminder_opportunities),
         delta=f"监控{total_opportunities}个" if total_opportunities > 0 else "0"
     )
-    if overdue_opportunities > 0:
-        st.warning(f"{overdue_opportunities}个商机需要关注")
+    if reminder_opportunities > 0:
+        st.warning(f"{reminder_opportunities}个商机需要提醒")
     else:
-        st.success("暂无逾期商机")
+        st.success("暂无需要提醒的商机")
 
 with col3:
     st.metric(
@@ -559,17 +600,17 @@ with col3:
 col5, col6, col7, col8 = st.columns(4)
 
 with col5:
-    violation_count = opportunity_stats.get("violation_count", 0)
+    reminder_count = opportunity_stats.get("reminder_count", 0)
     st.metric(
-        label="违规商机",
-        value=str(violation_count),
-        delta="12小时内" if violation_count > 0 else "正常"
+        label="提醒商机",
+        value=str(reminder_count),
+        delta="4/8小时内" if reminder_count > 0 else "正常"
     )
 
 with col6:
     approaching_count = opportunity_stats.get("approaching_count", 0)
     st.metric(
-        label="即将逾期",
+        label="即将升级",
         value=str(approaching_count),
         delta="需关注" if approaching_count > 0 else "良好"
     )
@@ -583,12 +624,12 @@ with col7:
     )
 
 with col8:
-    overdue_rate = opportunity_stats.get("overdue_rate", 0)
-    approaching_rate = opportunity_stats.get("approaching_rate", 0)
+    reminder_rate = opportunity_stats.get("reminder_rate", 0)
+    escalation_rate = opportunity_stats.get("escalation_rate", 0)
     st.metric(
         label="风险比例",
-        value=f"{overdue_rate + approaching_rate:.1f}%",
-        delta="需关注" if (overdue_rate + approaching_rate) > 20 else "良好"
+        value=f"{reminder_rate + escalation_rate:.1f}%",
+        delta="需关注" if (reminder_rate + escalation_rate) > 20 else "良好"
     )
 ```
 
@@ -628,10 +669,10 @@ def show_business_time_config():
         with col_ex2:
             st.write(f"工作时长: {elapsed_hours:.1f}小时")
         with col_ex3:
-            if elapsed_hours > 12:
-                st.error("🚨 已违规")
-            elif elapsed_hours > 8:
-                st.warning("⚠️ 接近违规")
+            if elapsed_hours > 8:  # 升级阈值
+                st.error("🚨 需要升级")
+            elif elapsed_hours > 4:  # 提醒阈值
+                st.warning("⚠️ 需要提醒")
             else:
                 st.success("✅ 正常")
 ```
@@ -682,11 +723,11 @@ CREATE TABLE opportunity_cache (
 
     -- SLA计算字段
     elapsed_hours REAL,                -- 已用工作时长
-    is_overdue BOOLEAN,                -- 是否逾期
+    is_overdue BOOLEAN,                -- 是否需要升级（兼容字段）
     escalation_level INTEGER,          -- 升级级别
     sla_threshold_hours INTEGER,       -- SLA阈值
     sla_progress_ratio REAL,           -- SLA进度比例
-    is_violation BOOLEAN,              -- 是否违规（v0.2.0新增）
+    is_violation BOOLEAN,              -- 是否需要提醒（兼容字段）
 
     -- 缓存管理
     last_updated TIMESTAMP,            -- 最后更新时间
@@ -702,7 +743,7 @@ CREATE TABLE notification_tasks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     order_num TEXT NOT NULL,           -- 关联的工单号
     org_name TEXT NOT NULL,            -- 组织名称
-    notification_type TEXT NOT NULL,   -- 'violation', 'standard', 'escalation'
+    notification_type TEXT NOT NULL,   -- 'reminder', 'escalation'
     due_time TIMESTAMP NOT NULL,       -- 应该通知的时间
     status TEXT DEFAULT 'pending',     -- 'pending', 'sent', 'failed', 'confirmed'
     message TEXT,                      -- 通知内容
@@ -756,13 +797,13 @@ def update_overdue_info(self, use_business_time: bool = True):
     """实时更新逾期相关信息"""
     is_violation, is_overdue, is_approaching_overdue, overdue_hours, escalation_level, sla_progress = self.check_overdue_status(use_business_time)
 
-    # 更新字段
-    self.is_violation = is_violation
-    self.is_overdue = is_overdue
-    self.is_approaching_overdue = is_approaching_overdue
+    # 更新字段（保持向后兼容）
+    self.is_violation = is_reminder      # 提醒状态映射到原来的违规字段
+    self.is_overdue = is_escalation      # 升级状态映射到原来的逾期字段
+    self.is_approaching_overdue = is_approaching_escalation
     self.overdue_hours = overdue_hours
     self.escalation_level = escalation_level
-    self.sla_threshold_hours = self.get_sla_threshold("standard")
+    self.sla_threshold_hours = self.get_sla_threshold("escalation")  # 使用升级阈值作为主要阈值
     self.sla_progress_ratio = sla_progress
 
 # 缓存存储（性能优化）
@@ -772,11 +813,11 @@ def save_opportunity_cache(self, opportunity: OpportunityInfo) -> bool:
         order_num=opportunity.order_num,
         # ... 其他字段
         elapsed_hours=opportunity.elapsed_hours,
-        is_overdue=opportunity.is_overdue,
+        is_overdue=opportunity.is_overdue,  # 升级状态
         escalation_level=opportunity.escalation_level,
         sla_threshold_hours=opportunity.sla_threshold_hours,
         sla_progress_ratio=opportunity.sla_progress_ratio,
-        is_violation=getattr(opportunity, 'is_violation', False)
+        is_violation=getattr(opportunity, 'is_violation', False)  # 提醒状态
     )
 ```
 
@@ -798,12 +839,11 @@ CREATE TABLE agent_history (
 -- output_data示例
 {
     "total_opportunities": 25,
-    "overdue_count": 8,
+    "reminder_count": 12,
     "escalation_count": 3,
-    "violation_count": 12,
     "organization_stats": {
-        "北京销售部": {"total": 10, "overdue": 3, "escalation": 1},
-        "上海销售部": {"total": 15, "overdue": 5, "escalation": 2}
+        "北京销售部": {"total": 10, "reminder": 5, "escalation": 1},
+        "上海销售部": {"total": 15, "reminder": 7, "escalation": 2}
     }
 }
 ```
@@ -868,9 +908,9 @@ sequenceDiagram
 - **记录内容**: SLA计算过程、状态变化、决策结果
 
 ```log
-2025-06-27 10:00:15 INFO [analyze_status] Analyzed 25 opportunities: 8 overdue, 3 need escalation
+2025-06-27 10:00:15 INFO [analyze_status] Analyzed 25 opportunities: 12 need reminder, 3 need escalation
 2025-06-27 10:00:16 INFO [make_decision] Decision made: created 15 notification tasks
-2025-06-27 10:00:17 INFO [NotificationManager] Created VIOLATION task for order GD20250600803
+2025-06-27 10:00:17 INFO [NotificationManager] Created REMINDER task for order GD20250600803
 ```
 
 #### 11.3.2 数据库记录
@@ -923,7 +963,7 @@ sequenceDiagram
 |---------|---------|---------|---------|
 | 1. 定时触发 | ✅ 已实现 | Scheduler | 60分钟间隔触发 |
 | 2. 获取任务数据 | ✅ 已实现 | `fetch_data_node` | 获取商机数据 |
-| 3. 分析超时状态 | ✅ 已实现 | `analyze_status_node` | **SLA状态分析** |
+| 3. 分析SLA状态 | ✅ 已实现 | `analyze_status_node` | **SLA状态分析** |
 | 4. 智能决策 | ✅ 已实现 | `make_decision_node` | **基于SLA的决策** |
 | 5. 发送通知 | ✅ 已实现 | `send_notifications_node` | 执行SLA通知 |
 | 6. 记录结果 | ✅ 已实现 | `record_results_node` | 记录SLA统计 |
@@ -935,15 +975,13 @@ graph TD
     A[获取商机数据] --> B[计算工作时长]
     B --> C[判断SLA状态]
     C --> D{SLA状态检查}
-    D -->|违规| E[创建违规通知]
-    D -->|逾期| F[创建标准通知]
-    D -->|升级| G[创建升级通知]
-    D -->|正常| H[跳过处理]
-    E --> I[发送通知]
-    F --> I
-    G --> I
-    H --> J[记录结果]
-    I --> J
+    D -->|提醒| E[创建提醒通知]
+    D -->|升级| F[创建升级通知]
+    D -->|正常| G[跳过处理]
+    E --> H[发送通知]
+    F --> H
+    G --> I[记录结果]
+    H --> I
 ```
 
 ### 12.3 数据架构一致性
@@ -994,11 +1032,10 @@ graph TD
 #### 12.4.2 分级SLA体系
 
 **架构要求**: 多层次SLA监控
-**实现状态**: ✅ 超出设计
-- 违规阈值：12小时（新增）
-- 标准阈值：24/48小时
-- 升级阈值：24/48小时
-- 三级通知类型
+**实现状态**: ✅ 完全实现
+- 提醒阈值：4/8小时 → 服务商群
+- 升级阈值：8/16小时 → 运营群
+- 两级通知类型
 
 #### 12.4.3 通知管理
 
@@ -1024,13 +1061,13 @@ FSOA系统的SLA模块已经完全按照架构设计实现，并在以下方面�
 
 1. **精确监控**: 基于工作时间的精确SLA计算
 2. **智能决策**: 规则+LLM的混合决策机制
-3. **分级处理**: 违规/逾期/升级的渐进式处理
+3. **分级处理**: 提醒/升级的两级渐进式处理
 4. **实时响应**: 动态SLA状态更新和通知触发
 
 ### 13.3 技术亮点
 
 1. **工作时间计算**: 跨日跨周末的精确时间计算
-2. **分级SLA体系**: 12小时违规 + 24/48小时逾期 + 升级机制
+2. **两级SLA体系**: 4/8小时提醒 + 8/16小时升级机制
 3. **智能通知**: 冷静期 + 重试机制 + 去重处理
 4. **实时计算**: 动态SLA状态，无需预存储
 
@@ -1038,8 +1075,8 @@ FSOA系统的SLA模块已经完全按照架构设计实现，并在以下方面�
 
 > 本设计文档详细描述了FSOA系统SLA模块的工作原理、技术实现和架构一致性分析
 >
-> 通过精确的工作时间计算和分级SLA体系，实现了智能化的现场服务监控
+> 通过精确的工作时间计算和两级SLA体系，实现了智能化的现场服务监控
 >
-> 文档版本: v1.0
+> 文档版本: v2.0 - 两级SLA体系
 >
-> 最后更新: 2025-06-27
+> 最后更新: 2025-06-29
