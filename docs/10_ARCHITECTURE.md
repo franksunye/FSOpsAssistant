@@ -5,15 +5,16 @@ Field Service Operations Assistant - 现场服务运营助手
 ## 1. 架构目标
 
 ### 业务目标
-- **主动监控**：自动检测现场服务时效超标
-- **智能决策**：基于规则+LLM的混合决策机制
-- **自动化运营**：减少人工干预，提升运营效率
-- **可扩展性**：支持未来功能扩展和业务场景增加
+- **智能监控**：自动检测商机处理时效，实现两级SLA管理
+- **分级通知**：4小时提醒 + 8小时升级的渐进式通知机制
+- **自动化运营**：减少人工干预，提升运营效率和响应速度
+- **数据驱动**：基于真实业务数据的智能决策和分析
 
 ### 技术目标
-- **非侵入式**：通过Metabase获取数据，不影响现有业务系统
-- **Agentic特性**：体现主动性、自主决策、目标导向
-- **企业级**：稳定可靠，支持多租户（多企微群）
+- **统一数据模型**：基于OpportunityInfo的一致性架构
+- **管理器模式**：清晰的分层管理和职责分离
+- **非侵入式集成**：通过Metabase API获取数据，不影响现有系统
+- **企业级设计**：支持多组织、多群组的复杂业务场景
 
 ## 2. 总体架构
 
@@ -27,62 +28,57 @@ graph TB
         DS[DeepSeek<br/>LLM服务]
     end
 
-    subgraph "FSOA Agent 系统"
-        subgraph "Agent 编排层"
-            AO[Agent Orchestrator<br/>LangGraph DAG]
-            SC[Scheduler<br/>定时调度器]
+    subgraph "FSOA 系统架构"
+        subgraph "管理器层"
+            DSM[DataStrategyManager<br/>数据策略管理]
+            NM[NotificationManager<br/>通知任务管理]
+            DM[DecisionEngine<br/>决策引擎]
         end
 
-        subgraph "工具层 (Tool Layer)"
-            DF[Data Fetcher<br/>数据获取]
-            DE[Decision Engine<br/>决策引擎]
-            MS[Message Sender<br/>消息发送]
-            MM[Memory Manager<br/>记忆管理]
+        subgraph "业务层"
+            BF[BusinessFormatter<br/>消息格式化]
+            SC[SLACalculator<br/>SLA计算]
+            CC[CacheManager<br/>缓存管理]
         end
 
         subgraph "数据层"
             DB[(SQLite<br/>本地数据库)]
-            DM[Data Models<br/>数据模型]
+            OM[OpportunityInfo<br/>统一数据模型]
         end
 
         subgraph "用户界面"
-            UI[Streamlit UI<br/>管理界面]
+            UI[Streamlit UI<br/>Web管理界面]
             API[REST API<br/>接口服务]
         end
     end
 
     subgraph "核心流程"
-        P1[1. 定时触发]
-        P2[2. 获取任务数据]
-        P3[3. 分析超时状态]
-        P4[4. 智能决策]
-        P5[5. 发送通知]
-        P6[6. 记录结果]
+        P1[1. 数据获取与缓存]
+        P2[2. SLA状态计算]
+        P3[3. 通知任务创建]
+        P4[4. 智能决策处理]
+        P5[5. 消息格式化]
+        P6[6. 分级通知发送]
     end
 
     %% 数据流连接
-    SC --> AO
-    AO --> DF
-    DF --> MB
-    AO --> DE
-    DE --> DS
-    AO --> MS
-    MS --> WX
-    AO --> MM
-    MM --> DB
-    DM --> DB
+    DSM --> MB
+    DSM --> CC
+    DSM --> OM
+    NM --> DSM
+    NM --> DM
+    DM --> DS
+    NM --> BF
+    BF --> WX
+    NM --> DB
+    OM --> DB
 
     %% UI连接
-    UI --> API
-    API --> DB
-    API --> AO
+    UI --> DSM
+    UI --> NM
+    UI --> DB
 
     %% 流程连接
-    P1 --> P2
-    P2 --> P3
-    P3 --> P4
-    P4 --> P5
-    P5 --> P6
     P1 --> P2
     P2 --> P3
     P3 --> P4
@@ -91,16 +87,16 @@ graph TB
 
     %% 样式
     classDef external fill:#e1f5fe
-    classDef agent fill:#f3e5f5
-    classDef tool fill:#e8f5e8
+    classDef manager fill:#f3e5f5
+    classDef business fill:#e8f5e8
     classDef data fill:#fff3e0
     classDef ui fill:#fce4ec
     classDef process fill:#f1f8e9
 
     class MB,WX,DS external
-    class AO,SC agent
-    class DF,DE,MS,MM tool
-    class DB,DM data
+    class DSM,NM,DM manager
+    class BF,SC,CC business
+    class DB,OM data
     class UI,API ui
     class P1,P2,P3,P4,P5,P6 process
 ```
@@ -109,43 +105,46 @@ graph TB
 
 ```
 ┌─────────────────┐    ┌──────────────────────────────┐
-│   Metabase      │    │        FSOA Agent            │
+│   Metabase      │    │        FSOA 系统             │
 │  (数据源)        │◄───┤  ┌─────────────────────────┐  │
-└─────────────────┘    │  │   Agent Orchestrator    │  │
-                       │  │    (LangGraph DAG)      │  │
+└─────────────────┘    │  │ DataStrategyManager     │  │
+                       │  │   (数据策略管理)         │  │
 ┌─────────────────┐    │  └─────────────────────────┘  │
 │  企微群 A/B/C    │◄───┤  ┌─────────────────────────┐  │
-│  (通知渠道)      │    │  │     Tool Layer          │  │
-└─────────────────┘    │  │ • Data Fetcher          │  │
-                       │  │ • Message Sender        │  │
-┌─────────────────┐    │  │ • Decision Engine       │  │
-│   SQLite        │◄───┤  │ • Memory Manager        │  │
-│  (本地存储)      │    │  └─────────────────────────┘  │
-└─────────────────┘    └──────────────────────────────┘
-                                      ▲
-┌─────────────────┐                   │
-│  Streamlit UI   │───────────────────┘
-│  (管理界面)      │
-└─────────────────┘
+│  (通知渠道)      │    │  │ NotificationManager     │  │
+└─────────────────┘    │  │   (通知任务管理)         │  │
+                       │  │ • DecisionEngine        │  │
+┌─────────────────┐    │  │ • BusinessFormatter     │  │
+│   SQLite        │◄───┤  └─────────────────────────┘  │
+│  (本地存储)      │    │  ┌─────────────────────────┐  │
+└─────────────────┘    │  │    Streamlit UI         │  │
+                       │  │   (Web管理界面)          │  │
+┌─────────────────┐    │  │ • 运营仪表板             │  │
+│   DeepSeek      │◄───┤  │ • 通知管理               │  │
+│  (LLM服务)      │    │  │ • 系统配置               │  │
+└─────────────────┘    │  └─────────────────────────┘  │
+                       └──────────────────────────────┘
 ```
 
 ## 3. 核心组件
 
-### 3.1 Agent Orchestrator (LangGraph)
-- **定时触发**：基于Cron的定时任务调度
-- **状态管理**：维护Agent执行状态和上下文
-- **流程控制**：DAG节点控制执行流程
-- **错误处理**：异常捕获和恢复机制
+### 3.1 DataStrategyManager (数据策略管理)
+- **数据获取**：从Metabase获取商机数据
+- **智能缓存**：多级缓存提升性能
+- **SLA计算**：动态计算商机时效状态
+- **数据转换**：统一的OpportunityInfo模型
 
-### 3.2 Tool Layer
-```python
-# 核心工具集 (重构后)
-- fetch_overdue_opportunities()    # 从Metabase获取逾期商机
-- get_all_opportunities()          # 获取所有商机数据
-- create_notification_tasks()      # 创建通知任务
-- execute_notification_tasks()     # 执行通知任务
-- start_agent_execution()          # 开始Agent执行
-- complete_agent_execution()       # 完成Agent执行
+### 3.2 NotificationManager (通知任务管理)
+- **两级SLA**：4小时提醒 + 8小时升级机制
+- **任务调度**：智能的通知任务创建和执行
+- **消息路由**：组织群 vs 运营群的智能路由
+- **状态追踪**：完整的通知任务生命周期管理
+
+### 3.3 DecisionEngine (决策引擎)
+- **规则决策**：基于SLA阈值的规则引擎
+- **LLM增强**：可选的DeepSeek AI决策优化
+- **混合模式**：规则+LLM的智能决策机制
+- **降级处理**：LLM失败时的规则降级
 
 # 管理器组件
 - BusinessDataStrategy            # 业务数据处理策略
