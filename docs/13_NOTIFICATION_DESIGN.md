@@ -673,7 +673,6 @@ CREATE TABLE group_configs (
     webhook_url TEXT,                  -- 企微群Webhook URL
     enabled BOOLEAN DEFAULT TRUE,      -- 是否启用
     notification_cooldown_minutes INTEGER DEFAULT 120,  -- 通知冷却时间（分钟）
-    max_notifications_per_hour INTEGER DEFAULT 10,      -- 每小时最大通知数
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

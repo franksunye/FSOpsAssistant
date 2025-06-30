@@ -256,7 +256,6 @@ class GroupConfig(BaseModel):
     name: str
     webhook_url: str
     enabled: bool = True
-    max_notifications_per_hour: int = 10
     notification_cooldown_minutes: int = 30
     created_at: datetime
     updated_at: datetime

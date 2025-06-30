@@ -146,7 +146,6 @@ class GroupConfigTable(Base):
     name = Column(String(255), nullable=False)
     webhook_url = Column(String(500), nullable=False)
     enabled = Column(Boolean, default=True)
-    max_notifications_per_hour = Column(Integer, default=10)
     notification_cooldown_minutes = Column(Integer, default=30)
     created_at = Column(DateTime, nullable=False)
     updated_at = Column(DateTime, nullable=False)
@@ -179,7 +178,6 @@ class DatabaseManager:
         default_configs = [
             ("agent_execution_interval", "60", "Agent执行间隔（分钟）"),
             ("agent_max_retries", "3", "Agent最大重试次数"),
-            ("max_notifications_per_hour", "10", "每小时最大通知数"),
             ("notification_cooldown", "30", "通知冷却时间（分钟）"),
             ("webhook_api_interval", "3", "Webhook API发送间隔（秒）"),
             ("use_llm_optimization", "true", "是否使用LLM优化"),
@@ -862,7 +860,7 @@ class DatabaseManager:
             ).first()
 
     def create_or_update_group_config(self, group_id: str, name: str, webhook_url: str,
-                                    enabled: bool = True, max_notifications_per_hour: int = 10,
+                                    enabled: bool = True,
                                     notification_cooldown_minutes: int = 30) -> GroupConfigTable:
         """创建或更新群组配置"""
         with self.get_session() as session:
@@ -878,7 +876,6 @@ class DatabaseManager:
                 existing.name = name
                 existing.webhook_url = webhook_url
                 existing.enabled = enabled
-                existing.max_notifications_per_hour = max_notifications_per_hour
                 existing.notification_cooldown_minutes = notification_cooldown_minutes
                 existing.updated_at = now
                 config = existing
@@ -889,7 +886,6 @@ class DatabaseManager:
                     name=name,
                     webhook_url=webhook_url,
                     enabled=enabled,
-                    max_notifications_per_hour=max_notifications_per_hour,
                     notification_cooldown_minutes=notification_cooldown_minutes,
                     created_at=now,
                     updated_at=now

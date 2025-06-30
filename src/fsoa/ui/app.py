@@ -921,25 +921,16 @@ def show_system_settings():
             db_manager = get_database_manager()
             configs = db_manager.get_all_system_configs()
 
-            default_max_notifications = int(configs.get("max_notifications_per_hour", "10"))
             default_cooldown_minutes = int(configs.get("notification_cooldown", "120"))
             default_max_retry = int(configs.get("max_retry_count", "5"))
             default_api_interval = int(configs.get("webhook_api_interval", "3"))
             default_enable_dedup = configs.get("enable_dedup", "true").lower() == "true"
         except Exception as e:
             st.warning(f"无法加载配置，使用默认值: {e}")
-            default_max_notifications = 10
             default_cooldown_minutes = 120
             default_max_retry = 5
             default_api_interval = 3
             default_enable_dedup = True
-
-        max_notifications = st.number_input(
-            "每小时最大通知数",
-            min_value=1,
-            max_value=100,
-            value=default_max_notifications
-        )
         
         cooldown_hours = st.number_input(
             "通知冷静时间（小时）",
@@ -1066,7 +1057,6 @@ def show_system_settings():
 
                 # 保存通知配置
                 configs = [
-                    ("max_notifications_per_hour", str(max_notifications), "每小时最大通知数"),
                     ("notification_cooldown", str(int(cooldown_hours * 60)), "通知冷却时间（分钟）"),
                     ("max_retry_count", str(max_retry_count), "最大重试次数"),
                     ("webhook_api_interval", str(api_interval_seconds), "Webhook API发送间隔（秒）"),

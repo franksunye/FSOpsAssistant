@@ -241,7 +241,6 @@ GET /api/config
 ```json
 {
     "notification_settings": {
-        "max_notifications_per_hour": 10,
         "notification_cooldown_minutes": 30,
         "escalation_threshold_hours": 4
     },
@@ -270,7 +269,7 @@ PUT /api/config
 ```json
 {
     "notification_settings": {
-        "max_notifications_per_hour": 15
+        "notification_cooldown_minutes": 45
     }
 }
 ```
