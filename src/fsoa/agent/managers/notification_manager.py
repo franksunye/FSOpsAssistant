@@ -350,7 +350,8 @@ class NotificationTaskManager:
             opportunities_dict = {}
             for task in tasks:
                 if task.order_num not in opportunities_dict:
-                    opportunities_dict[task.order_num] = task.to_opportunity_info()
+                    # 🔧 修复：使用正确的方法获取商机信息
+                    opportunities_dict[task.order_num] = self._get_opportunity_info_for_notification(task)
 
             opportunities = list(opportunities_dict.values())
 
