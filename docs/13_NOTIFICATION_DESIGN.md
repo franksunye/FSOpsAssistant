@@ -13,17 +13,23 @@ FSOA系统的通知模块基于两级SLA机制，负责将商机时效分析结�
 - **可靠发送**：冷静期、重试机制确保通知可达
 - **统一数据模型**：基于OpportunityInfo的一致性架构
 
-### 1.2 v0.3.0 重要修复 🔧
+### 1.2 v0.3.1 重要修复 🔧
 
-**问题背景**：v0.2.0中发现通知系统存在以下问题：
-1. 同一组织收到多个升级通知，内容不一致
-2. 数据库记录与实际发送数量不匹配
-3. 升级通知内容显示工单数量错误
+**问题背景**：v0.3.0中发现通知系统存在以下严重问题：
+1. 同一组织收到多个升级通知，工单数量不一致（如：1个工单 vs 6个工单）
+2. 数据库中每个工单都创建了独立的升级任务，而不是组织级任务
+3. NotificationTaskType.STANDARD被映射为'escalation'，导致每个超期工单都创建升级任务
+
+**根本原因**：
+- 通知类型别名混乱：STANDARD → "escalation"，VIOLATION → "reminder"
+- 升级任务创建逻辑错误：为每个工单创建任务，而不是按组织聚合
+- 缺乏有效的去重机制防止重复创建
 
 **修复方案**：
-- **升级通知组织级聚合**：每个组织只创建一个升级任务，包含所有需要升级的工单
-- **增强去重机制**：防止重复创建和发送通知任务
-- **内容完整性保证**：升级通知包含该组织所有需要升级的商机
+- **通知类型系统重构**：使用REMINDER和ESCALATION替代VIOLATION和STANDARD
+- **组织级升级任务**：每个组织只创建一个升级任务（ESCALATION_组织名格式）
+- **增强去重机制**：清理所有旧格式的升级任务，防止新旧任务并存
+- **消息显示配置**：支持动态配置各类通知的显示工单数量
 
 ## 2. 通知架构设计
 
@@ -130,61 +136,68 @@ class NotificationTaskManager:
         """发送组织通知"""
 ```
 
-### 3.2 通知任务创建逻辑
+### 3.2 通知任务创建逻辑 - v0.3.1重构版本
 
 ```python
 def create_notification_tasks(self, opportunities: List[OpportunityInfo], run_id: int) -> List[NotificationTask]:
-    """基于商机创建通知任务"""
+    """基于商机创建通知任务 - 重构后的逻辑"""
     tasks = []
-    
+    created_tasks_tracker = set()  # 防止重复创建
+
+    # 🔧 第一步：按组织分组，创建升级任务
+    escalation_orgs = set()
     for opp in opportunities:
-        # 更新商机的计算字段
         opp.update_overdue_info(use_business_time=True)
 
-        # 创建违规通知任务（12小时）
-        if opp.is_violation:
-            if not self._has_pending_task(opp.order_num, NotificationTaskType.VIOLATION):
-                violation_task = NotificationTask(
-                    order_num=opp.order_num,
-                    org_name=opp.org_name,
-                    notification_type=NotificationTaskType.VIOLATION,
-                    due_time=now_china_naive(),
-                    created_run_id=run_id,
-                    cooldown_hours=self.notification_cooldown_hours,
-                    max_retry_count=self.max_retry_count
-                )
-                tasks.append(violation_task)
-
-        # 创建标准通知任务（24/48小时）
-        if opp.is_overdue:
-            if not self._has_pending_task(opp.order_num, NotificationTaskType.STANDARD):
-                standard_task = NotificationTask(
-                    order_num=opp.order_num,
-                    org_name=opp.org_name,
-                    notification_type=NotificationTaskType.STANDARD,
-                    due_time=now_china_naive(),
-                    created_run_id=run_id,
-                    cooldown_hours=self.notification_cooldown_hours,
-                    max_retry_count=self.max_retry_count
-                )
-                tasks.append(standard_task)
-
-        # 如果需要升级，创建升级通知任务
+        # 收集需要升级的组织
         if opp.escalation_level > 0:
-            if not self._has_pending_task(opp.order_num, NotificationTaskType.ESCALATION):
-                escalation_task = NotificationTask(
+            escalation_orgs.add(opp.org_name)
+
+    # 为每个需要升级的组织创建一个升级任务
+    for org_name in escalation_orgs:
+        escalation_order_num = f"ESCALATION_{org_name}"
+        if not self._has_pending_escalation_task_for_org(org_name):
+            # 清理该组织的旧格式升级任务
+            self._cleanup_old_escalation_tasks_for_org(org_name)
+
+            escalation_task = NotificationTask(
+                order_num=escalation_order_num,  # 组织级任务标识
+                org_name=org_name,
+                notification_type=NotificationTaskType.ESCALATION,
+                due_time=now_china_naive(),
+                created_run_id=run_id,
+                cooldown_hours=self.notification_cooldown_hours,
+                max_retry_count=self.max_retry_count
+            )
+            tasks.append(escalation_task)
+
+    # 🔧 第二步：为个别工单创建提醒任务
+    for opp in opportunities:
+        # 创建提醒通知任务（4/8小时）→ 服务商群
+        if opp.is_violation:
+            task_key = (opp.order_num, NotificationTaskType.REMINDER)
+            if (not self._has_pending_task(opp.order_num, NotificationTaskType.REMINDER) and
+                task_key not in created_tasks_tracker):
+                reminder_task = NotificationTask(
                     order_num=opp.order_num,
                     org_name=opp.org_name,
-                    notification_type=NotificationTaskType.ESCALATION,
+                    notification_type=NotificationTaskType.REMINDER,
                     due_time=now_china_naive(),
                     created_run_id=run_id,
                     cooldown_hours=self.notification_cooldown_hours,
                     max_retry_count=self.max_retry_count
                 )
-                tasks.append(escalation_task)
-    
+                tasks.append(reminder_task)
+                created_tasks_tracker.add(task_key)
+
     return tasks
 ```
+
+**关键改进**：
+1. **组织级升级任务**：使用`ESCALATION_组织名`格式，每个组织只创建一个升级任务
+2. **旧任务清理**：自动清理该组织的旧格式升级任务，防止重复
+3. **去重跟踪**：使用`created_tasks_tracker`防止同一批次重复创建
+4. **类型明确**：REMINDER用于个别工单提醒，ESCALATION用于组织级升级
 
 ### 3.3 通知任务模型
 
@@ -234,11 +247,19 @@ class NotificationTask(BaseModel):
 
 ```python
 class NotificationTaskType(str, Enum):
-    """通知任务类型枚举"""
-    VIOLATION = "violation"    # 违规通知（12小时）
-    STANDARD = "standard"      # 标准通知（24/48小时）
-    ESCALATION = "escalation"  # 升级通知（24/48小时）
+    """通知任务类型枚举 - v0.3.1重构版本"""
+    REMINDER = "reminder"      # 提醒通知（4/8小时）→ 服务商群
+    ESCALATION = "escalation"  # 升级通知（8/16小时）→ 运营群
+
+    # 🔧 向后兼容（已废弃，仅用于数据迁移）
+    VIOLATION = "reminder"     # 旧类型别名，映射到REMINDER
+    STANDARD = "escalation"    # 旧类型别名，映射到ESCALATION
 ```
+
+**类型说明**：
+- **REMINDER**: 4/8小时提醒通知，发送到组织对应的企微群
+- **ESCALATION**: 8/16小时升级通知，发送到内部运营群
+- **向后兼容**: 保持对旧类型的支持，确保平滑迁移
 
 ## 4. 消息格式化系统
 
@@ -251,17 +272,38 @@ class NotificationTaskType(str, Enum):
 ```python
 class BusinessNotificationFormatter:
     @staticmethod
+    def _get_display_config() -> Dict[str, int]:
+        """获取消息显示配置 - v0.3.1新增"""
+        # 从数据库获取可配置的显示数量限制
+        return {
+            'notification_max': int(db_manager.get_system_config("notification_max_display_orders") or "5"),
+            'escalation_max': int(db_manager.get_system_config("escalation_max_display_orders") or "5"),
+            'emergency_max': int(db_manager.get_system_config("emergency_max_display_orders") or "3"),
+            'standard_max': int(db_manager.get_system_config("standard_max_display_orders") or "10"),
+        }
+
+    @staticmethod
     def format_violation_notification(org_name: str, opportunities: List[OpportunityInfo]) -> str:
-        """格式化违规通知（12小时）"""
-        
+        """格式化提醒通知（4/8小时）→ 服务商群"""
+
     @staticmethod
     def format_org_overdue_notification(org_name: str, opportunities: List[OpportunityInfo]) -> str:
         """格式化标准逾期通知"""
-        
+
     @staticmethod
     def format_escalation_notification(org_name: str, opportunities: List[OpportunityInfo]) -> str:
-        """格式化升级通知"""
+        """格式化升级通知 - 支持可配置显示数量"""
+        # 获取显示配置
+        display_config = BusinessNotificationFormatter._get_display_config()
+        max_display = display_config['escalation_max']
+
+        # 只显示前max_display个工单，其余显示"还有X个工单需要处理"
 ```
+
+**v0.3.1新增特性**：
+- **可配置显示数量**：支持通过数据库配置各类通知的最大显示工单数
+- **智能截断**：超出限制的工单显示"还有X个工单需要处理"
+- **Web界面配置**：可通过系统管理页面动态调整显示数量
 
 ### 4.2 双重格式化策略
 
@@ -270,10 +312,15 @@ class BusinessNotificationFormatter:
 ```python
 def _format_with_template(self, org_name: str, opportunities: List[OpportunityInfo],
                         notification_type: NotificationTaskType) -> str:
-    """使用标准模板格式化消息"""
-    if notification_type == NotificationTaskType.VIOLATION:
+    """使用标准模板格式化消息 - v0.3.1更新版本"""
+    if notification_type == NotificationTaskType.REMINDER:
         return self.formatter.format_violation_notification(org_name, opportunities)
     elif notification_type == NotificationTaskType.ESCALATION:
+        return self.formatter.format_escalation_notification(org_name, opportunities)
+    # 🔧 向后兼容
+    elif notification_type == NotificationTaskType.VIOLATION:
+        return self.formatter.format_violation_notification(org_name, opportunities)
+    elif notification_type == NotificationTaskType.STANDARD:
         return self.formatter.format_escalation_notification(org_name, opportunities)
     else:
         return self.formatter.format_org_overdue_notification(org_name, opportunities)
@@ -305,53 +352,115 @@ def _format_with_llm(self, org_name: str, opportunities: List[OpportunityInfo],
         return self._format_with_template(org_name, opportunities, notification_type)
 ```
 
-### 4.3 消息格式示例
+### 4.3 消息格式示例 - v0.3.1更新版本
 
-#### 4.3.1 违规通知格式
-
-```
-⚠️ SLA违规提醒 (三河市中豫防水工程有限公司)
-
-共有 1 个工单违反12小时SLA规范：
-
-01. 工单号：GD20250600803
-    违规时长：15小时
-    客户：张先生
-    地址：东方夏威夷南岸欧湖公寓
-    负责人：李纪龙
-    创建时间：06-25 09:30
-    状态：待预约
-
-请相关负责人立即处理，确保客户服务质量。
-
-🕐 提醒时间：2025-06-27 10:30:15
-🤖 来源：FSOA智能助手
-```
-
-#### 4.3.2 升级通知格式
+#### 4.3.1 提醒通知格式（REMINDER → 服务商群）
 
 ```
-🚨 工单升级通知 - 需要运营介入
+⚠ SLA违规提醒 (北京虹象防水工程有限公司)
 
-组织：三河市中豫防水工程有限公司
-升级原因：工单超过24小时未处理
+共有 1 个工单违反4小时SLA规范：
 
-工单详情：
-01. 工单号：GD20250600803
-    逾期时长：26小时
-    客户：张先生
-    地址：东方夏威夷南岸欧湖公寓
-    负责人：李纪龙
-    创建时间：06-25 09:30
-    状态：待预约
+01. 工单号：GD2025064176
+     违规时长：2天0小时
+     客户：付女士
+     地址：龙湖滟澜山
+     负责人：杜晓兴
+     创建时间：06-24 10:30
+     状态：待预约
 
-请运营人员立即介入处理，联系相关负责人。
-
-🕐 升级时间：2025-06-27 11:30:15
-🤖 来源：FSOA智能助手
+🚨 请销售人员立即处理，确保客户服务质量！
+💡 处理后系统将自动停止提醒
 ```
 
-## 5. 企微发送系统
+#### 4.3.2 升级通知格式（ESCALATION → 运营群）
+
+```
+🚨 **运营升级通知**
+
+组织：北京虹象防水工程有限公司
+需要升级处理的工单数：6
+
+1. 工单号：GD2025064176
+   滞留时长：48.5小时
+   客户：付女士
+   负责人：杜晓兴
+   状态：待预约
+   创建时间：06-24 10:30
+
+2. 工单号：GD20250600782
+   滞留时长：124.5小时
+   客户：先生
+   负责人：燕伟
+   状态：待预约
+   创建时间：06-14 14:31
+
+... 还有 4 个工单需要处理
+
+🔧 **请运营人员介入协调处理**
+```
+
+**v0.3.1格式改进**：
+- **准确的工单数量**：升级通知显示该组织所有需要升级的工单
+- **智能截断**：支持配置显示数量，超出部分显示"还有X个工单需要处理"
+- **组织级聚合**：一个组织只发送一次升级通知，包含所有相关工单
+
+## 5. 消息显示配置系统 - v0.3.1新增
+
+### 5.1 配置项定义
+
+FSOA v0.3.1引入了可配置的消息显示数量限制，解决了企微消息过长的问题。
+
+```python
+# 数据库配置项
+DEFAULT_CONFIGS = [
+    ("escalation_max_display_orders", "5", "升级通知最多显示工单数"),
+    ("emergency_max_display_orders", "3", "紧急通知最多显示工单数"),
+    ("standard_max_display_orders", "10", "标准通知最多显示工单数"),
+    ("notification_max_display_orders", "5", "一般通知最多显示工单数"),
+]
+```
+
+### 5.2 Web界面配置
+
+**位置**: 系统管理 → 通知配置 → 消息显示配置
+
+```python
+# Web界面配置示例
+escalation_max_display = st.number_input(
+    "升级通知最多显示工单数",
+    min_value=1,
+    max_value=20,
+    value=int(configs.get("escalation_max_display_orders", "5")),
+    help="升级通知中最多显示的工单详情数量"
+)
+```
+
+### 5.3 动态应用机制
+
+```python
+def _get_display_config() -> Dict[str, int]:
+    """获取显示配置，支持实时更新"""
+    try:
+        db_manager = get_database_manager()
+        return {
+            'escalation_max': int(db_manager.get_system_config("escalation_max_display_orders") or "5"),
+            'emergency_max': int(db_manager.get_system_config("emergency_max_display_orders") or "3"),
+            'standard_max': int(db_manager.get_system_config("standard_max_display_orders") or "10"),
+            'notification_max': int(db_manager.get_system_config("notification_max_display_orders") or "5"),
+        }
+    except Exception:
+        # 降级到默认值
+        return {'escalation_max': 5, 'emergency_max': 3, 'standard_max': 10, 'notification_max': 5}
+```
+
+**配置优势**：
+- **灵活调整**：无需修改代码即可调整显示数量
+- **实时生效**：配置更改立即应用到新的通知
+- **降级保护**：数据库不可用时使用默认值
+- **用户友好**：通过Web界面直观配置
+
+## 6. 企微发送系统
 
 ### 5.1 WeChatClient
 
@@ -1031,42 +1140,55 @@ WeChatClient.send_notification_to_org(
 
 ## 11. 总结
 
-### 11.1 通知模块完成度
+### 11.1 v0.3.1重大修复成果
 
-FSOA系统的通知模块已经完全按照架构设计实现，并在以下方面超出了原始设计：
+FSOA v0.3.1成功解决了v0.3.0中发现的严重通知问题，实现了真正可靠的通知系统：
 
-1. **功能完整性**: 100%实现了通知任务管理和企微发送功能
-2. **技术先进性**: 标准模板+LLM的双重格式化策略
-3. **可靠性保证**: 冷静期+重试+去重的完整保障机制
-4. **扩展增强**: Web端管理界面和测试功能
+1. **升级通知去重**: 彻底解决同一组织收到多条升级通知的问题
+2. **组织级聚合**: 每个组织只创建一个升级任务，包含所有相关工单
+3. **类型系统重构**: 使用REMINDER和ESCALATION替代混乱的别名映射
+4. **配置化管理**: 支持动态配置消息显示数量，提升用户体验
 
 ### 11.2 核心价值
 
 1. **智能路由**: 基于orgName的自动群组路由
-2. **分级通知**: 违规、标准、升级的三级通知体系
-3. **可靠发送**: 多重保障机制确保通知可达
+2. **分级通知**: 提醒（REMINDER）→ 服务商群，升级（ESCALATION）→ 运营群
+3. **可靠发送**: 多重保障机制确保通知可达且不重复
 4. **完整追踪**: 从创建到发送的全生命周期管理
 
 ### 11.3 技术亮点
 
-1. **双重格式化**: 标准模板+LLM优化的智能消息格式化
-2. **智能去重**: 基于工单号和类型的重复任务检测
-3. **冷静期机制**: 避免短时间内重复通知的智能控制
-4. **企微集成**: 完整的企微群Webhook管理和发送
+1. **组织级升级任务**: 使用`ESCALATION_组织名`格式，确保一个组织一个任务
+2. **智能去重**: 基于工单号和类型的重复任务检测 + 旧任务清理
+3. **可配置显示**: 支持动态配置各类通知的显示工单数量
+4. **向后兼容**: 平滑处理旧通知类型，确保系统稳定性
 
 ### 11.4 业务价值
 
-1. **及时响应**: 基于SLA状态的实时通知触发
-2. **精准路由**: 通知直达相关责任人和团队
-3. **分级处理**: 不同严重程度的差异化通知策略
+1. **准确通知**: 升级通知准确反映组织的实际工单数量
+2. **避免骚扰**: 一个组织只收到一次升级通知，不再重复
+3. **精准路由**: 通知直达相关责任人和团队
 4. **运营支持**: 升级机制确保严重问题得到及时处理
+
+### 11.5 v0.3.1修复验证
+
+**修复前问题**：
+- 北京虹象防水工程有限公司收到1个工单和6个工单的两条不同升级通知
+- 数据库中该组织有6个独立的升级任务
+
+**修复后效果**：
+- 每个组织只创建一个升级任务（`ESCALATION_北京虹象防水工程有限公司`）
+- 升级通知正确聚合该组织所有6个需要升级的工单
+- 消息显示"需要升级处理的工单数：6"，显示前5个，"还有1个工单需要处理"
 
 ---
 
 > 本设计文档详细描述了FSOA系统通知模块的工作原理、技术实现和架构一致性分析
 >
+> v0.3.1重大修复：解决升级通知重复发送问题，实现真正可靠的组织级通知聚合
+>
 > 通过完整的通知生命周期管理和智能企微集成，实现了高效可靠的通知服务
 >
-> 文档版本: v1.0
+> 文档版本: v1.1
 >
-> 最后更新: 2025-06-27
+> 最后更新: 2025-06-30
