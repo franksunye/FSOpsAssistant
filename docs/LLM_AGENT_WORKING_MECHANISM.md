@@ -58,18 +58,120 @@ graph TD
 
 #### 答案：LLM在两个不同的Agent执行节点参与决策
 
+### 🔥 关键问题：LLM分析商机后如何触发通知任务生成？
+
+**重要澄清**：LLM本身**不直接调用或触发**通知任务生成功能。而是通过以下完整的触发链路：
+
+#### 完整的触发机制链路
+
+```mermaid
+sequenceDiagram
+    participant LLM as DeepSeek LLM
+    participant DE as DecisionEngine
+    participant MD as make_decision_node
+    participant NM as NotificationManager
+    participant DB as Database
+
+    Note over LLM,DB: 商机A的处理流程
+
+    MD->>DE: make_decision(商机A)
+    DE->>LLM: analyze_task_priority(商机A)
+
+    Note over LLM: LLM分析商机A
+    LLM-->>DE: DecisionResult{action:"notify", priority:"high"}
+
+    DE-->>MD: 返回决策结果
+    MD->>MD: 收集所有商机的决策结果
+
+    Note over MD: 关键触发点
+    MD->>NM: create_notification_tasks_from_decisions(decisions_map)
+
+    Note over NM: 解读LLM决策并创建任务
+    NM->>NM: 解析action="notify" → 创建NotificationTask
+    NM->>DB: 保存通知任务到数据库
+
+    Note over NM,DB: 通知任务已创建，等待执行
+```
+
+#### 详细的触发步骤
+
+**步骤1：LLM分析商机A**
+```python
+# 在DeepSeekClient.analyze_task_priority()中
+decision_result = DecisionResult(
+    action="notify",           # LLM决定需要通知
+    priority=Priority.HIGH,    # LLM判断为高优先级
+    message="客户等待时间过长，需要及时跟进",
+    reasoning="商机已超时24小时，客户重要性较高",
+    confidence=0.85,
+    llm_used=True
+)
+```
+
+**步骤2：Agent收集所有决策结果**
+```python
+# 在make_decision_node中
+decision_map = {}  # 存储商机ID到决策结果的映射
+for opp in opportunities:
+    decision = self.decision_engine.make_decision(opp)  # 调用LLM分析
+    decision_map[opp.order_num] = decision  # 保存决策结果
+```
+
+**步骤3：Agent触发通知任务创建**
+```python
+# 在make_decision_node中（关键触发点）
+notification_tasks = self.notification_manager.create_notification_tasks_from_decisions(
+    processed_opportunities, run_id, decision_map
+)
+```
+
+**步骤4：NotificationManager解读LLM决策**
+```python
+# 在NotificationManager.create_notification_tasks_from_decisions()中
+for opp in opportunities:
+    decision = decision_map.get(opp.order_num)  # 获取LLM的决策
+
+    if decision.action == "notify":  # LLM说需要通知
+        # 根据LLM的优先级判断通知类型
+        if decision.priority.value in ["high", "urgent"]:
+            notification_type = NotificationTaskType.ESCALATION
+        else:
+            notification_type = NotificationTaskType.REMINDER
+
+        # 创建通知任务
+        task = NotificationTask(
+            order_num=opp.order_num,
+            org_name=opp.org_name,
+            notification_type=notification_type,
+            due_time=now_china_naive(),
+            created_run_id=run_id
+        )
+
+        # 保存到数据库
+        task_id = self.db_manager.save_notification_task(task)
+```
+
+#### 关键设计要点
+
+1. **LLM的作用**：分析和决策，输出结构化的`DecisionResult`
+2. **Agent的作用**：解读LLM决策，触发相应的业务逻辑
+3. **触发时机**：在`make_decision_node`完成所有商机分析后，统一触发
+4. **决策映射**：通过`decision_map`将LLM决策与具体商机关联
+5. **业务转换**：将LLM的抽象决策（action/priority）转换为具体的通知任务类型
+
 **参与点1：商机评估（Business Decision）**
 - **Agent节点**：`make_decision_node`
 - **执行时机**：Agent工作流第4步
 - **LLM功能**：智能决策分析
 - **处理对象**：单个商机
 - **决策内容**：
-  - 是否需要发送通知
-  - 通知的优先级
+  - 是否需要发送通知（action: skip/notify/escalate）
+  - 通知的优先级（priority: low/normal/high/urgent）
   - 是否需要升级处理
   - 决策的置信度
 - **配置开关**：`use_llm_optimization`
 - **降级策略**：规则引擎兜底
+- **🔥 关键**：LLM决策后，Agent自动触发通知任务创建
 
 **参与点2：消息生成（Content Generation）**
 - **Agent节点**：`send_notification_node`
@@ -82,6 +184,33 @@ graph TD
   - 突出重点信息
 - **配置开关**：`use_llm_message_formatting`
 - **降级策略**：模板格式化兜底
+
+### 🎯 LLM决策到通知任务的转换规则
+
+| LLM决策 | Agent解读 | 生成的通知任务 |
+|---------|----------|---------------|
+| `action: "skip"` | 无需处理 | 不创建任何通知任务 |
+| `action: "notify"` + `priority: "normal/low"` | 需要提醒 | 创建`REMINDER`类型通知任务 |
+| `action: "notify"` + `priority: "high/urgent"` | 需要升级关注 | 创建`ESCALATION`类型通知任务 |
+| `action: "escalate"` | 需要立即升级 | 创建`ESCALATION`类型通知任务 |
+
+### 📋 通知任务的生命周期
+
+```mermaid
+stateDiagram-v2
+    [*] --> LLM分析
+    LLM分析 --> 生成DecisionResult
+    生成DecisionResult --> Agent解读决策
+    Agent解读决策 --> 创建NotificationTask
+    创建NotificationTask --> 保存到数据库
+    保存到数据库 --> 等待执行
+    等待执行 --> 发送通知
+    发送通知 --> 更新任务状态
+    更新任务状态 --> [*]
+
+    Agent解读决策 --> 跳过处理: action="skip"
+    跳过处理 --> [*]
+```
 
 #### 关于耦合问题的分析
 
@@ -102,6 +231,124 @@ graph TD
 3. **独立降级策略**：
    - 商机评估失败 → 规则引擎
    - 消息生成失败 → 模板格式化
+
+## 🔧 LLM决策触发机制的代码实现
+
+### 核心触发代码分析
+
+#### 1. make_decision_node中的触发逻辑
+
+```python
+# 在src/fsoa/agent/orchestrator.py的_make_decision_node方法中
+def _make_decision_node(self, state: AgentState) -> AgentState:
+    """智能决策节点 - 第4步"""
+    opportunities = state.get("opportunities", [])
+    decision_map = {}  # 关键：存储每个商机的LLM决策结果
+
+    # 步骤1：对每个商机进行LLM分析
+    for opp in opportunities:
+        decision = self.decision_engine.make_decision(opp)  # 调用LLM
+        decision_map[opp.order_num] = decision  # 保存决策结果
+        logger.info(f"LLM决策 {opp.order_num}: {decision.action}")
+
+    # 步骤2：关键触发点 - 基于LLM决策创建通知任务
+    notification_tasks = self.notification_manager.create_notification_tasks_from_decisions(
+        processed_opportunities, run_id, decision_map  # 传入LLM决策映射
+    )
+
+    state["notification_tasks"] = notification_tasks  # 保存创建的任务
+    return state
+```
+
+#### 2. NotificationManager中的决策解读逻辑
+
+```python
+# 在src/fsoa/agent/managers/notification_manager.py中
+def create_notification_tasks_from_decisions(self, opportunities: List[OpportunityInfo],
+                                           run_id: int, decision_map: Dict[str, Any]) -> List[NotificationTask]:
+    """基于LLM决策结果创建通知任务"""
+    tasks = []
+
+    for opp in opportunities:
+        decision = decision_map.get(opp.order_num)  # 获取LLM决策
+
+        if decision.action == "notify":  # LLM说需要通知
+            # 根据LLM优先级判断通知类型
+            if decision.priority.value in ["high", "urgent"]:
+                notification_type = NotificationTaskType.ESCALATION
+            else:
+                notification_type = NotificationTaskType.REMINDER
+
+            # 创建通知任务
+            task = NotificationTask(
+                order_num=opp.order_num,
+                org_name=opp.org_name,
+                notification_type=notification_type,
+                due_time=now_china_naive(),
+                created_run_id=run_id
+            )
+            tasks.append(task)
+            logger.info(f"基于LLM决策创建{notification_type.value}任务: {opp.order_num}")
+
+        elif decision.action == "escalate":  # LLM说需要升级
+            task = NotificationTask(
+                order_num=opp.order_num,
+                org_name=opp.org_name,
+                notification_type=NotificationTaskType.ESCALATION,
+                due_time=now_china_naive(),
+                created_run_id=run_id
+            )
+            tasks.append(task)
+            logger.info(f"基于LLM升级决策创建任务: {opp.order_num}")
+
+        elif decision.action == "skip":  # LLM说跳过
+            logger.info(f"基于LLM决策跳过通知: {opp.order_num}")
+
+    # 保存所有任务到数据库
+    for task in tasks:
+        task_id = self.db_manager.save_notification_task(task)
+        task.id = task_id
+
+    return tasks
+```
+
+#### 3. LLM决策结果的结构
+
+```python
+# LLM返回的DecisionResult结构
+@dataclass
+class DecisionResult:
+    action: str          # "skip" | "notify" | "escalate"
+    priority: Priority   # LOW | NORMAL | HIGH | URGENT
+    message: str         # LLM生成的消息内容
+    reasoning: str       # LLM的决策理由
+    confidence: float    # 决策置信度 (0.0-1.0)
+    llm_used: bool      # 是否使用了LLM
+
+# 示例：LLM对商机A的分析结果
+decision_result = DecisionResult(
+    action="notify",
+    priority=Priority.HIGH,
+    message="客户等待时间过长，建议主动联系确认需求",
+    reasoning="商机超时24小时，客户为重要客户，需要及时跟进",
+    confidence=0.85,
+    llm_used=True
+)
+```
+
+### 触发时机的关键设计
+
+1. **批量触发**：不是每分析一个商机就触发一次，而是分析完所有商机后统一触发
+2. **决策映射**：通过`decision_map`确保每个商机的LLM决策都能正确对应
+3. **类型转换**：将LLM的抽象决策转换为具体的业务通知任务类型
+4. **数据库持久化**：创建的通知任务立即保存到数据库，确保不丢失
+
+### 为什么不是LLM直接调用？
+
+1. **架构分离**：LLM专注于分析决策，Agent负责业务逻辑执行
+2. **错误隔离**：LLM调用失败不会影响通知任务的创建流程
+3. **可控性**：Agent可以对LLM的决策进行验证和调整
+4. **可观测性**：每个环节都有清晰的日志和状态追踪
 
 ## 📊 当前系统工作现状
 
