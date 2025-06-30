@@ -23,18 +23,14 @@ class BusinessNotificationFormatter:
             db_manager = get_database_manager()
 
             return {
-                'notification_max': int(db_manager.get_system_config("notification_max_display_orders") or "5"),
+                'reminder_max': int(db_manager.get_system_config("reminder_max_display_orders") or "10"),
                 'escalation_max': int(db_manager.get_system_config("escalation_max_display_orders") or "5"),
-                'emergency_max': int(db_manager.get_system_config("emergency_max_display_orders") or "3"),
-                'standard_max': int(db_manager.get_system_config("standard_max_display_orders") or "10"),
             }
         except Exception:
             # 降级到默认值
             return {
-                'notification_max': 5,
+                'reminder_max': 10,
                 'escalation_max': 5,
-                'emergency_max': 3,
-                'standard_max': 10,
             }
 
     @staticmethod
@@ -90,7 +86,7 @@ class BusinessNotificationFormatter:
 
         # 获取显示配置
         display_config = BusinessNotificationFormatter._get_display_config()
-        max_display = display_config['notification_max']
+        max_display = display_config['reminder_max']
 
         for i, opp in enumerate(opportunities[:max_display], 1):
             elapsed_str = f"{opp.elapsed_hours:.1f}小时" if opp.elapsed_hours else "未知"
@@ -143,10 +139,19 @@ class BusinessNotificationFormatter:
         message_parts.append(f"共有 {total_count} 个工单违反{sla_threshold_text}SLA规范：")
         message_parts.append("")
 
-        # 按状态显示
+        # 获取显示配置
+        display_config = BusinessNotificationFormatter._get_display_config()
+        max_display = display_config['reminder_max']
+
+        # 按状态显示（应用截断逻辑）
         item_index = 1
+        displayed_count = 0
+
         for status, status_opps in status_groups.items():
             for opp in status_opps:
+                if displayed_count >= max_display:
+                    break
+
                 elapsed_hours = opp.elapsed_hours or 0
                 elapsed_days = int(elapsed_hours // 24)
                 remaining_hours = int(elapsed_hours % 24)
@@ -168,6 +173,15 @@ class BusinessNotificationFormatter:
                 message_parts.append("")
 
                 item_index += 1
+                displayed_count += 1
+
+            if displayed_count >= max_display:
+                break
+
+        # 添加截断提示
+        if total_count > max_display:
+            message_parts.append(f"... 还有 {total_count - max_display} 个工单需要处理")
+            message_parts.append("")
 
         message_parts.append("🚨 请销售人员立即处理，确保客户服务质量！")
         message_parts.append("💡 处理后系统将自动停止提醒")
@@ -229,7 +243,7 @@ class BusinessNotificationFormatter:
             
             # 获取显示配置
             display_config = BusinessNotificationFormatter._get_display_config()
-            max_display = display_config['standard_max']
+            max_display = display_config['reminder_max']
 
             for i, opp in enumerate(not_visiting[:max_display], 1):
                 days_overdue = int(opp.elapsed_hours / 24)
@@ -274,6 +288,22 @@ class BusinessNotificationFormatter:
         if not opportunities:
             logger.warning(f"No opportunities provided for escalation notification of {org_name}")
             return ""
+
+        # 🔧 修复：去重商机列表，避免重复工单号
+        unique_opportunities = []
+        seen_order_nums = set()
+        for opp in opportunities:
+            if opp.order_num not in seen_order_nums:
+                unique_opportunities.append(opp)
+                seen_order_nums.add(opp.order_num)
+            else:
+                logger.warning(f"Duplicate order number {opp.order_num} found in escalation opportunities, skipping")
+
+        if len(unique_opportunities) != len(opportunities):
+            logger.info(f"Removed {len(opportunities) - len(unique_opportunities)} duplicate opportunities")
+
+        # 使用去重后的商机列表
+        opportunities = unique_opportunities
 
         # 获取显示配置
         display_config = BusinessNotificationFormatter._get_display_config()
@@ -342,9 +372,28 @@ class BusinessNotificationFormatter:
         if not opportunities:
             return ""
 
+        # 🔧 修复：去重商机列表，避免重复工单号
+        from ..utils.logger import get_logger
+        logger = get_logger(__name__)
+
+        unique_opportunities = []
+        seen_order_nums = set()
+        for opp in opportunities:
+            if opp.order_num not in seen_order_nums:
+                unique_opportunities.append(opp)
+                seen_order_nums.add(opp.order_num)
+            else:
+                logger.warning(f"Duplicate order number {opp.order_num} found in emergency opportunities, skipping")
+
+        if len(unique_opportunities) != len(opportunities):
+            logger.info(f"Removed {len(opportunities) - len(unique_opportunities)} duplicate opportunities from emergency notification")
+
+        # 使用去重后的商机列表
+        opportunities = unique_opportunities
+
         # 获取显示配置
         display_config = BusinessNotificationFormatter._get_display_config()
-        max_display = display_config['emergency_max']
+        max_display = display_config['escalation_max']
 
         message_parts = []
         message_parts.append("🔥 **紧急通知** - 严重超时")

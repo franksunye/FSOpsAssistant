@@ -1040,41 +1040,23 @@ def show_system_settings():
         col_display1, col_display2 = st.columns(2)
 
         with col_display1:
-            escalation_max_display = st.number_input(
-                "升级通知最多显示工单数",
+            reminder_max_display = st.number_input(
+                "提醒类通知最多显示工单数",
                 min_value=1,
-                max_value=20,
-                value=int(configs.get("escalation_max_display_orders", "5")),
-                help="升级通知中最多显示的工单详情数量",
-                key="escalation_max_display"
-            )
-
-            emergency_max_display = st.number_input(
-                "紧急通知最多显示工单数",
-                min_value=1,
-                max_value=10,
-                value=int(configs.get("emergency_max_display_orders", "3")),
-                help="紧急通知中最多显示的工单详情数量",
-                key="emergency_max_display"
+                max_value=50,
+                value=int(configs.get("reminder_max_display_orders", "10")),
+                help="提醒类通知（一般提醒、标准逾期）中最多显示的工单详情数量",
+                key="reminder_max_display"
             )
 
         with col_display2:
-            standard_max_display = st.number_input(
-                "标准通知最多显示工单数",
-                min_value=1,
-                max_value=50,
-                value=int(configs.get("standard_max_display_orders", "10")),
-                help="标准通知中最多显示的工单详情数量",
-                key="standard_max_display"
-            )
-
-            notification_max_display = st.number_input(
-                "一般通知最多显示工单数",
+            escalation_max_display = st.number_input(
+                "升级类通知最多显示工单数",
                 min_value=1,
                 max_value=20,
-                value=int(configs.get("notification_max_display_orders", "5")),
-                help="一般通知中最多显示的工单详情数量",
-                key="notification_max_display"
+                value=int(configs.get("escalation_max_display_orders", "5")),
+                help="升级类通知（升级通知、紧急通知）中最多显示的工单详情数量",
+                key="escalation_max_display"
             )
 
         if st.button("💾 保存通知设置"):
@@ -1098,10 +1080,8 @@ def show_system_settings():
                     ("sla_not_visiting_reminder", str(not_visiting_reminder), "暂不上门提醒阈值（工作小时）→服务商群"),
                     ("sla_not_visiting_escalation", str(not_visiting_escalation), "暂不上门升级阈值（工作小时）→运营群"),
                     # 消息显示配置
-                    ("escalation_max_display_orders", str(escalation_max_display), "升级通知最多显示工单数"),
-                    ("emergency_max_display_orders", str(emergency_max_display), "紧急通知最多显示工单数"),
-                    ("standard_max_display_orders", str(standard_max_display), "标准通知最多显示工单数"),
-                    ("notification_max_display_orders", str(notification_max_display), "一般通知最多显示工单数"),
+                    ("reminder_max_display_orders", str(reminder_max_display), "提醒类通知最多显示工单数"),
+                    ("escalation_max_display_orders", str(escalation_max_display), "升级类通知最多显示工单数"),
                 ]
 
                 for key, value, description in configs:

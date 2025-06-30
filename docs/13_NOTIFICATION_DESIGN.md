@@ -405,19 +405,23 @@ def _format_with_llm(self, org_name: str, opportunities: List[OpportunityInfo],
 - **智能截断**：支持配置显示数量，超出部分显示"还有X个工单需要处理"
 - **组织级聚合**：一个组织只发送一次升级通知，包含所有相关工单
 
-## 5. 消息显示配置系统 - v0.3.1新增
+## 5. 消息显示配置系统 - v0.3.1新增，v0.3.2简化
 
 ### 5.1 配置项定义
 
 FSOA v0.3.1引入了可配置的消息显示数量限制，解决了企微消息过长的问题。
+v0.3.2版本将原来的四个配置项简化为两个更合理的配置项。
+
+**v0.3.2简化原因**：
+- 原来的四个配置项（一般通知、升级通知、紧急通知、标准通知）在业务逻辑上有重叠
+- 简化为两个配置项更符合实际的通知分类：提醒类 vs 升级类
+- 减少配置复杂度，提升用户体验
 
 ```python
-# 数据库配置项
+# 数据库配置项 - v0.3.2简化版
 DEFAULT_CONFIGS = [
-    ("escalation_max_display_orders", "5", "升级通知最多显示工单数"),
-    ("emergency_max_display_orders", "3", "紧急通知最多显示工单数"),
-    ("standard_max_display_orders", "10", "标准通知最多显示工单数"),
-    ("notification_max_display_orders", "5", "一般通知最多显示工单数"),
+    ("reminder_max_display_orders", "10", "提醒类通知最多显示工单数（一般提醒、标准逾期）"),
+    ("escalation_max_display_orders", "5", "升级类通知最多显示工单数（升级通知、紧急通知）"),
 ]
 ```
 
@@ -426,13 +430,21 @@ DEFAULT_CONFIGS = [
 **位置**: 系统管理 → 通知配置 → 消息显示配置
 
 ```python
-# Web界面配置示例
+# Web界面配置示例 - v0.3.2简化版
+reminder_max_display = st.number_input(
+    "提醒类通知最多显示工单数",
+    min_value=1,
+    max_value=50,
+    value=int(configs.get("reminder_max_display_orders", "10")),
+    help="提醒类通知（一般提醒、标准逾期）中最多显示的工单详情数量"
+)
+
 escalation_max_display = st.number_input(
-    "升级通知最多显示工单数",
+    "升级类通知最多显示工单数",
     min_value=1,
     max_value=20,
     value=int(configs.get("escalation_max_display_orders", "5")),
-    help="升级通知中最多显示的工单详情数量"
+    help="升级类通知（升级通知、紧急通知）中最多显示的工单详情数量"
 )
 ```
 
@@ -440,18 +452,16 @@ escalation_max_display = st.number_input(
 
 ```python
 def _get_display_config() -> Dict[str, int]:
-    """获取显示配置，支持实时更新"""
+    """获取显示配置，支持实时更新 - v0.3.2简化版"""
     try:
         db_manager = get_database_manager()
         return {
+            'reminder_max': int(db_manager.get_system_config("reminder_max_display_orders") or "10"),
             'escalation_max': int(db_manager.get_system_config("escalation_max_display_orders") or "5"),
-            'emergency_max': int(db_manager.get_system_config("emergency_max_display_orders") or "3"),
-            'standard_max': int(db_manager.get_system_config("standard_max_display_orders") or "10"),
-            'notification_max': int(db_manager.get_system_config("notification_max_display_orders") or "5"),
         }
     except Exception:
         # 降级到默认值
-        return {'escalation_max': 5, 'emergency_max': 3, 'standard_max': 10, 'notification_max': 5}
+        return {'reminder_max': 10, 'escalation_max': 5}
 ```
 
 **配置优势**：

@@ -201,10 +201,8 @@ class DatabaseManager:
             ("work_days", "1,2,3,4,5", "工作日（1=周一，7=周日，逗号分隔）"),
 
             # 消息显示配置
-            ("notification_max_display_orders", "5", "通知消息中最多显示的工单数量"),
-            ("escalation_max_display_orders", "5", "升级通知中最多显示的工单数量"),
-            ("emergency_max_display_orders", "3", "紧急通知中最多显示的工单数量"),
-            ("standard_max_display_orders", "10", "标准通知中最多显示的工单数量"),
+            ("reminder_max_display_orders", "10", "提醒类通知最多显示工单数（一般提醒、标准逾期）"),
+            ("escalation_max_display_orders", "5", "升级类通知最多显示工单数（升级通知、紧急通知）"),
         ]
         
         with self.get_session() as session:

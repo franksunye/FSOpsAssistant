@@ -123,51 +123,55 @@ class NotificationTaskManager:
                     escalation_orgs.add(opp.org_name)
 
             # 🚀 重构：为每个需要升级的工单创建独立的升级任务（工单级）
-            escalation_opportunities = [opp for opp in opportunities if opp.escalation_level > 0]
+            # 🔧 修复：只有在升级通知启用时才创建升级任务
+            if self.escalation_enabled:
+                escalation_opportunities = [opp for opp in opportunities if opp.escalation_level > 0]
 
-            # 按组织分组，用于去重检查
-            escalation_by_org = {}
-            for opp in escalation_opportunities:
-                if opp.org_name not in escalation_by_org:
-                    escalation_by_org[opp.org_name] = []
-                escalation_by_org[opp.org_name].append(opp)
+                # 按组织分组，用于去重检查
+                escalation_by_org = {}
+                for opp in escalation_opportunities:
+                    if opp.org_name not in escalation_by_org:
+                        escalation_by_org[opp.org_name] = []
+                    escalation_by_org[opp.org_name].append(opp)
 
-            # 为每个组织检查是否需要创建升级任务
-            for org_name, org_opportunities in escalation_by_org.items():
-                # 🔧 先清理该组织的旧格式升级任务，防止新旧任务并存
-                self._cleanup_old_escalation_tasks_for_org(org_name)
+                # 为每个组织检查是否需要创建升级任务
+                for org_name, org_opportunities in escalation_by_org.items():
+                    # 🔧 先清理该组织的旧格式升级任务，防止新旧任务并存
+                    self._cleanup_old_escalation_tasks_for_org(org_name)
 
-                # 检查该组织是否已有升级任务（避免重复创建）
-                if self._has_pending_escalation_task_for_org(org_name):
-                    logger.info(f"Org {org_name} already has pending ESCALATION notification")
-                    continue
+                    # 检查该组织是否已有升级任务（避免重复创建）
+                    if self._has_pending_escalation_task_for_org(org_name):
+                        logger.info(f"Org {org_name} already has pending ESCALATION notification")
+                        continue
 
-                # 🚀 重构核心：为该组织的每个需要升级的工单创建独立任务
-                org_escalation_tasks_created = False
-                for opp in org_opportunities:
-                    task_key = (opp.order_num, NotificationTaskType.ESCALATION)
+                    # 🚀 重构核心：为该组织的每个需要升级的工单创建独立任务
+                    org_escalation_tasks_created = False
+                    for opp in org_opportunities:
+                        task_key = (opp.order_num, NotificationTaskType.ESCALATION)
 
-                    # 检查该工单是否已有升级任务
-                    if (not self._has_pending_task(opp.order_num, NotificationTaskType.ESCALATION) and
-                        task_key not in created_tasks_tracker):
-                        escalation_task = NotificationTask(
-                            order_num=opp.order_num,  # 🚀 重构：使用真实工单号！
-                            org_name=opp.org_name,
-                            notification_type=NotificationTaskType.ESCALATION,
-                            due_time=now_china_naive(),
-                            created_run_id=run_id,
-                            cooldown_hours=self.notification_cooldown_hours,
-                            max_retry_count=self.max_retry_count
-                        )
-                        tasks.append(escalation_task)
-                        created_tasks_tracker.add(task_key)
-                        org_escalation_tasks_created = True
-                        logger.info(f"Created escalation task for order {opp.order_num} (org: {opp.org_name})")
+                        # 检查该工单是否已有升级任务
+                        if (not self._has_pending_task(opp.order_num, NotificationTaskType.ESCALATION) and
+                            task_key not in created_tasks_tracker):
+                            escalation_task = NotificationTask(
+                                order_num=opp.order_num,  # 🚀 重构：使用真实工单号！
+                                org_name=opp.org_name,
+                                notification_type=NotificationTaskType.ESCALATION,
+                                due_time=now_china_naive(),
+                                created_run_id=run_id,
+                                cooldown_hours=self.notification_cooldown_hours,
+                                max_retry_count=self.max_retry_count
+                            )
+                            tasks.append(escalation_task)
+                            created_tasks_tracker.add(task_key)
+                            org_escalation_tasks_created = True
+                            logger.info(f"Created escalation task for order {opp.order_num} (org: {opp.org_name})")
 
-                if org_escalation_tasks_created:
-                    logger.info(f"Created {len([opp for opp in org_opportunities])} escalation tasks for org {org_name}")
-                else:
-                    logger.info(f"No new escalation tasks created for org {org_name} (already exist or in cooldown)")
+                    if org_escalation_tasks_created:
+                        logger.info(f"Created {len([opp for opp in org_opportunities])} escalation tasks for org {org_name}")
+                    else:
+                        logger.info(f"No new escalation tasks created for org {org_name} (already exist or in cooldown)")
+            else:
+                logger.info("Escalation notifications are disabled, skipping escalation task creation")
 
             # 批量保存任务
             for task in tasks:
@@ -682,9 +686,14 @@ class NotificationTaskManager:
             data_manager = BusinessDataStrategy()
             all_opportunities = data_manager.get_opportunities(force_refresh=True)
 
+            # 🔧 修复：去重工单号列表，避免重复商机
+            unique_order_nums = list(set(order_nums))
+            if len(unique_order_nums) != len(order_nums):
+                logger.warning(f"Found duplicate order numbers in input: {len(order_nums)} -> {len(unique_order_nums)} unique")
+
             # 查找匹配的商机
             matched_opportunities = []
-            for order_num in order_nums:
+            for order_num in unique_order_nums:
                 for opp in all_opportunities:
                     if opp.order_num == order_num:
                         matched_opportunities.append(opp)
@@ -692,7 +701,7 @@ class NotificationTaskManager:
                 else:
                     logger.warning(f"No opportunity found for order_num: {order_num}")
 
-            logger.info(f"Found {len(matched_opportunities)} opportunities for {len(order_nums)} order numbers")
+            logger.info(f"Found {len(matched_opportunities)} opportunities for {len(unique_order_nums)} unique order numbers")
             return matched_opportunities
 
         except Exception as e:
