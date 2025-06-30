@@ -251,27 +251,31 @@ class DecisionEngine:
     def _build_context_dict(self, opportunity: OpportunityInfo, context: DecisionContext = None) -> Dict[str, Any]:
         """构建上下文字典"""
         context_dict = {}
-        
+
         if context:
-            # 添加历史通知信息
+            # 添加历史通知信息 - 🔧 修复：使用NotificationTask的正确属性
             if context.history:
                 context_dict["notification_history"] = [
                     {
-                        "type": notif.type,
+                        "type": notif.notification_type.value,  # 使用notification_type而不是type
                         "sent_at": notif.sent_at.isoformat() if notif.sent_at else None,
-                        "status": notif.status.value
+                        "status": notif.status.value,
+                        "order_num": notif.order_num,
+                        "org_name": notif.org_name,
+                        "due_time": notif.due_time.isoformat() if notif.due_time else None
                     }
                     for notif in context.history[-5:]  # 最近5条
                 ]
-            
+
             # 添加群组配置
             if context.group_config:
                 context_dict["group_config"] = {
                     "name": context.group_config.name,
-                    "max_notifications_per_hour": context.group_config.max_notifications_per_hour,
+                    "webhook_url": context.group_config.webhook_url,
+                    "enabled": context.group_config.enabled,
                     "cooldown_minutes": context.group_config.notification_cooldown_minutes
                 }
-            
+
             # 添加系统配置
             if context.system_config:
                 context_dict["system_config"] = context.system_config
@@ -284,8 +288,19 @@ class DecisionEngine:
             "weekday": now.weekday(),
             "is_business_hours": 9 <= now.hour <= 18 and now.weekday() < 5
         }
-        
+
         return context_dict
+
+    def _check_llm_optimization_enabled(self) -> bool:
+        """检查是否启用LLM优化"""
+        try:
+            from ..data.database import get_database_manager
+            db_manager = get_database_manager()
+            use_llm_config = db_manager.get_system_config("use_llm_optimization")
+            return use_llm_config and use_llm_config.lower() == "true"
+        except Exception as e:
+            logger.error(f"Failed to read LLM config: {e}")
+            return False  # 默认关闭
     
     def _merge_decisions(self, rule_result: DecisionResult, llm_result: DecisionResult) -> DecisionResult:
         """合并规则和LLM的决策结果"""
