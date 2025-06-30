@@ -250,7 +250,7 @@ def _merge_decisions(self, rule_result: DecisionResult, llm_result: DecisionResu
 | `use_llm_message_formatting` | `false` | LLM消息格式化 | 通知内容生成 |
 | `llm_max_tokens` | `1000` | 最大token数 | API成本控制 |
 
-### 4.2 配置读取机制
+### 4.2 配置读取机制（增强版）
 
 ```python
 def _check_llm_optimization_enabled(self) -> bool:
@@ -262,6 +262,22 @@ def _check_llm_optimization_enabled(self) -> bool:
     except Exception as e:
         logger.error(f"Failed to read LLM config: {e}")
         return False  # 默认关闭
+
+def _get_temperature(self) -> float:
+    """获取LLM温度参数（增强版）"""
+    try:
+        from ..data.database import get_database_manager
+        db_manager = get_database_manager()
+        temperature_config = db_manager.get_system_config("llm_temperature")
+        try:
+            temperature = float(temperature_config) if temperature_config else 0.1
+        except (ValueError, TypeError):
+            logger.warning(f"Invalid temperature config: {temperature_config}, using default 0.1")
+            temperature = 0.1
+        return temperature
+    except Exception as e:
+        logger.error(f"Failed to read temperature config: {e}")
+        return 0.1  # 默认值
 ```
 
 ### 4.3 Web界面配置
@@ -395,18 +411,43 @@ graph TD
 ```python
 def _handle_llm_failure(self, opportunity: OpportunityInfo, error: Exception) -> DecisionResult:
     """LLM失败时的降级处理"""
-    
+
     # 记录错误
     logger.error(f"LLM analysis failed for task {task.id}: {error}")
-    
+
     # 降级到规则引擎
     rule_result = self.rule_engine.evaluate_task(task)
-    
+
     # 标记为降级结果
     rule_result.reasoning += " (LLM降级)"
     rule_result.llm_used = False
-    
+
     return rule_result
+
+def _fallback_rule_decision(self, opportunity: OpportunityInfo) -> DecisionResult:
+    """规则决策降级方案（增强版）"""
+    # 安全处理None值
+    overdue_hours = opportunity.overdue_hours or 0
+    sla_threshold = opportunity.sla_threshold_hours or 24  # 默认24小时
+
+    if overdue_hours > sla_threshold:
+        action = "escalate"
+        priority = Priority.URGENT
+    elif overdue_hours > 0:
+        action = "notify"
+        priority = Priority.HIGH
+    else:
+        action = "skip"
+        priority = Priority.NORMAL
+
+    return DecisionResult(
+        action=action,
+        priority=priority,
+        message=f"系统自动决策：{action}",
+        reasoning=f"商机超时{overdue_hours:.1f}小时，触发{action}动作",
+        confidence=0.8,
+        llm_used=False
+    )
 ```
 
 ### 7.3 健康检查
@@ -520,41 +561,56 @@ class DeepSeekClient:
                 time.sleep(2 ** attempt)  # 指数退避
 ```
 
-### 10.2 结果解析与验证
+### 10.2 结果解析与验证（增强版）
 
 ```python
 def _parse_decision_result(self, result_text: str) -> Dict[str, Any]:
-    """解析LLM返回结果"""
+    """解析LLM返回结果（增强版）"""
     try:
-        # 尝试解析JSON
-        result_data = json.loads(result_text)
+        # 尝试提取JSON
+        start_idx = result_text.find('{')
+        end_idx = result_text.rfind('}') + 1
 
-        # 验证必需字段
-        required_fields = ["action", "priority", "reasoning"]
-        for field in required_fields:
-            if field not in result_data:
-                raise ValueError(f"Missing required field: {field}")
+        if start_idx >= 0 and end_idx > start_idx:
+            json_str = result_text[start_idx:end_idx]
+            parsed_result = json.loads(json_str)
 
-        # 验证字段值
-        valid_actions = ["skip", "notify", "escalate"]
-        if result_data["action"] not in valid_actions:
-            result_data["action"] = "notify"  # 默认值
+            # 确保必需字段存在，提供默认值
+            result = {
+                "action": parsed_result.get("action", "skip"),
+                "priority": parsed_result.get("priority", "normal"),
+                "message": parsed_result.get("message", "系统自动生成的提醒消息"),
+                "reasoning": parsed_result.get("reasoning", "LLM分析结果"),
+                "confidence": parsed_result.get("confidence", 0.8)
+            }
 
-        valid_priorities = ["low", "normal", "high", "urgent"]
-        if result_data["priority"] not in valid_priorities:
-            result_data["priority"] = "normal"  # 默认值
+            # 验证字段值
+            valid_actions = ["skip", "notify", "escalate"]
+            if result["action"] not in valid_actions:
+                result["action"] = "skip"  # 更保守的默认值
 
-        return result_data
+            valid_priorities = ["low", "normal", "high", "urgent"]
+            if result["priority"] not in valid_priorities:
+                result["priority"] = "normal"
 
-    except (json.JSONDecodeError, ValueError) as e:
-        logger.error(f"Failed to parse LLM result: {e}")
-        # 返回安全的默认值
-        return {
-            "action": "notify",
-            "priority": "normal",
-            "reasoning": "LLM结果解析失败，使用默认决策",
-            "confidence": 0.5
-        }
+            return result
+        else:
+            logger.warning("No JSON found in LLM response, using fallback")
+            return self._extract_fallback_decision(result_text)
+
+    except json.JSONDecodeError as e:
+        logger.warning(f"Failed to parse JSON: {e}, using fallback")
+        return self._extract_fallback_decision(result_text)
+
+def _extract_fallback_decision(self, result_text: str) -> Dict[str, Any]:
+    """从文本中提取降级决策"""
+    return {
+        "action": "skip",
+        "priority": "low",
+        "message": "系统自动生成的提醒消息",
+        "reasoning": "LLM结果解析失败，使用降级决策",
+        "confidence": 0.5
+    }
 ```
 
 ### 10.3 上下文构建策略
