@@ -306,14 +306,6 @@ class NotificationTaskManager:
             reminder_tasks = [t for t in tasks if t.notification_type == NotificationTaskType.REMINDER]
             escalation_tasks = [t for t in tasks if t.notification_type == NotificationTaskType.ESCALATION]
 
-            # 🔧 向后兼容：处理旧的通知类型
-            legacy_violation_tasks = [t for t in tasks if t.notification_type == NotificationTaskType.VIOLATION]
-            legacy_standard_tasks = [t for t in tasks if t.notification_type == NotificationTaskType.STANDARD]
-
-            # 合并到新的类型中
-            reminder_tasks.extend(legacy_violation_tasks)
-            escalation_tasks.extend(legacy_standard_tasks)
-
             # 发送升级通知到内部运营群
             if escalation_tasks:
                 success = self._send_escalation_notification(org_name, escalation_tasks, run_id)
@@ -423,23 +415,15 @@ class NotificationTaskManager:
             return self.formatter.format_violation_notification(org_name, opportunities)
         elif notification_type == NotificationTaskType.ESCALATION:
             return self.formatter.format_escalation_notification(org_name, opportunities)
-        # 🔧 向后兼容
-        elif notification_type == NotificationTaskType.VIOLATION:
-            return self.formatter.format_violation_notification(org_name, opportunities)
-        elif notification_type == NotificationTaskType.STANDARD:
-            return self.formatter.format_escalation_notification(org_name, opportunities)
         else:
-            return self.formatter.format_org_overdue_notification(org_name, opportunities)
+            raise ValueError(f"Unknown notification type: {notification_type}")
     
     def _build_llm_formatting_prompt(self, org_name: str, opportunities: List[OpportunityInfo],
                                    notification_type: NotificationTaskType) -> str:
         """构建LLM格式化提示词"""
         type_desc = {
             NotificationTaskType.REMINDER: "提醒通知（4/8小时）→服务商群",
-            NotificationTaskType.ESCALATION: "升级通知（8/16小时）→运营群",
-            # 向后兼容
-            NotificationTaskType.VIOLATION: "提醒通知（4/8小时）→服务商群",
-            NotificationTaskType.STANDARD: "升级通知（8/16小时）→运营群"
+            NotificationTaskType.ESCALATION: "升级通知（8/16小时）→运营群"
         }
         
         opp_list = []
@@ -678,14 +662,16 @@ class NotificationTaskManager:
         """发送后更新任务状态"""
         try:
             if success:
-                # 发送成功，立即标记为已发送
+                # 🔧 修复：发送成功时不应该增加重试次数
                 task.last_sent_at = now_china_naive()
-                task.retry_count += 1
+                # task.retry_count += 1  # ❌ 移除：成功时不增加重试次数
 
                 self.db_manager.update_notification_task_status(
                     task.id, NotificationTaskStatus.SENT, run_id
                 )
-                logger.info(f"Task {task.id} completed successfully after {task.retry_count} attempts")
+                # 🔧 修复：显示实际的重试次数（从0开始，成功时仍为初始值）
+                actual_attempts = task.retry_count + 1  # 包含首次尝试
+                logger.info(f"Task {task.id} completed successfully after {actual_attempts} attempts")
             else:
                 # 发送失败，增加重试次数
                 task.retry_count += 1
@@ -698,7 +684,7 @@ class NotificationTaskManager:
                 else:
                     # 更新重试次数，保持PENDING状态以便后续重试
                     self.db_manager.update_notification_task_retry_info(
-                        task.id, task.retry_count, None
+                        task.id, task.retry_count, task.last_sent_at
                     )
                     logger.warning(f"Task {task.id} failed, retry count: {task.retry_count}/{task.max_retry_count}")
 

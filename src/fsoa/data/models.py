@@ -37,9 +37,10 @@ class NotificationTaskType(str, Enum):
     REMINDER = "reminder"      # 提醒通知（4/8小时）→ 服务商群
     ESCALATION = "escalation"  # 升级通知（8/16小时）→ 运营群
 
-    # 向后兼容的别名
-    VIOLATION = "reminder"     # 兼容原有的violation类型
-    STANDARD = "escalation"    # 兼容原有的standard类型
+    # 🔧 修复：移除有问题的向后兼容别名
+    # 原来的 VIOLATION = "reminder" 和 STANDARD = "escalation"
+    # 导致枚举值重复，引起分类错误
+    # 如果需要处理旧数据，应该在数据库层面进行迁移
 
 
 # ============================================================================
