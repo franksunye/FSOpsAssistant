@@ -7,28 +7,37 @@
 ### 🚀 启动脚本
 
 #### `start_web.py`
-**用途**: 启动Web管理界面  
-**适用场景**: 开发测试、配置管理、系统监控  
-**命令**: `python scripts/start_web.py`  
-**端口**: 默认8501  
-**特点**: 
+**用途**: 启动Web管理界面
+**适用场景**: 开发测试、配置管理、系统监控
+**命令**: `python scripts/start_web.py`
+**端口**: 默认8501
+**特点**:
 - 仅启动Streamlit Web界面
 - 不包含Agent后台服务
 - 适合开发调试和配置管理
 
+#### `start_simple.py`
+**用途**: 简化启动Web界面（跳过外部服务检查）
+**适用场景**: 快速开发测试、离线环境
+**命令**: `python scripts/start_simple.py`
+**特点**:
+- 跳过Metabase、DeepSeek等外部服务检查
+- 快速启动，适合开发环境
+- 减少启动时间和依赖
+
 #### `start_agent.py`
-**用途**: 启动Agent后台服务  
-**适用场景**: 生产环境后台运行  
-**命令**: `python scripts/start_agent.py`  
+**用途**: 启动Agent后台服务
+**适用场景**: 生产环境后台运行
+**命令**: `python scripts/start_agent.py`
 **特点**:
 - 仅启动Agent定时任务服务
 - 后台运行，无Web界面
 - 适合服务器部署
 
 #### `start_full_app.py`
-**用途**: 启动完整应用（Web界面 + Agent服务）  
-**适用场景**: 完整功能演示、小规模生产部署  
-**命令**: `python scripts/start_full_app.py`  
+**用途**: 启动完整应用（Web界面 + Agent服务）
+**适用场景**: 完整功能演示、小规模生产部署
+**命令**: `python scripts/start_full_app.py`
 **特点**:
 - 同时启动Web界面和Agent服务
 - 完整的系统功能
@@ -37,23 +46,34 @@
 ### 🔧 管理脚本
 
 #### `init_db.py`
-**用途**: 初始化数据库  
-**适用场景**: 首次部署、数据库重置  
-**命令**: `python scripts/init_db.py`  
+**用途**: 初始化数据库
+**适用场景**: 首次部署、数据库重置
+**命令**: `python scripts/init_db.py`
 **功能**:
 - 创建数据库表结构
 - 初始化基础配置数据
 - 验证数据库连接
 
+#### `reset_database.py`
+**用途**: 重置数据库（清空所有数据）
+**适用场景**: 开发测试、数据清理
+**命令**: `python scripts/reset_database.py`
+**⚠️ 警告**: 会删除所有数据，请谨慎使用
+
 #### `run_tests.py`
-**用途**: 运行测试套件  
-**适用场景**: 开发验证、CI/CD流程  
-**命令**: `python scripts/run_tests.py [选项]`  
+**用途**: 运行测试套件
+**适用场景**: 开发验证、CI/CD流程
+**命令**: `python scripts/run_tests.py [选项]`
 **选项**:
 - `--unit`: 仅运行单元测试
 - `--integration`: 仅运行集成测试
 - `--coverage`: 生成代码覆盖率报告
 - `--verbose`: 详细输出
+
+#### `check_metabase_data.py`
+**用途**: 检查Metabase数据连接和数据质量
+**适用场景**: 数据源验证、故障排除
+**命令**: `python scripts/check_metabase_data.py`
 
 ## 🚀 快速开始
 
@@ -62,7 +82,10 @@
 # 1. 初始化数据库
 python scripts/init_db.py
 
-# 2. 启动Web界面进行开发测试
+# 2. 快速启动Web界面（推荐）
+python scripts/start_simple.py
+
+# 或者启动完整Web界面（包含外部服务检查）
 python scripts/start_web.py
 ```
 
@@ -73,6 +96,10 @@ python scripts/init_db.py
 
 # 2. 启动完整应用
 python scripts/start_full_app.py
+
+# 或者分别启动服务
+python scripts/start_agent.py    # 后台Agent服务
+python scripts/start_web.py      # Web管理界面
 ```
 
 ### 测试验证
@@ -90,9 +117,10 @@ python scripts/run_tests.py --coverage
 ## 📝 使用建议
 
 ### 开发阶段
-1. 使用 `start_web.py` 进行界面开发和功能测试
-2. 使用 `run_tests.py` 进行代码验证
-3. 通过Web界面的[系统管理 → 系统测试]进行集成测试
+1. 使用 `start_simple.py` 进行快速开发测试（推荐）
+2. 使用 `start_web.py` 进行完整功能测试
+3. 使用 `run_tests.py` 进行代码验证
+4. 通过Web界面的[系统管理 → 系统测试]进行集成测试
 
 ### 部署阶段
 1. 首先运行 `init_db.py` 初始化数据库
@@ -103,7 +131,8 @@ python scripts/run_tests.py --coverage
 ### 生产运维
 1. 使用 `start_agent.py` 在后台运行Agent服务
 2. 单独部署Web界面用于管理和监控
-3. 定期运行测试脚本验证系统健康状态
+3. 使用 `check_metabase_data.py` 验证数据源连接
+4. 定期运行测试脚本验证系统健康状态
 
 ## ⚠️ 注意事项
 
