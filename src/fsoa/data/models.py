@@ -4,7 +4,7 @@
 使用Pydantic定义数据模型，确保类型安全和数据验证
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Optional, List, Dict, Any
 from enum import Enum
 from pydantic import BaseModel, Field, validator
@@ -147,8 +147,6 @@ class NotificationTask(BaseModel):
     sent_run_id: Optional[int] = None
     retry_count: int = 0
     max_retry_count: int = Field(5, description="最大重试次数")
-    cooldown_hours: float = Field(2.0, description="冷静时间（小时）")
-    last_sent_at: Optional[datetime] = Field(None, description="最后发送时间")
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -161,32 +159,6 @@ class NotificationTask(BaseModel):
     def is_overdue(self) -> bool:
         """是否逾期未发送"""
         return self.is_pending and now_china_naive() > self.due_time
-
-    @property
-    def is_in_cooldown(self) -> bool:
-        """是否在冷静期内"""
-        if not self.last_sent_at:
-            return False
-
-        cooldown_delta = timedelta(hours=self.cooldown_hours)
-        return now_china_naive() - self.last_sent_at < cooldown_delta
-
-    @property
-    def can_retry(self) -> bool:
-        """是否可以重试"""
-        return self.retry_count < self.max_retry_count and not self.is_in_cooldown
-
-    def should_send_now(self) -> bool:
-        """是否应该立即发送"""
-        if not self.is_pending:
-            return False
-
-        # 如果是第一次发送
-        if self.retry_count == 0:
-            return now_china_naive() >= self.due_time
-
-        # 如果是重试，需要检查冷静时间
-        return self.can_retry and not self.is_in_cooldown
 
 
 # ============================================================================

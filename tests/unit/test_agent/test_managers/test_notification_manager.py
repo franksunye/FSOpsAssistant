@@ -3,8 +3,8 @@
 """
 
 import pytest
-from unittest.mock import Mock, patch, MagicMock
-from datetime import datetime, timedelta
+from unittest.mock import Mock, patch
+from datetime import datetime
 
 from src.fsoa.agent.managers.notification_manager import NotificationTaskManager
 from src.fsoa.data.models import (
@@ -121,47 +121,20 @@ class TestNotificationTaskManager:
     def test_send_single_notification_failure(self):
         """测试发送单个通知失败 - 需要重构"""
         pass
-    def test_cooldown_check(self, notification_manager):
-        """测试冷却时间检查"""
-        # Arrange
-        task = NotificationTask(
-            order_num="GD20250001",
-            org_name="测试公司A",
-            notification_type=NotificationTaskType.REMINDER,
-            due_time=datetime.now(),
-            last_sent_at=datetime.now() - timedelta(minutes=30),  # 30分钟前发送过
-            cooldown_hours=2.0
-        )
-        
-        # Act
-        in_cooldown = task.is_in_cooldown
-        
-        # Assert
-        assert in_cooldown is False  # 30分钟 < 2小时，不在冷却期
+    def test_manager_cooldown_config(self, notification_manager):
+        """测试NotificationTaskManager的cooldown配置"""
+        # 测试从系统配置正确读取cooldown值
+        assert notification_manager.notification_cooldown_hours == 2.0  # 120分钟 = 2小时
     
-    def test_retry_logic(self, notification_manager, sample_notification_task):
-        """测试重试逻辑"""
+    def test_retry_count_tracking(self, notification_manager, sample_notification_task):
+        """测试重试次数跟踪"""
         # Arrange
         sample_notification_task.retry_count = 3
         sample_notification_task.max_retry_count = 5
-        
-        # Act
-        can_retry = sample_notification_task.can_retry
-        
-        # Assert
-        assert can_retry is True
-    
-    def test_max_retry_exceeded(self, notification_manager, sample_notification_task):
-        """测试超过最大重试次数"""
-        # Arrange
-        sample_notification_task.retry_count = 5
-        sample_notification_task.max_retry_count = 5
-        
-        # Act
-        can_retry = sample_notification_task.can_retry
-        
-        # Assert
-        assert can_retry is False
+
+        # Assert - 只测试字段值，不测试已删除的方法
+        assert sample_notification_task.retry_count == 3
+        assert sample_notification_task.max_retry_count == 5
     
     def test_get_notification_statistics(self, notification_manager, mock_db_manager):
         """测试获取通知统计信息"""

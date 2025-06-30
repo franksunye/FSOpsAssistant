@@ -218,29 +218,18 @@ class NotificationTask(BaseModel):
     sent_run_id: Optional[int] = None
     retry_count: int = 0
     max_retry_count: int = Field(5, description="最大重试次数")
-    cooldown_hours: float = Field(2.0, description="冷静时间（小时）")
-    last_sent_at: Optional[datetime] = Field(None, description="最后发送时间")
-    
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
     @property
-    def is_in_cooldown(self) -> bool:
-        """是否在冷静期内"""
-        if not self.last_sent_at:
-            return False
-        cooldown_delta = timedelta(hours=self.cooldown_hours)
-        return now_china_naive() - self.last_sent_at < cooldown_delta
-    
+    def is_pending(self) -> bool:
+        """是否待发送"""
+        return self.status == NotificationTaskStatus.PENDING
+
     @property
-    def can_retry(self) -> bool:
-        """是否可以重试"""
-        return self.retry_count < self.max_retry_count and not self.is_in_cooldown
-    
-    def should_send_now(self) -> bool:
-        """是否应该立即发送"""
-        return (
-            self.status == NotificationTaskStatus.PENDING and
-            not self.is_in_cooldown and
-            self.can_retry
-        )
+    def is_overdue(self) -> bool:
+        """是否逾期未发送"""
+        return self.is_pending and now_china_naive() > self.due_time
 ```
 
 ### 3.4 通知类型定义
@@ -562,40 +551,38 @@ def _send_message(self, webhook_url: str, message_data: Dict[str, Any]) -> bool:
 
 **目的**: 避免短时间内重复发送相同通知
 
-**实现**:
+**实现**: 冷静期控制在 `NotificationTaskManager` 层面实现
 ```python
-@property
-def is_in_cooldown(self) -> bool:
-    """是否在冷静期内"""
-    if not self.last_sent_at:
-        return False
+class NotificationTaskManager:
+    def __init__(self):
+        # 从系统配置读取冷静时间
+        cooldown_minutes = int(configs.get("notification_cooldown", "120"))
+        self.notification_cooldown_hours = cooldown_minutes / 60.0
 
-    cooldown_delta = timedelta(hours=self.cooldown_hours)
-    return now_china_naive() - self.last_sent_at < cooldown_delta
+    def _has_pending_task(self, order_num: str, notification_type: NotificationTaskType) -> bool:
+        """检查是否在冷却期内已发送过相同类型的通知"""
+        cooldown_cutoff = now_china_naive() - timedelta(hours=self.notification_cooldown_hours)
+
+        recent_tasks = self.db_manager.get_recent_notification_tasks(
+            order_num,
+            since=cooldown_cutoff,
+            notification_type=notification_type.value
+        )
+        return len(recent_tasks) > 0
 ```
 
 **配置**:
-- 默认冷静时间：2小时
-- 可通过数据库配置动态调整
-- 不同通知类型可设置不同冷静时间
+- 默认冷静时间：30分钟（可通过Web界面修改）
+- 通过系统配置表 `notification_cooldown` 字段控制
+- 所有通知类型使用统一的冷静时间
+- 冷静期检查基于数据库查询，不依赖模型字段
 
 ### 6.2 重试机制
 
-**策略**:
-```python
-@property
-def can_retry(self) -> bool:
-    """是否可以重试"""
-    return self.retry_count < self.max_retry_count and not self.is_in_cooldown
-
-def should_send_now(self) -> bool:
-    """是否应该立即发送"""
-    return (
-        self.status == NotificationTaskStatus.PENDING and
-        not self.is_in_cooldown and
-        self.can_retry
-    )
-```
+**策略**: 重试逻辑在 `NotificationTaskManager` 中处理
+- 最大重试次数通过 `max_retry_count` 配置
+- 重试计数存储在 `notification_tasks` 表的 `retry_count` 字段
+- 发送失败时自动增加重试计数
 
 **配置**:
 - 最大重试次数：5次
@@ -646,8 +633,6 @@ CREATE TABLE notification_tasks (
     sent_run_id INTEGER,               -- 发送此通知的Agent运行ID
     retry_count INTEGER DEFAULT 0,
     max_retry_count INTEGER DEFAULT 5,     -- 最大重试次数
-    cooldown_hours REAL DEFAULT 2.0,       -- 冷静时间（小时）
-    last_sent_at DATETIME,                  -- 最后发送时间
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 

@@ -109,7 +109,6 @@ class NotificationTaskManager:
                             notification_type=NotificationTaskType.REMINDER,
                             due_time=now_china_naive(),
                             created_run_id=run_id,
-                            cooldown_hours=self.notification_cooldown_hours,
                             max_retry_count=self.max_retry_count
                         )
                         tasks.append(reminder_task)
@@ -162,7 +161,6 @@ class NotificationTaskManager:
                                 notification_type=NotificationTaskType.ESCALATION,
                                 due_time=now_china_naive(),
                                 created_run_id=run_id,
-                                cooldown_hours=self.notification_cooldown_hours,
                                 max_retry_count=self.max_retry_count
                             )
                             tasks.append(escalation_task)
