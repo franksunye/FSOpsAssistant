@@ -271,24 +271,254 @@ Metabase (只读) → Agent Engine → 本地数据库 (Agent记录 + 通知任�
 - **结果导向**：以业务KPI为驱动
 - **持续优化**：基于效果反馈优化策略
 
-## 5. 技术栈
+## 5. 技术栈架构
 
-### 5.1 核心技术
-- **Python 3.9+**：主要开发语言
-- **LangGraph**：Agent编排框架，实现状态图工作流
-- **DeepSeek**：LLM推理引擎
-- **SQLite**：本地数据存储
-- **Streamlit**：Web UI框架
+### 5.1 当前技术栈（PoC阶段）
 
-### 5.2 集成技术
-- **Metabase API**：数据源集成
-- **企微Webhook**：消息通知
-- **APScheduler**：定时任务调度
-- **Pydantic**：数据验证和序列化
+#### 核心技术栈
+```python
+# Agent框架
+- LangGraph: 0.0.40+         # Agent工作流引擎
+- LangChain: 0.1.0+          # Agent框架基础
+- OpenAI: 1.0.0+             # LLM API客户端（兼容DeepSeek）
 
-## 6. 部署架构
+# Web框架
+- Streamlit: 1.28.0+         # Web界面
+- SQLAlchemy: 2.0.0+         # 数据库ORM
+- APScheduler: 3.10.0+       # 任务调度
 
-### 6.1 单机部署（POC阶段）
+# 数据处理
+- Pandas: 2.0.0+             # 数据分析
+- Pydantic: 2.0.0+           # 数据验证
+- Requests: 2.31.0+          # HTTP客户端
+```
+
+#### 业务组件（自研）
+```python
+# 决策引擎
+- DecisionEngine             # 规则+LLM混合决策
+- RuleEngine                 # 业务规则引擎
+- DeepSeekClient            # LLM集成客户端
+
+# 管理器模式
+- DataStrategyManager        # 数据策略管理
+- NotificationManager        # 通知任务管理
+- ExecutionTracker          # 执行追踪管理
+
+# 业务逻辑
+- BusinessTimeCalculator     # 工作时间计算
+- SLACalculator             # SLA状态计算
+- BusinessFormatter         # 消息格式化
+```
+
+#### 技术栈特点
+- **轻量级**：最小化依赖，快速启动
+- **自包含**：SQLite本地存储，无外部依赖
+- **可扩展**：模块化设计，支持组件替换
+- **PoC导向**：专注核心功能验证，避免过度工程化
+
+### 5.2 AI Native技术栈扩展规划
+
+#### 阶段1：智能状态升级（无新技术栈）
+```python
+# 基于现有技术实现AI Native概念
++ IntelligentAgentState      # 智能状态管理
++ ThoughtRecord             # 思考记录系统
++ ContextMemory             # 上下文记忆
++ ReasoningChain            # 推理链追踪
+
+# 存储：继续使用SQLite
+# LLM：继续使用DeepSeek
+# 框架：继续使用LangGraph
+```
+
+#### 阶段2：记忆和学习能力（轻量级AI增强）
+```python
+# 最小化技术栈增加
++ sentence-transformers      # 文本嵌入（用于相似性搜索）
++ chromadb                  # 轻量级向量数据库
++ numpy                     # 向量计算
++ scikit-learn              # 简单机器学习
+
+# 用途：
+# - 商机模式识别
+# - 历史经验检索
+# - 成功案例匹配
+```
+
+#### 阶段3：高级智能能力（AI Native升级）
+```python
+# 根据需要选择性添加
++ guidance                  # 结构化LLM输出
++ outlines                  # 约束生成
++ redis                     # 高性能缓存和会话存储
++ celery                    # 分布式任务队列
+
+# 高级Agent框架（可选）
++ autogen                   # 多Agent协作
++ crewai                    # Agent团队协作
++ langgraph-pro            # 商业版LangGraph
+```
+
+#### 阶段4：生产级部署（企业级）
+```python
+# 生产环境技术栈
++ postgresql                # 生产数据库
++ redis-cluster            # 分布式缓存
++ kafka                     # 消息队列
++ prometheus               # 监控指标
++ grafana                  # 监控仪表板
++ jaeger                   # 分布式追踪
++ kubernetes               # 容器编排
++ nginx                    # 负载均衡
+```
+
+### 5.3 技术选择原则
+
+#### 渐进式升级策略
+1. **价值驱动**：只有在明确业务价值时才引入新技术
+2. **向后兼容**：新技术的引入不影响现有功能
+3. **可回滚**：每个阶段都可以独立回滚
+4. **成本可控**：避免过度工程化和技术债务
+
+#### 技术决策矩阵
+| 技术类别 | PoC阶段 | AI Native阶段 | 生产阶段 | 选择原则 |
+|---------|---------|---------------|----------|----------|
+| **Agent框架** | LangGraph | LangGraph + 智能增强 | LangGraph Pro | 稳定性优先 |
+| **数据库** | SQLite | SQLite + 向量DB | PostgreSQL | 性能需求驱动 |
+| **LLM集成** | DeepSeek | DeepSeek + 结构化生成 | 多模型支持 | 成本效益平衡 |
+| **监控** | 基础日志 | 智能可观测性 | 企业级监控 | 运维需求驱动 |
+| **部署** | 单机 | 单机/容器 | 分布式集群 | 规模需求驱动 |
+
+### 5.4 技术架构演进路径
+
+#### 当前架构（PoC）
+```mermaid
+graph TB
+    subgraph "PoC技术栈"
+        LG[LangGraph<br/>工作流引擎]
+        ST[Streamlit<br/>Web界面]
+        SQ[SQLite<br/>本地存储]
+        DS[DeepSeek<br/>LLM服务]
+    end
+
+    subgraph "业务组件"
+        DE[DecisionEngine<br/>决策引擎]
+        NM[NotificationManager<br/>通知管理]
+        DM[DataManager<br/>数据管理]
+    end
+
+    LG --> DE
+    DE --> DS
+    NM --> SQ
+    ST --> DM
+```
+
+#### AI Native架构（未来）
+```mermaid
+graph TB
+    subgraph "AI Native技术栈"
+        AB[AgentBrain<br/>智能大脑]
+        CM[ContextMemory<br/>上下文记忆]
+        VDB[ChromaDB<br/>向量数据库]
+        RE[ReflectionEngine<br/>反思引擎]
+    end
+
+    subgraph "增强组件"
+        TR[ThoughtRecord<br/>思考记录]
+        RC[ReasoningChain<br/>推理链]
+        SP[SuccessPattern<br/>成功模式]
+        LI[LearningInsight<br/>学习洞察]
+    end
+
+    AB --> CM
+    CM --> VDB
+    AB --> RE
+    TR --> RC
+    SP --> LI
+```
+
+## 6. 架构扩展和未来可行性
+
+### 6.1 AI Native架构扩展设计
+
+#### 智能Agent大脑架构
+```mermaid
+graph TB
+    subgraph "AI Native Agent Core"
+        BRAIN[🧠 Agent Brain<br/>LLM Central Intelligence]
+        MEMORY[💾 Agent Memory<br/>Context & Experience]
+        REFLECTION[🤔 Reflection Engine<br/>Learning & Optimization]
+    end
+
+    subgraph "Intelligent Workflow"
+        PERCEIVE[👁️ Perceive<br/>智能感知]
+        THINK[💭 Think<br/>深度思考]
+        PLAN[📋 Plan<br/>动态规划]
+        ACT[⚡ Act<br/>智能执行]
+        REFLECT[🔄 Reflect<br/>反思学习]
+    end
+
+    subgraph "Knowledge System"
+        KB[📚 Knowledge Base<br/>领域知识]
+        EXP[🎯 Experience Store<br/>执行经验]
+        PATTERN[🔍 Pattern Library<br/>模式识别]
+    end
+
+    BRAIN --> MEMORY
+    BRAIN --> REFLECTION
+    BRAIN --> PERCEIVE
+    BRAIN --> THINK
+    BRAIN --> PLAN
+    BRAIN --> ACT
+    BRAIN --> REFLECT
+
+    MEMORY --> KB
+    MEMORY --> EXP
+    MEMORY --> PATTERN
+
+    REFLECT --> MEMORY
+```
+
+#### 从工具调用到智能大脑的转变
+```python
+# 当前模式（Tool-based）
+Agent → 调用LLM → 获取结果 → 继续流程
+
+# AI Native模式（Brain-based）
+Agent ← 智能大脑(LLM) → 持续思考、记忆、学习、决策
+```
+
+### 6.2 技术可行性分析
+
+#### 核心技术组件可行性
+| 组件 | 技术实现 | 可行性 | 复杂度 | 预期效果 |
+|------|---------|--------|--------|----------|
+| **AgentBrain** | LLM + 状态管理 | ✅ 高 | 中等 | 持续智能决策 |
+| **ContextMemory** | 向量DB + 嵌入 | ✅ 高 | 低 | 经验积累和检索 |
+| **ThoughtRecord** | 结构化存储 | ✅ 高 | 低 | 决策过程追踪 |
+| **ReflectionEngine** | LLM + 模式识别 | ✅ 中 | 中等 | 持续学习优化 |
+| **AdaptiveWorkflow** | 动态图构建 | ⚠️ 中 | 高 | 自适应执行流程 |
+
+#### 实施风险评估
+```python
+# 低风险组件（可立即实施）
+- IntelligentAgentState     # 扩展现有状态管理
+- ThoughtRecord            # 新增思考记录
+- ContextMemory            # 基于SQLite的记忆系统
+
+# 中风险组件（需要验证）
+- AgentBrain               # LLM集成复杂度
+- ReflectionEngine         # 学习算法设计
+
+# 高风险组件（需要深入研究）
+- AdaptiveWorkflow         # 动态工作流构建
+- MultiAgentCoordination   # 多Agent协作
+```
+
+### 6.3 部署架构演进
+
+#### 阶段1：PoC部署（当前）
 ```
 ┌─────────────────────────────────┐
 │         FSOA Server             │
@@ -297,6 +527,7 @@ Metabase (只读) → Agent Engine → 本地数据库 (Agent记录 + 通知任�
 │  └─────────────────────────────┘│
 │  ┌─────────────────────────────┐│
 │  │    Agent Engine             ││
+│  │    (LangGraph + 自研组件)    ││
 │  └─────────────────────────────┘│
 │  ┌─────────────────────────────┐│
 │  │    SQLite Database          ││
@@ -304,11 +535,90 @@ Metabase (只读) → Agent Engine → 本地数据库 (Agent记录 + 通知任�
 └─────────────────────────────────┘
 ```
 
-### 6.2 扩展部署（生产阶段）
-- **容器化**：Docker部署
-- **数据库**：PostgreSQL替换SQLite
-- **消息队列**：Redis/RabbitMQ
-- **监控**：Prometheus + Grafana
+#### 阶段2：AI Native部署（智能增强）
+```
+┌─────────────────────────────────┐
+│      AI Native FSOA Server      │
+│  ┌─────────────────────────────┐│
+│  │    Enhanced Web UI          ││
+│  │    (Agent对话界面)           ││
+│  └─────────────────────────────┘│
+│  ┌─────────────────────────────┐│
+│  │    Intelligent Agent        ││
+│  │    (Brain + Memory + 反思)   ││
+│  └─────────────────────────────┘│
+│  ┌─────────────────────────────┐│
+│  │  SQLite + ChromaDB          ││
+│  │  (结构化 + 向量存储)         ││
+│  └─────────────────────────────┘│
+└─────────────────────────────────┘
+```
+
+#### 阶段3：生产级部署（企业级）
+```
+┌─────────────────────────────────┐
+│         Load Balancer           │
+│         (Nginx/HAProxy)         │
+└─────────────────────────────────┘
+           │
+    ┌──────┴──────┐
+    │             │
+┌───▼───┐     ┌───▼───┐
+│Agent  │     │Agent  │
+│Node 1 │     │Node 2 │
+└───┬───┘     └───┬───┘
+    │             │
+    └──────┬──────┘
+           │
+┌─────────▼─────────┐
+│   Shared Storage  │
+│ PostgreSQL+Redis  │
+│   + Vector DB     │
+└───────────────────┘
+```
+
+### 6.4 扩展能力规划
+
+#### 业务扩展能力
+```python
+# 多场景适应
+- 售后服务监控          # 扩展到其他业务场景
+- 质量管控预警          # 质量问题自动识别
+- 客户满意度分析        # 情感分析和预测
+
+# 多行业支持
+- 制造业现场服务        # 设备维护和故障处理
+- 零售业客户服务        # 投诉处理和满意度
+- 物流业配送监控        # 配送时效和异常处理
+```
+
+#### 技术扩展能力
+```python
+# 多模态能力
+- 图像识别             # 现场照片分析
+- 语音处理             # 客户通话分析
+- 文档理解             # 合同和报告分析
+
+# 预测分析
+- 时间序列预测         # SLA违规预测
+- 异常检测             # 业务异常识别
+- 趋势分析             # 业务趋势预测
+```
+
+### 6.5 投资回报分析
+
+#### 技术投入vs业务价值
+| 投入阶段 | 技术成本 | 开发周期 | 业务价值 | ROI预期 |
+|---------|---------|---------|---------|---------|
+| **PoC验证** | 低 | 2-4周 | 概念验证 | 学习价值 |
+| **AI Native** | 中 | 6-8周 | 智能化提升 | 3-6个月回收 |
+| **生产部署** | 高 | 12-16周 | 规模化应用 | 6-12个月回收 |
+
+#### 风险缓解策略
+1. **技术风险**：分阶段实施，每阶段独立验证
+2. **业务风险**：保持向后兼容，支持快速回滚
+3. **成本风险**：基于价值驱动，避免过度投资
+4. **时间风险**：MVP优先，核心功能先行
 
 ## 7. v0.2.0 新增架构组件
 
@@ -438,7 +748,55 @@ class AgentState(TypedDict):
 - **优雅降级**: 数据获取失败时使用缓存数据
 - **执行追踪**: 所有步骤都有详细的执行日志和性能监控
 
+## 8. 架构设计总结
+
+### 8.1 设计原则
+- **KISS原则**：优先实现核心功能，保持扩展性
+- **渐进式演进**：从PoC到AI Native到生产级的平滑升级
+- **价值驱动**：技术选择基于明确的业务价值
+- **风险可控**：每个阶段都可以独立验证和回滚
+
+### 8.2 版本演进历史
+- **v0.1.0**：基础PoC实现，验证Agent概念
+- **v0.2.0**：重点增强了时间计算精度和通知控制能力
+- **v0.3.0**：修复了LangGraph递归循环问题，优化了工作流设计
+- **v0.4.0**：LLM集成和混合决策机制
+- **未来版本**：AI Native架构升级
+
+### 8.3 技术债务管理
+```python
+# 当前技术债务
+- 单机SQLite存储限制      # 计划：PostgreSQL迁移
+- 同步处理性能瓶颈        # 计划：异步处理优化
+- 监控可观测性不足        # 计划：企业级监控
+
+# AI Native技术债务预防
+- 模块化设计             # 避免紧耦合
+- 接口标准化             # 支持组件替换
+- 配置驱动               # 支持灵活调整
+```
+
+### 8.4 未来架构愿景
+
+#### 终极目标：自主智能运营助手
+```
+当前：规则驱动的自动化Agent
+  ↓
+近期：LLM增强的智能Agent
+  ↓
+中期：AI Native的自主Agent
+  ↓
+远期：多Agent协作的智能运营系统
+```
+
+#### 核心能力演进路径
+1. **自动化** → **智能化** → **自主化** → **协作化**
+2. **反应式** → **预测式** → **主动式** → **创新式**
+3. **单场景** → **多场景** → **跨领域** → **生态化**
+
 ---
-> 架构设计遵循KISS原则，优先实现核心功能，保持扩展性
-> v0.2.0 重点增强了时间计算精度和通知控制能力
-> v0.3.0 修复了LangGraph递归循环问题，优化了工作流设计
+
+> **架构文档版本**: v2.0
+> **最后更新**: 2025-06-30
+> **维护者**: FSOA架构团队
+> **下次评审**: 基于AI Native实施进展
