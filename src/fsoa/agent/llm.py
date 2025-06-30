@@ -2,9 +2,11 @@
 DeepSeek LLM集成模块
 
 提供与DeepSeek API的集成，支持智能决策和内容生成
+集成LLM可观测性功能，提供完整的调用监控和日志记录
 """
 
 import json
+import time
 from typing import Dict, Any, Optional, List
 from openai import OpenAI
 from datetime import datetime
@@ -12,6 +14,7 @@ from datetime import datetime
 from ..utils.logger import get_logger
 from ..utils.config import get_config
 from ..data.models import OpportunityInfo, DecisionResult, Priority
+from .llm_observer import get_llm_observer, LLMCallStatus
 
 logger = get_logger(__name__)
 
@@ -56,6 +59,9 @@ class DeepSeekClient:
         Returns:
             决策结果
         """
+        observer = get_llm_observer()
+        start_time = time.time()
+
         try:
             prompt = self._build_priority_analysis_prompt(opportunity, context)
 
@@ -65,6 +71,18 @@ class DeepSeekClient:
             temperature_config = db_manager.get_system_config("llm_temperature")
             temperature = float(temperature_config) if temperature_config else 0.1
 
+            # 开始观测记录
+            call_id = observer.start_call(
+                opportunity_id=opportunity.order_num,
+                context_data=context or {},
+                prompt_text=prompt,
+                model_name="deepseek-chat",
+                temperature=temperature,
+                max_tokens=1000
+            )
+
+            logger.info(f"🚀 开始调用DeepSeek API", extra={"call_id": call_id, "opportunity": opportunity.order_num})
+
             response = self.client.chat.completions.create(
                 model="deepseek-chat",
                 messages=[{"role": "user", "content": prompt}],
@@ -72,8 +90,33 @@ class DeepSeekClient:
                 max_tokens=1000
             )
 
+            duration_ms = (time.time() - start_time) * 1000
             result_text = response.choices[0].message.content
+
+            # 提取Token使用信息
+            tokens_used = getattr(response, 'usage', {}).get('total_tokens') if hasattr(response, 'usage') else None
+            tokens_prompt = getattr(response, 'usage', {}).get('prompt_tokens') if hasattr(response, 'usage') else None
+            tokens_completion = getattr(response, 'usage', {}).get('completion_tokens') if hasattr(response, 'usage') else None
+
+            logger.info(f"📡 DeepSeek API响应成功", extra={
+                "call_id": call_id,
+                "duration_ms": duration_ms,
+                "tokens_used": tokens_used,
+                "response_length": len(result_text)
+            })
+
             result_data = self._parse_decision_result(result_text)
+
+            # 记录成功调用
+            observer.record_success(
+                call_id=call_id,
+                response_text=result_text,
+                parsed_result=result_data,
+                duration_ms=duration_ms,
+                tokens_used=tokens_used,
+                tokens_prompt=tokens_prompt,
+                tokens_completion=tokens_completion
+            )
 
             return DecisionResult(
                 action=result_data.get("action", "skip"),
@@ -85,7 +128,26 @@ class DeepSeekClient:
             )
 
         except Exception as e:
-            logger.error(f"DeepSeek API error: {e}")
+            duration_ms = (time.time() - start_time) * 1000
+            error_type = type(e).__name__
+            error_message = str(e)
+
+            logger.error(f"❌ DeepSeek API调用失败", extra={
+                "call_id": getattr(observer, '_current_call', {}).get('call_id', 'unknown') if observer else 'unknown',
+                "error_type": error_type,
+                "error_message": error_message,
+                "duration_ms": duration_ms
+            })
+
+            # 记录失败调用（如果观测器已初始化）
+            if observer and hasattr(observer, '_current_call') and observer._current_call:
+                observer.record_failure(
+                    call_id=observer._current_call.call_id,
+                    error_message=error_message,
+                    error_type=error_type,
+                    duration_ms=duration_ms
+                )
+
             # 降级到规则决策
             return self._fallback_rule_decision(opportunity)
     

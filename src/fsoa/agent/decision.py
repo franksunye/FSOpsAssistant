@@ -16,6 +16,7 @@ from ..data.database import get_db_manager
 from ..utils.logger import get_logger
 from ..utils.config import get_config
 from .llm import get_deepseek_client
+from .llm_observer import get_llm_observer
 
 logger = get_logger(__name__)
 
@@ -220,17 +221,39 @@ class DecisionEngine:
 
             if use_llm:
                 deepseek_client = get_deepseek_client()
-                context_dict = self._build_context_dict(task, context)
+                context_dict = self._build_context_dict(opportunity, context)
                 context_dict["rule_suggestion"] = {
                     "action": rule_result.action,
                     "priority": rule_result.priority.value,
                     "reasoning": rule_result.reasoning
                 }
-                
-                llm_result = deepseek_client.analyze_task_priority(task, context_dict)
-                
+
+                llm_result = deepseek_client.analyze_task_priority(opportunity, context_dict)
+
                 # 合并规则和LLM的结果
-                return self._merge_decisions(rule_result, llm_result)
+                merged_result = self._merge_decisions(rule_result, llm_result)
+
+                # 记录决策上下文到观测器
+                observer = get_llm_observer()
+                if observer and hasattr(observer, '_current_call') and observer._current_call:
+                    observer.record_decision_context(
+                        call_id=observer._current_call.call_id,
+                        rule_suggestion={
+                            "action": rule_result.action,
+                            "priority": rule_result.priority.value,
+                            "reasoning": rule_result.reasoning,
+                            "confidence": rule_result.confidence
+                        },
+                        final_decision={
+                            "action": merged_result.action,
+                            "priority": merged_result.priority.value,
+                            "reasoning": merged_result.reasoning,
+                            "confidence": merged_result.confidence,
+                            "llm_used": merged_result.llm_used
+                        }
+                    )
+
+                return merged_result
             else:
                 return rule_result
                 

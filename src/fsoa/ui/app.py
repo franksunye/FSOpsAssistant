@@ -85,6 +85,8 @@ def main():
             st.session_state.page = "execution_history"
         if st.button("通知管理", use_container_width=True):
             st.session_state.page = "notification_management"
+        if st.button("🤖 LLM监控", use_container_width=True):
+            st.session_state.page = "llm_monitor"
 
         st.markdown("---")
 
@@ -117,6 +119,8 @@ def main():
         show_execution_history()
     elif page == "notification_management":
         show_notification_management()
+    elif page == "llm_monitor":
+        show_llm_monitor()
     elif page == "cache_management":
         show_cache_management()
     elif page == "wechat_config":
@@ -2584,6 +2588,20 @@ def show_about():
         if st.button("系统设置", use_container_width=True, key="about_settings"):
             st.session_state.page = "system_settings"
             st.rerun()
+
+
+def show_llm_monitor():
+    """显示LLM监控页面"""
+    try:
+        from .llm_monitor import render_llm_monitor
+        render_llm_monitor()
+    except ImportError as e:
+        st.error(f"LLM监控模块导入失败: {e}")
+        st.markdown("### 🤖 LLM监控功能")
+        st.info("LLM监控功能正在开发中，请稍后再试。")
+    except Exception as e:
+        st.error(f"LLM监控页面加载失败: {e}")
+        logger.error(f"LLM monitor error: {e}")
 
 
 if __name__ == "__main__":
