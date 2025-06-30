@@ -496,9 +496,81 @@ class AgentExecutionTracker:
 - **A/B测试**：支持策略的灰度发布
 - **特性开关**：支持功能的动态开启关闭
 
-## 11. 实际代码实现分析
+## 11. LLM在Agent中的具体参与机制
 
-### 11.1 Agent Orchestrator核心实现
+### 11.1 LLM参与的两个关键节点
+
+基于当前代码实现分析，LLM在Agent工作流中有两个明确的参与点：
+
+#### 节点1：make_decision_node - 商机评估
+- **处理粒度**：单个商机（Individual Analysis）
+- **LLM功能**：智能决策分析
+- **调用路径**：`make_decision_node` → `DecisionEngine.make_decision()` → `DeepSeekClient.analyze_task_priority()`
+- **输入数据**：单个OpportunityInfo + 上下文信息
+- **输出结果**：DecisionResult（action, priority, message, reasoning, confidence）
+- **配置控制**：`use_llm_optimization`
+
+#### 节点2：send_notification_node - 消息生成
+- **处理粒度**：组织级汇总（Organizational Aggregation）
+- **LLM功能**：消息格式化
+- **调用路径**：`send_notification_node` → `NotificationManager._format_with_llm()`
+- **输入数据**：组织名称 + 多个OpportunityInfo列表
+- **输出结果**：格式化的通知消息文本
+- **配置控制**：`use_llm_message_formatting`
+
+### 11.2 商机分析与通知汇总的数据流
+
+```mermaid
+graph TD
+    subgraph "商机评估阶段"
+        A[商机1] --> B[LLM分析1]
+        C[商机2] --> D[LLM分析2]
+        E[商机3] --> F[LLM分析3]
+        B --> G[DecisionResult1]
+        D --> H[DecisionResult2]
+        F --> I[DecisionResult3]
+    end
+
+    subgraph "通知汇总阶段"
+        G --> J[按组织分组]
+        H --> J
+        I --> J
+        J --> K[组织A: 商机1,2]
+        J --> L[组织B: 商机3]
+        K --> M[LLM汇总格式化A]
+        L --> N[LLM汇总格式化B]
+        M --> O[通知消息A]
+        N --> P[通知消息B]
+    end
+
+    style B fill:#e1f5fe
+    style D fill:#e1f5fe
+    style F fill:#e1f5fe
+    style M fill:#f3e5f5
+    style N fill:#f3e5f5
+```
+
+### 11.3 当前实现的耦合与解耦分析
+
+#### 存在的耦合
+1. **数据传递耦合**：商机评估的DecisionResult.message可能在通知汇总时被重新生成
+2. **配置共享耦合**：两个LLM调用点共享相同的DeepSeekClient实例和基础配置
+3. **错误处理耦合**：LLM调用失败时的降级策略相似
+
+#### 解耦机制
+1. **功能分离**：
+   - 商机评估：决策逻辑（业务判断）
+   - 消息生成：展示逻辑（用户界面）
+2. **独立配置**：
+   - 可以单独启用/禁用商机评估的LLM优化
+   - 可以单独启用/禁用消息生成的LLM格式化
+3. **独立降级**：
+   - 商机评估失败时降级到规则引擎
+   - 消息生成失败时降级到模板格式化
+
+## 12. 实际代码实现分析
+
+### 12.1 Agent Orchestrator核心实现
 
 基于当前代码分析，Agent Orchestrator的核心实现体现了以下设计原则：
 

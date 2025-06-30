@@ -23,13 +23,83 @@
 - **多场景适应**：在不同业务场景下的表现差异
 - **成本控制**：在保证质量前提下的API调用优化
 
-## 🤖 LLM在Agent中的作用
+## 🤖 LLM在Agent中的作用机制详解
+
+### LLM参与的两个关键决策点
+
+基于当前系统实现，LLM在Agent工作流中参与两个不同的决策环节：
+
+#### 1. 商机评估阶段（Individual Analysis）
+- **执行节点**：`make_decision_node`
+- **调用位置**：`DecisionEngine._hybrid_decision()` → `DeepSeekClient.analyze_task_priority()`
+- **处理粒度**：**单个商机**的独立分析
+- **主要功能**：
+  - 分析商机的紧急程度和业务影响
+  - 决定处理动作（skip/notify/escalate）
+  - 评估优先级（low/normal/high/urgent）
+  - 生成决策理由和置信度
+- **配置开关**：`use_llm_optimization`
+
+#### 2. 消息生成阶段（Aggregated Formatting）
+- **执行节点**：`send_notification_node`
+- **调用位置**：`NotificationManager._format_with_llm()`
+- **处理粒度**：**组织级别**的商机汇总
+- **主要功能**：
+  - 将同一组织的多个商机汇总成一条通知
+  - 生成专业、简洁的通知消息内容
+  - 根据通知类型调整消息语气和格式
+- **配置开关**：`use_llm_message_formatting`
+
+### 商机分析与通知汇总的机制
+
+#### 分析阶段：逐个商机处理
+```python
+# 在make_decision_node中
+for opportunity in opportunities:
+    # 每个商机独立调用LLM分析
+    decision_result = self.decision_engine.make_decision(opportunity)
+    opportunity.decision_result = decision_result  # 保存到商机对象
+```
+
+#### 汇总阶段：按组织分组通知
+```python
+# 在send_notification_node中
+# 1. 按组织分组商机
+org_tasks = group_tasks_by_organization(notification_tasks)
+
+# 2. 为每个组织生成汇总通知
+for org_name, tasks in org_tasks.items():
+    # 汇总该组织的所有商机信息
+    opportunities = [get_opportunity_info(task) for task in tasks]
+
+    # 使用LLM生成汇总消息（可选）
+    if use_llm_message_formatting:
+        message = self._format_with_llm(org_name, opportunities, notification_type)
+    else:
+        message = self._format_with_template(org_name, opportunities, notification_type)
+```
 
 ### 智能增强而非替代
 LLM在FSOA中的定位是**智能增强**，而不是替代规则引擎：
 - **规则引擎**：负责硬性的业务逻辑判断（SLA时间、状态检查等）
 - **LLM引擎**：负责软性的智能优化（消息内容、优先级调整等）
 - **混合决策**：两者结合，确保既有业务准确性又有智能灵活性
+
+### 当前实现的耦合分析
+
+#### 存在的耦合问题
+1. **时间耦合**：商机评估时LLM已生成消息内容，通知发送时可能再次调用LLM格式化
+2. **数据传递**：商机评估的结果（包括消息）需要传递到通知生成阶段
+3. **配置依赖**：两个LLM调用点有不同的配置开关，但共享相同的LLM客户端
+
+#### 解耦机制
+1. **独立配置**：
+   - `use_llm_optimization`：控制商机评估的LLM使用
+   - `use_llm_message_formatting`：控制消息生成的LLM使用
+2. **功能分离**：
+   - 商机评估：决策逻辑，输出DecisionResult
+   - 消息生成：展示逻辑，输出格式化文本
+3. **降级策略**：每个LLM调用点都有独立的降级机制
 
 ## 2. LLM优化架构
 
@@ -40,51 +110,113 @@ graph TB
     subgraph "Agent工作流"
         FD[fetch_data_node<br/>数据获取]
         AS[analyze_status_node<br/>状态分析]
-        MD[make_decision_node<br/>智能决策]
-        SN[send_notification_node<br/>发送通知]
+        MD[make_decision_node<br/>🤖 商机评估]
+        SN[send_notification_node<br/>🤖 消息生成]
     end
-    
+
     subgraph "决策引擎层"
         DE[DecisionEngine<br/>决策引擎]
         RE[RuleEngine<br/>规则引擎]
         LLM[DeepSeekClient<br/>LLM客户端]
     end
-    
-    subgraph "LLM优化组件"
-        PA[Priority Analysis<br/>优先级分析]
+
+    subgraph "LLM功能组件"
+        PA[Priority Analysis<br/>商机优先级分析<br/>📍 单个商机]
+        MF[Message Formatting<br/>通知消息格式化<br/>📍 组织汇总]
         SO[Strategy Optimization<br/>策略优化]
-        MF[Message Formatting<br/>消息格式化]
     end
-    
+
     subgraph "配置管理"
         DB[(Database<br/>配置存储)]
-        CFG[use_llm_optimization<br/>LLM开关]
+        CFG1[use_llm_optimization<br/>商机评估开关]
+        CFG2[use_llm_message_formatting<br/>消息生成开关]
         TEMP[llm_temperature<br/>温度参数]
     end
-    
+
     subgraph "外部服务"
         DS[DeepSeek API<br/>大语言模型]
     end
-    
+
     MD --> DE
     DE --> RE
     DE --> LLM
+    SN --> MF
     LLM --> PA
-    LLM --> SO
     LLM --> MF
+    LLM --> SO
     LLM --> DS
-    
-    DE --> CFG
+
+    DE --> CFG1
+    MF --> CFG2
     LLM --> TEMP
-    CFG --> DB
+    CFG1 --> DB
+    CFG2 --> DB
     TEMP --> DB
-    
-    style LLM fill:#e1f5fe
-    style DS fill:#f3e5f5
-    style CFG fill:#fff3e0
+
+    style MD fill:#e1f5fe
+    style SN fill:#e1f5fe
+    style PA fill:#f3e5f5
+    style MF fill:#f3e5f5
+    style CFG1 fill:#fff3e0
+    style CFG2 fill:#fff3e0
 ```
 
-### 2.2 决策模式对比
+### 2.2 LLM参与的工作流程详解
+
+#### 商机评估流程（Individual Analysis）
+```mermaid
+sequenceDiagram
+    participant MD as make_decision_node
+    participant DE as DecisionEngine
+    participant RE as RuleEngine
+    participant LLM as DeepSeekClient
+    participant DS as DeepSeek API
+
+    MD->>DE: make_decision(opportunity)
+    DE->>RE: evaluate_task(opportunity)
+    RE-->>DE: rule_result
+
+    alt use_llm_optimization=true
+        DE->>LLM: analyze_task_priority(opportunity, context)
+        LLM->>DS: API调用（商机分析）
+        DS-->>LLM: 分析结果JSON
+        LLM-->>DE: DecisionResult
+        DE->>DE: merge_decisions(rule_result, llm_result)
+    else use_llm_optimization=false
+        DE-->>MD: rule_result
+    end
+
+    DE-->>MD: final_decision_result
+```
+
+#### 消息生成流程（Aggregated Formatting）
+```mermaid
+sequenceDiagram
+    participant SN as send_notification_node
+    participant NM as NotificationManager
+    participant LLM as DeepSeekClient
+    participant DS as DeepSeek API
+
+    SN->>NM: execute_pending_tasks(run_id)
+    NM->>NM: group_tasks_by_organization()
+
+    loop 每个组织
+        NM->>NM: collect_opportunities_for_org()
+
+        alt use_llm_message_formatting=true
+            NM->>LLM: _format_with_llm(org_name, opportunities)
+            LLM->>DS: API调用（消息格式化）
+            DS-->>LLM: 格式化消息文本
+            LLM-->>NM: formatted_message
+        else use_llm_message_formatting=false
+            NM->>NM: _format_with_template()
+        end
+
+        NM->>NM: send_to_wechat_group()
+    end
+```
+
+### 2.3 决策模式对比
 
 | 决策模式 | 启用条件 | 工作机制 | 优势 | 劣势 |
 |---------|---------|---------|------|------|
