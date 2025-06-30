@@ -79,6 +79,7 @@ class LLMObserver:
         self.logger = get_logger(__name__)
         self._call_records: List[LLMCallRecord] = []  # 内存缓存，用于快速访问
         self._current_call: Optional[LLMCallRecord] = None
+        self._last_completed_call_id: Optional[str] = None
         self._use_database = True  # 是否使用数据库持久化
     
     def start_call(self, opportunity_id: str, context_data: Dict[str, Any], 
@@ -199,12 +200,35 @@ class LLMObserver:
     def record_decision_context(self, call_id: str, rule_suggestion: Dict[str, Any],
                                final_decision: Dict[str, Any]):
         """记录决策上下文"""
-        if not self._current_call or self._current_call.call_id != call_id:
-            return
-        
-        self._current_call.rule_suggestion = rule_suggestion
-        self._current_call.final_decision = final_decision
-        
+        # 如果当前调用匹配，直接更新
+        if self._current_call and self._current_call.call_id == call_id:
+            self._current_call.rule_suggestion = rule_suggestion
+            self._current_call.final_decision = final_decision
+        else:
+            # 如果当前调用不匹配，直接更新数据库记录
+            try:
+                from ..data.database import get_database_manager
+                import json
+                db_manager = get_database_manager()
+
+                # 确保JSON字段正确序列化
+                def safe_json_serialize(obj):
+                    if obj is None:
+                        return None
+                    if isinstance(obj, (dict, list)):
+                        return json.dumps(obj, ensure_ascii=False)
+                    return obj
+
+                update_data = {
+                    'rule_suggestion': safe_json_serialize(rule_suggestion),
+                    'final_decision': safe_json_serialize(final_decision)
+                }
+
+                db_manager.update_llm_call_record(call_id, update_data)
+
+            except Exception as e:
+                self.logger.error(f"Failed to update decision context for {call_id}: {e}")
+
         self.logger.info(
             "🔄 决策合并完成",
             extra={
@@ -290,28 +314,37 @@ class LLMObserver:
 
         try:
             from ..data.database import get_database_manager
+            import json
             db_manager = get_database_manager()
+
+            # 确保JSON字段正确序列化
+            def safe_json_serialize(obj):
+                if obj is None:
+                    return None
+                if isinstance(obj, (dict, list)):
+                    return json.dumps(obj, ensure_ascii=False)
+                return obj
 
             record_data = {
                 'call_id': self._current_call.call_id,
                 'timestamp': self._current_call.timestamp,
                 'opportunity_id': self._current_call.opportunity_id,
                 'status': self._current_call.status.value,
-                'context_data': self._current_call.context_data,
+                'context_data': safe_json_serialize(self._current_call.context_data),
                 'prompt_text': self._current_call.prompt_text,
                 'model_name': self._current_call.model_name,
                 'temperature': self._current_call.temperature,
                 'max_tokens': self._current_call.max_tokens,
                 'response_text': self._current_call.response_text,
-                'parsed_result': self._current_call.parsed_result,
+                'parsed_result': safe_json_serialize(self._current_call.parsed_result),
                 'duration_ms': self._current_call.duration_ms,
                 'tokens_used': self._current_call.tokens_used,
                 'tokens_prompt': self._current_call.tokens_prompt,
                 'tokens_completion': self._current_call.tokens_completion,
                 'error_message': self._current_call.error_message,
                 'error_type': self._current_call.error_type,
-                'rule_suggestion': self._current_call.rule_suggestion,
-                'final_decision': self._current_call.final_decision
+                'rule_suggestion': safe_json_serialize(self._current_call.rule_suggestion),
+                'final_decision': safe_json_serialize(self._current_call.final_decision)
             }
 
             db_manager.create_llm_call_record(record_data)
@@ -326,20 +359,29 @@ class LLMObserver:
 
         try:
             from ..data.database import get_database_manager
+            import json
             db_manager = get_database_manager()
+
+            # 确保JSON字段正确序列化
+            def safe_json_serialize(obj):
+                if obj is None:
+                    return None
+                if isinstance(obj, (dict, list)):
+                    return json.dumps(obj, ensure_ascii=False)
+                return obj
 
             update_data = {
                 'status': self._current_call.status.value,
                 'response_text': self._current_call.response_text,
-                'parsed_result': self._current_call.parsed_result,
+                'parsed_result': safe_json_serialize(self._current_call.parsed_result),
                 'duration_ms': self._current_call.duration_ms,
                 'tokens_used': self._current_call.tokens_used,
                 'tokens_prompt': self._current_call.tokens_prompt,
                 'tokens_completion': self._current_call.tokens_completion,
                 'error_message': self._current_call.error_message,
                 'error_type': self._current_call.error_type,
-                'rule_suggestion': self._current_call.rule_suggestion,
-                'final_decision': self._current_call.final_decision
+                'rule_suggestion': safe_json_serialize(self._current_call.rule_suggestion),
+                'final_decision': safe_json_serialize(self._current_call.final_decision)
             }
 
             db_manager.update_llm_call_record(self._current_call.call_id, update_data)
@@ -350,6 +392,8 @@ class LLMObserver:
     def _finalize_call(self):
         """完成调用记录"""
         if self._current_call:
+            # 记录最后完成的调用ID
+            self._last_completed_call_id = self._current_call.call_id
             self._call_records.append(self._current_call)
             self._current_call = None
     

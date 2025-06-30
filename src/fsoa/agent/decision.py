@@ -228,30 +228,40 @@ class DecisionEngine:
                     "reasoning": rule_result.reasoning
                 }
 
+                # 获取观测器
+                observer = get_llm_observer()
+
                 llm_result = deepseek_client.analyze_task_priority(opportunity, context_dict)
 
                 # 合并规则和LLM的结果
                 merged_result = self._merge_decisions(rule_result, llm_result)
 
-                # 记录决策上下文到观测器
-                observer = get_llm_observer()
-                if observer and hasattr(observer, '_current_call') and observer._current_call:
-                    observer.record_decision_context(
-                        call_id=observer._current_call.call_id,
-                        rule_suggestion={
-                            "action": rule_result.action,
-                            "priority": rule_result.priority.value,
-                            "reasoning": rule_result.reasoning,
-                            "confidence": rule_result.confidence
-                        },
-                        final_decision={
-                            "action": merged_result.action,
-                            "priority": merged_result.priority.value,
-                            "reasoning": merged_result.reasoning,
-                            "confidence": merged_result.confidence,
-                            "llm_used": merged_result.llm_used
-                        }
-                    )
+                # 记录决策上下文到观测器（在LLM调用完成后）
+                if observer:
+                    # 获取最近完成的LLM调用ID
+                    llm_call_id = None
+                    if hasattr(observer, '_last_completed_call_id'):
+                        llm_call_id = observer._last_completed_call_id
+                    elif hasattr(observer, '_current_call') and observer._current_call:
+                        llm_call_id = observer._current_call.call_id
+
+                    if llm_call_id:
+                        observer.record_decision_context(
+                            call_id=llm_call_id,
+                            rule_suggestion={
+                                "action": rule_result.action,
+                                "priority": rule_result.priority.value,
+                                "reasoning": rule_result.reasoning,
+                                "confidence": rule_result.confidence
+                            },
+                            final_decision={
+                                "action": merged_result.action,
+                                "priority": merged_result.priority.value,
+                                "reasoning": merged_result.reasoning,
+                                "confidence": merged_result.confidence,
+                                "llm_used": merged_result.llm_used
+                            }
+                        )
 
                 return merged_result
             else:

@@ -98,9 +98,13 @@ class DeepSeekClient:
             result_text = response.choices[0].message.content
 
             # 提取Token使用信息
-            tokens_used = getattr(response, 'usage', {}).get('total_tokens') if hasattr(response, 'usage') else None
-            tokens_prompt = getattr(response, 'usage', {}).get('prompt_tokens') if hasattr(response, 'usage') else None
-            tokens_completion = getattr(response, 'usage', {}).get('completion_tokens') if hasattr(response, 'usage') else None
+            usage = getattr(response, 'usage', None)
+            if usage:
+                tokens_used = getattr(usage, 'total_tokens', None)
+                tokens_prompt = getattr(usage, 'prompt_tokens', None)
+                tokens_completion = getattr(usage, 'completion_tokens', None)
+            else:
+                tokens_used = tokens_prompt = tokens_completion = None
 
             logger.info(f"📡 DeepSeek API响应成功", extra={
                 "call_id": call_id,

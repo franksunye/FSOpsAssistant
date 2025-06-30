@@ -308,20 +308,44 @@ class AgentOrchestrator:
                     logger.info("No opportunities for decision making")
                     return state
 
-                # 创建通知任务（包含决策逻辑）
-                notification_tasks = self.notification_manager.create_notification_tasks(
-                    opportunities, run_id
+                # 对每个商机进行智能决策
+                processed_opportunities = []
+                decision_results = []
+                decision_map = {}  # 存储商机ID到决策结果的映射
+
+                for opp in opportunities:
+                    try:
+                        # 使用决策引擎进行智能决策
+                        decision = self.decision_engine.make_decision(opp)
+                        decision_results.append(decision)
+
+                        # 将决策结果存储在映射中
+                        decision_map[opp.order_num] = decision
+                        processed_opportunities.append(opp)
+
+                        logger.info(f"Decision for {opp.order_num}: {decision.action} (LLM used: {decision.llm_used})")
+
+                    except Exception as e:
+                        logger.error(f"Failed to make decision for opportunity {opp.order_num}: {e}")
+                        state["errors"].append(f"Decision failed for {opp.order_num}: {e}")
+
+                # 基于决策结果创建通知任务
+                notification_tasks = self.notification_manager.create_notification_tasks_from_decisions(
+                    processed_opportunities, run_id, decision_map
                 )
 
                 state["notification_tasks"] = notification_tasks
-                state["processed_opportunities"] = opportunities.copy()
+                state["processed_opportunities"] = processed_opportunities
+                state["decision_results"] = decision_results
 
                 # 输出决策结果
+                output["opportunities_processed"] = len(processed_opportunities)
                 output["notification_tasks_created"] = len(notification_tasks)
-                output["standard_tasks"] = len([t for t in notification_tasks if t.notification_type.value == "standard"])
-                output["escalation_tasks"] = len([t for t in notification_tasks if t.notification_type.value == "escalation"])
+                output["llm_decisions"] = len([d for d in decision_results if d.llm_used])
+                output["rule_decisions"] = len([d for d in decision_results if not d.llm_used])
 
-                logger.info(f"Decision made: created {len(notification_tasks)} notification tasks")
+                logger.info(f"Decision made: processed {len(processed_opportunities)} opportunities, created {len(notification_tasks)} notification tasks")
+                logger.info(f"LLM decisions: {output['llm_decisions']}, Rule decisions: {output['rule_decisions']}")
 
             except Exception as e:
                 error_msg = f"Failed to make decision: {e}"

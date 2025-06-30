@@ -12,8 +12,8 @@ from typing import List, Dict, Any
 from dataclasses import dataclass
 
 from ...data.models import (
-    OpportunityInfo, NotificationTask, NotificationTaskType, 
-    NotificationTaskStatus, OpportunityStatus
+    OpportunityInfo, NotificationTask, NotificationTaskType,
+    NotificationTaskStatus, OpportunityStatus, DecisionResult
 )
 from ...data.database import get_db_manager
 from ...notification.wechat import get_wechat_client
@@ -99,7 +99,79 @@ class NotificationTaskManager:
             logger.warning(f"Failed to load config from database, using defaults: {e}")
 
     @log_function_call
-    def create_notification_tasks(self, opportunities: List[OpportunityInfo], 
+    def create_notification_tasks_from_decisions(self, opportunities: List[OpportunityInfo],
+                                               run_id: int, decision_map: Dict[str, Any]) -> List[NotificationTask]:
+        """基于决策结果创建通知任务"""
+        tasks = []
+
+        try:
+            for opp in opportunities:
+                # 从决策映射中获取决策结果
+                decision = decision_map.get(opp.order_num)
+                if not decision:
+                    logger.warning(f"No decision result found for opportunity {opp.order_num}")
+                    continue
+
+                # 基于决策结果创建通知任务
+                if decision.action == "notify":
+                    # 确定通知类型
+                    if decision.priority.value in ["high", "urgent"]:
+                        notification_type = NotificationTaskType.ESCALATION
+                    else:
+                        notification_type = NotificationTaskType.REMINDER
+
+                    # 检查是否已存在相同类型的待处理任务
+                    if not self._has_pending_task(opp.order_num, notification_type):
+                        task = NotificationTask(
+                            order_num=opp.order_num,
+                            org_name=opp.org_name,
+                            notification_type=notification_type,
+                            due_time=now_china_naive(),
+                            created_run_id=run_id,
+                            max_retry_count=self.max_retry_count
+                        )
+                        tasks.append(task)
+                        logger.info(f"Created {notification_type.value} task for order {opp.order_num} based on LLM decision")
+                    else:
+                        logger.info(f"Order {opp.order_num} already has pending {notification_type.value} notification")
+
+                elif decision.action == "escalate":
+                    # 升级决策创建升级通知
+                    if not self._has_pending_task(opp.order_num, NotificationTaskType.ESCALATION):
+                        task = NotificationTask(
+                            order_num=opp.order_num,
+                            org_name=opp.org_name,
+                            notification_type=NotificationTaskType.ESCALATION,
+                            due_time=now_china_naive(),
+                            created_run_id=run_id,
+                            max_retry_count=self.max_retry_count
+                        )
+                        tasks.append(task)
+                        logger.info(f"Created ESCALATION task for order {opp.order_num} based on LLM decision")
+                    else:
+                        logger.info(f"Order {opp.order_num} already has pending ESCALATION notification")
+
+                elif decision.action == "skip":
+                    logger.info(f"Skipping notification for order {opp.order_num} based on decision")
+
+                else:
+                    logger.warning(f"Unknown decision action '{decision.action}' for order {opp.order_num}")
+
+            # 保存任务到数据库
+            for task in tasks:
+                task_id = self.db_manager.save_notification_task(task)
+                task.id = task_id
+                logger.info(f"Created notification task {task_id} for order {task.order_num}")
+
+            logger.info(f"Created {len(tasks)} notification tasks based on decisions")
+            return tasks
+
+        except Exception as e:
+            logger.error(f"Failed to create notification tasks from decisions: {e}")
+            return []
+
+    @log_function_call
+    def create_notification_tasks(self, opportunities: List[OpportunityInfo],
                                 run_id: int) -> List[NotificationTask]:
         """基于商机创建通知任务"""
         tasks = []
