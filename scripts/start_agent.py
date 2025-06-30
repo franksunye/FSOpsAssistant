@@ -40,7 +40,6 @@ def main():
         print(f"📊 数据库: {config.database_url}")
         print(f"🔗 Metabase: {config.metabase_url}")
         print(f"🤖 DeepSeek: {config.deepseek_base_url}")
-        print(f"⏰ 执行间隔: {config.agent_execution_interval}分钟")
         
         # 检查数据库连接
         print("\n🗄️  检查数据库连接...")

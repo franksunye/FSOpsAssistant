@@ -65,7 +65,7 @@ def view_llm_records(limit: int = 10, status: Optional[str] = None) -> List[Dict
 
 
 def _parse_json_field(field_value) -> Optional[Dict[str, Any]]:
-    """解析JSON字段"""
+    """解析JSON字段，处理Unicode转义序列"""
     if field_value is None:
         return None
 
@@ -76,8 +76,18 @@ def _parse_json_field(field_value) -> Optional[Dict[str, Any]]:
     # 如果是字符串，尝试解析JSON
     if isinstance(field_value, str):
         try:
+            # 首先尝试直接解析JSON
             return json.loads(field_value)
         except (json.JSONDecodeError, TypeError):
+            # 如果直接解析失败，检查是否包含Unicode转义序列
+            if '\\u' in field_value:
+                try:
+                    # 尝试解码Unicode转义序列
+                    decoded_value = field_value.encode().decode('unicode_escape')
+                    return json.loads(decoded_value)
+                except (json.JSONDecodeError, TypeError, UnicodeDecodeError):
+                    # 如果解码也失败，返回包装的原始值
+                    return {"raw_value": field_value}
             return {"raw_value": field_value}
 
     # 其他类型，包装成字典

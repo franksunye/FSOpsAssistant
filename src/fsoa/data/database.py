@@ -1000,14 +1000,25 @@ class DatabaseManager:
 
                 # 转换为字典，确保JSON字段正确解析
                 def parse_json_field(field_value):
-                    """解析JSON字段，确保返回Python对象"""
+                    """解析JSON字段，确保返回Python对象，处理Unicode转义序列"""
                     if field_value is None:
                         return None
+
                     if isinstance(field_value, str):
                         try:
                             import json
+                            # 首先尝试直接解析JSON
                             return json.loads(field_value)
                         except (json.JSONDecodeError, TypeError):
+                            # 如果直接解析失败，检查是否包含Unicode转义序列
+                            if '\\u' in field_value:
+                                try:
+                                    # 尝试解码Unicode转义序列
+                                    decoded_value = field_value.encode().decode('unicode_escape')
+                                    return json.loads(decoded_value)
+                                except (json.JSONDecodeError, TypeError, UnicodeDecodeError):
+                                    # 如果解码也失败，返回原始值
+                                    return field_value
                             return field_value
                     return field_value
 
