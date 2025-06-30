@@ -53,6 +53,10 @@ class NotificationTaskManager:
         self.reminder_enabled = True  # 默认启用提醒通知
         self.escalation_enabled = False  # 默认关闭升级通知
 
+        # LLM格式化配置
+        self.use_llm_formatting = False  # 默认使用标准模板
+        self.llm_client = None  # LLM客户端
+
         # 从数据库加载配置
         self._load_config_from_db()
 
@@ -346,14 +350,35 @@ class NotificationTaskManager:
                                    notification_type: NotificationTaskType) -> str:
         """格式化通知消息"""
         try:
-            # 获取商机信息并按工单号去重
+            # 🔧 修复：获取商机信息并按工单号去重，确保每个工单都能正确获取到信息
             opportunities_dict = {}
+            missing_order_nums = []
+
             for task in tasks:
                 if task.order_num not in opportunities_dict:
-                    # 🔧 修复：使用正确的方法获取商机信息
-                    opportunities_dict[task.order_num] = self._get_opportunity_info_for_notification(task)
+                    # 获取商机信息
+                    opp_info = self._get_opportunity_info_for_notification(task)
+                    if opp_info:
+                        opportunities_dict[task.order_num] = opp_info
+                        logger.debug(f"Successfully got opportunity info for {task.order_num}")
+                    else:
+                        missing_order_nums.append(task.order_num)
+                        logger.warning(f"Failed to get opportunity info for {task.order_num}")
+
+            # 如果有缺失的工单信息，记录警告
+            if missing_order_nums:
+                logger.warning(f"Missing opportunity info for order numbers: {missing_order_nums}")
 
             opportunities = list(opportunities_dict.values())
+
+            # 确保至少有一个商机信息用于格式化
+            if not opportunities:
+                logger.error(f"No opportunity info available for tasks: {[t.order_num for t in tasks]}")
+                # 创建基础信息用于通知
+                for task in tasks:
+                    opportunities.append(self._create_fallback_opportunity_info(task))
+
+            logger.info(f"Formatting message for {len(opportunities)} opportunities in org {org_name}")
 
             if self.use_llm_formatting and self.llm_client:
                 # 使用LLM格式化
@@ -711,10 +736,13 @@ class NotificationTaskManager:
 
     def _get_opportunity_info_for_notification(self, task: NotificationTask) -> OpportunityInfo:
         """获取通知任务对应的商机信息（用于格式化通知消息）"""
+        logger.debug(f"Getting opportunity info for task {task.order_num}")
+
         # 尝试从缓存获取完整的商机信息
         try:
             cached_opp = self.db_manager.get_opportunity_cache(task.order_num)
             if cached_opp:
+                logger.debug(f"Found cached opportunity for {task.order_num}")
                 return cached_opp
         except Exception as e:
             logger.warning(f"Failed to get cached opportunity for {task.order_num}: {e}")
@@ -723,32 +751,45 @@ class NotificationTaskManager:
         try:
             from .data_strategy import BusinessDataStrategy
             data_manager = BusinessDataStrategy()
-            all_opportunities = data_manager.get_opportunities()
+            all_opportunities = data_manager.get_opportunities(force_refresh=True)
 
             # 查找匹配的商机
             for opp in all_opportunities:
                 if opp.order_num == task.order_num:
+                    logger.debug(f"Found opportunity in data source for {task.order_num}")
+                    # 确保商机信息完整
+                    opp.update_overdue_info(use_business_time=True)
                     return opp
-        except Exception as e:
-            logger.warning(f"Failed to get opportunity from data manager for {task.order_num}: {e}")
 
-        # 如果都获取不到，创建基础的商机信息用于通知
-        # 注意：这里创建的是用于通知显示的基础信息，不是完整的业务数据
+            # 如果没找到，记录详细信息
+            logger.warning(f"Order {task.order_num} not found in {len(all_opportunities)} opportunities from data source")
+
+        except Exception as e:
+            logger.error(f"Failed to get opportunity from data manager for {task.order_num}: {e}")
+
+        # 如果都获取不到，返回None，让调用方处理
+        logger.warning(f"No opportunity info found for {task.order_num}, will use fallback")
+        return None
+
+    def _create_fallback_opportunity_info(self, task: NotificationTask) -> OpportunityInfo:
+        """创建备用的商机信息用于通知显示"""
+        logger.warning(f"Creating fallback opportunity info for task {task.order_num}")
+
         opp = OpportunityInfo(
             order_num=task.order_num,
-            name="客户",  # 简化显示
-            address="地址",  # 简化显示
-            supervisor_name="负责人",  # 简化显示
+            name="客户信息获取失败",
+            address="地址信息获取失败",
+            supervisor_name="负责人信息获取失败",
             create_time=now_china_naive() - timedelta(days=2),  # 估算创建时间
             org_name=task.org_name,
-            order_status=OpportunityStatus.PENDING_APPOINTMENT  # 默认状态
+            order_status=OpportunityStatus.PENDING_APPOINTMENT
         )
 
-        # 更新逾期信息，确保elapsed_hours不为None
+        # 更新逾期信息
         opp.update_overdue_info()
 
         return opp
-    
+
     @log_function_call
     def get_notification_statistics(self, hours_back: int = 24) -> Dict[str, Any]:
         """获取通知统计信息"""
