@@ -239,6 +239,9 @@ class DatabaseManager:
             # 消息显示配置
             ("reminder_max_display_orders", "10", "提醒类通知最多显示工单数（一般提醒、标准逾期）"),
             ("escalation_max_display_orders", "5", "升级类通知最多显示工单数（升级通知、紧急通知）"),
+
+            # LLM消息格式化配置
+            ("use_llm_message_formatting", "false", "是否使用LLM格式化通知消息（实验性功能）"),
         ]
         
         with self.get_session() as session:

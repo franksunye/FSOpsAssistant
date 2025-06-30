@@ -76,9 +76,25 @@ class NotificationTaskManager:
             self.reminder_enabled = configs.get("notification_reminder_enabled", "true").lower() == "true"
             self.escalation_enabled = configs.get("notification_escalation_enabled", "false").lower() == "true"
 
+            # 加载LLM格式化配置
+            self.use_llm_formatting = configs.get("use_llm_message_formatting", "false").lower() == "true"
+
+            # 初始化LLM客户端（如果启用）
+            if self.use_llm_formatting:
+                try:
+                    from ..llm import get_deepseek_client
+                    self.llm_client = get_deepseek_client()
+                    logger.info("LLM message formatting enabled")
+                except Exception as e:
+                    logger.warning(f"Failed to initialize LLM client, disabling LLM formatting: {e}")
+                    self.use_llm_formatting = False
+                    self.llm_client = None
+            else:
+                self.llm_client = None
+
             logger.info(f"Loaded notification config: cooldown={self.notification_cooldown_hours}h, "
                        f"max_retry={self.max_retry_count}, reminder={self.reminder_enabled}, "
-                       f"escalation={self.escalation_enabled}")
+                       f"escalation={self.escalation_enabled}, llm_formatting={self.use_llm_formatting}")
         except Exception as e:
             logger.warning(f"Failed to load config from database, using defaults: {e}")
 

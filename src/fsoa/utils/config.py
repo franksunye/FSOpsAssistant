@@ -45,8 +45,7 @@ class Config(BaseSettings):
     agent_timeout: int = Field(300, env="AGENT_TIMEOUT")  # Agent执行超时时间（秒）
 
     # LLM配置（技术配置）
-    # 注意：LLM优化开关、温度参数等已迁移到数据库，通过Web UI管理
-    use_llm_message_formatting: bool = Field(False, env="USE_LLM_MESSAGE_FORMATTING")  # 实验性功能
+    # 注意：所有LLM配置已迁移到数据库，通过Web UI管理
     llm_max_tokens: int = Field(1000, env="LLM_MAX_TOKENS")  # LLM响应最大token数
 
     # 通知配置（技术配置）

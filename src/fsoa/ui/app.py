@@ -835,12 +835,14 @@ def show_system_settings():
             default_use_llm = configs.get("use_llm_optimization", "true").lower() == "true"
             default_llm_temperature = float(configs.get("llm_temperature", "0.1"))
             default_max_retries = int(configs.get("agent_max_retries", "3"))
+            default_use_llm_formatting = configs.get("use_llm_message_formatting", "false").lower() == "true"
         except Exception as e:
             st.warning(f"无法加载Agent配置，使用默认值: {e}")
             default_execution_interval = 60
             default_use_llm = True
             default_llm_temperature = 0.1
             default_max_retries = 3
+            default_use_llm_formatting = False
 
         execution_interval = st.number_input(
             "执行频率（分钟）",
@@ -868,6 +870,12 @@ def show_system_settings():
             value=default_max_retries
         )
 
+        use_llm_formatting = st.checkbox(
+            "启用LLM消息格式化（实验性功能）",
+            value=default_use_llm_formatting,
+            help="使用LLM智能格式化通知消息内容，提升消息质量"
+        )
+
         if st.button("💾 保存Agent设置"):
             try:
                 from src.fsoa.data.database import get_database_manager
@@ -886,6 +894,7 @@ def show_system_settings():
                     ("use_llm_optimization", str(use_llm).lower(), "是否启用LLM优化"),
                     ("llm_temperature", str(llm_temperature), "LLM温度参数"),
                     ("agent_max_retries", str(max_retries), "Agent最大重试次数"),
+                    ("use_llm_message_formatting", str(use_llm_formatting).lower(), "是否使用LLM格式化通知消息"),
                 ]
 
                 for key, value, description in agent_configs:
