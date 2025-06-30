@@ -153,7 +153,7 @@ class TestAgentWorkflow:
             
             from src.fsoa.agent.managers.data_strategy import BusinessDataStrategy
             
-            with patch('src.fsoa.agent.managers.data_strategy.get_database_manager', return_value=test_db_manager):
+            with patch('src.fsoa.data.database.get_db_manager', return_value=test_db_manager):
                 data_strategy = BusinessDataStrategy()
                 
                 # Act
@@ -168,7 +168,7 @@ class TestAgentWorkflow:
         # Arrange
         from src.fsoa.agent.managers.notification_manager import NotificationTaskManager
         
-        with patch('src.fsoa.agent.managers.notification_manager.get_database_manager', return_value=test_db_manager), \
+        with patch('src.fsoa.data.database.get_db_manager', return_value=test_db_manager), \
              patch('src.fsoa.notification.wechat.get_wechat_client') as mock_wechat_client:
             
             mock_wechat = Mock()
@@ -204,7 +204,7 @@ class TestAgentWorkflow:
         # Arrange
         from src.fsoa.agent.managers.execution_tracker import AgentExecutionTracker
         
-        with patch('src.fsoa.agent.managers.execution_tracker.get_database_manager', return_value=test_db_manager):
+        with patch('src.fsoa.data.database.get_db_manager', return_value=test_db_manager):
             tracker = AgentExecutionTracker()
             
             # Act
