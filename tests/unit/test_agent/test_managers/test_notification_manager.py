@@ -113,11 +113,13 @@ class TestNotificationTaskManager:
         assert hasattr(result, 'sent_count')
         assert hasattr(result, 'failed_count')
     
-    @pytest.mark.skip(reason='_send_notification方法不存在，需要重构')
+    @pytest.mark.skip(reason="_send_reminder_notification方法内部实现复杂，需要重构测试")
     def test_send_single_notification_success(self):
+        """测试发送单个通知成功 - 需要重构"""
         pass
-    @pytest.mark.skip(reason='_send_notification方法不存在，需要重构')
+    @pytest.mark.skip(reason="_send_reminder_notification方法内部实现复杂，需要重构测试")
     def test_send_single_notification_failure(self):
+        """测试发送单个通知失败 - 需要重构"""
         pass
     def test_cooldown_check(self, notification_manager):
         """测试冷却时间检查"""
@@ -177,9 +179,25 @@ class TestNotificationTaskManager:
         assert isinstance(stats, dict)
         assert 'total_sent' in stats or len(stats) >= 0  # 允许空统计
     
-    @pytest.mark.skip(reason='cleanup_old_tasks方法参数不匹配，需要重构')
+    @pytest.mark.skip(reason="cleanup_old_tasks方法需要复杂的Mock配置，暂时跳过")
     def test_cleanup_old_tasks(self):
+        """测试清理旧任务 - 需要重构"""
         pass
-    @pytest.mark.skip(reason='_should_create_notification_task方法不存在，需要重构')
-    def test_notification_deduplication(self):
-        pass
+    def test_notification_deduplication(self, notification_manager, sample_opportunity, mock_db_manager):
+        """测试通知去重"""
+        # Arrange
+        sample_opportunity.is_violation = True
+        existing_task = NotificationTask(
+            order_num=sample_opportunity.order_num,
+            org_name=sample_opportunity.org_name,
+            notification_type=NotificationTaskType.REMINDER,
+            due_time=datetime.now(),
+            status=NotificationTaskStatus.PENDING
+        )
+        mock_db_manager.get_pending_notification_tasks.return_value = [existing_task]
+
+        # Act - 尝试创建重复的通知任务
+        tasks = notification_manager.create_notification_tasks([sample_opportunity], 1)
+
+        # Assert - 应该不会创建重复任务
+        assert len(tasks) == 0  # 因为已存在相同的待处理任务
