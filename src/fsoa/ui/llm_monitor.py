@@ -345,12 +345,20 @@ def render_config_management():
                 value=int(configs['llm_max_tokens']),
                 step=100
             )
-            
+
+            new_message_formatting = st.selectbox(
+                "LLM消息格式化",
+                ["false", "true"],
+                index=0 if configs.get('use_llm_message_formatting', 'false') == "false" else 1,
+                help="是否使用LLM格式化通知消息（实验性功能）"
+            )
+
             if st.button("保存配置"):
                 try:
                     db_manager.set_system_config("use_llm_optimization", new_llm_enabled)
                     db_manager.set_system_config("llm_temperature", str(new_temperature))
                     db_manager.set_system_config("llm_max_tokens", str(new_max_tokens))
+                    db_manager.set_system_config("use_llm_message_formatting", new_message_formatting)
                     st.success("配置保存成功！")
                     st.rerun()
                 except Exception as e:
