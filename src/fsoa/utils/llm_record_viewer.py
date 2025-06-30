@@ -68,16 +68,20 @@ def _parse_json_field(field_value) -> Optional[Dict[str, Any]]:
     """解析JSON字段"""
     if field_value is None:
         return None
-    
-    try:
-        if isinstance(field_value, str):
+
+    # 如果已经是字典，直接返回
+    if isinstance(field_value, dict):
+        return field_value
+
+    # 如果是字符串，尝试解析JSON
+    if isinstance(field_value, str):
+        try:
             return json.loads(field_value)
-        elif isinstance(field_value, dict):
-            return field_value
-        else:
-            return field_value
-    except (json.JSONDecodeError, TypeError):
-        return str(field_value)
+        except (json.JSONDecodeError, TypeError):
+            return {"raw_value": field_value}
+
+    # 其他类型，包装成字典
+    return {"value": field_value}
 
 
 def print_llm_record(record: Dict[str, Any], show_details: bool = False):

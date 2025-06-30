@@ -16,6 +16,52 @@ from src.fsoa.utils.logger import get_logger
 logger = get_logger(__name__)
 
 
+def _safe_get_json_field(field_value, key, default="N/A"):
+    """安全地从JSON字段获取值"""
+    if field_value is None:
+        return default
+
+    # 如果是字典，直接获取
+    if isinstance(field_value, dict):
+        return field_value.get(key, default)
+
+    # 如果是字符串，尝试解析JSON
+    if isinstance(field_value, str):
+        try:
+            parsed = json.loads(field_value)
+            if isinstance(parsed, dict):
+                return parsed.get(key, default)
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    return default
+
+
+def _safe_get_action(parsed_result):
+    """安全地获取决策动作"""
+    return _safe_get_json_field(parsed_result, "action", "N/A")
+
+
+def _safe_display_json(field_value, field_name="字段"):
+    """安全地显示JSON字段内容"""
+    if field_value is None:
+        return f"{field_name}: 无数据"
+
+    # 如果是字典，直接显示
+    if isinstance(field_value, dict):
+        return field_value
+
+    # 如果是字符串，尝试解析JSON
+    if isinstance(field_value, str):
+        try:
+            parsed = json.loads(field_value)
+            return parsed
+        except (json.JSONDecodeError, TypeError):
+            return f"{field_name} (原始字符串): {field_value[:100]}..."
+
+    return f"{field_name} (未知类型): {str(field_value)[:100]}..."
+
+
 def render_llm_monitor():
     """渲染LLM监控界面"""
     st.title("🤖 LLM监控中心")
@@ -110,7 +156,7 @@ def render_real_time_monitor(observer):
             "状态": "✅ 成功" if call["status"] == "success" else "❌ 失败",
             "响应时间": f"{call.get('duration_ms', 0):.0f}ms",
             "Token使用": call.get("tokens_used", "N/A"),
-            "决策": call.get("parsed_result", {}).get("action", "N/A")
+            "决策": _safe_get_action(call.get("parsed_result"))
         })
     
     df = pd.DataFrame(table_data)
@@ -224,9 +270,9 @@ def render_call_history(observer):
                 if call['status'] == 'success':
                     st.markdown("**决策结果**")
                     result = call.get('parsed_result', {})
-                    st.write(f"动作: {result.get('action', 'N/A')}")
-                    st.write(f"优先级: {result.get('priority', 'N/A')}")
-                    st.write(f"置信度: {result.get('confidence', 'N/A')}")
+                    st.write(f"动作: {_safe_get_json_field(result, 'action')}")
+                    st.write(f"优先级: {_safe_get_json_field(result, 'priority')}")
+                    st.write(f"置信度: {_safe_get_json_field(result, 'confidence')}")
                 else:
                     st.markdown("**错误信息**")
                     st.write(f"错误类型: {call.get('error_type', 'N/A')}")
@@ -257,8 +303,13 @@ def render_detailed_view(observer):
         # 显示详细信息
         st.markdown("### 📋 Context数据")
         with st.expander("查看完整Context", expanded=False):
-            st.json(call.get('context_data', {}))
-        
+            context_data = call.get('context_data', {})
+            if isinstance(context_data, dict):
+                st.json(context_data)
+            else:
+                st.write("Context数据格式异常:")
+                st.text(str(context_data))
+
         st.markdown("### 📝 提示词")
         with st.expander("查看完整提示词", expanded=False):
             st.text_area(
@@ -267,7 +318,7 @@ def render_detailed_view(observer):
                 height=300,
                 disabled=True
             )
-        
+
         if call['status'] == 'success':
             st.markdown("### 📤 LLM响应")
             with st.expander("查看原始响应", expanded=False):
@@ -277,23 +328,38 @@ def render_detailed_view(observer):
                     height=200,
                     disabled=True
                 )
-            
+
             st.markdown("### 🎯 解析结果")
             with st.expander("查看解析后的结果", expanded=True):
-                st.json(call.get('parsed_result', {}))
-            
+                parsed_result = call.get('parsed_result', {})
+                if isinstance(parsed_result, dict):
+                    st.json(parsed_result)
+                else:
+                    st.write("解析结果格式异常:")
+                    st.text(str(parsed_result))
+
             # 决策对比
             if call.get('rule_suggestion') and call.get('final_decision'):
                 st.markdown("### ⚖️ 决策对比")
                 col1, col2 = st.columns(2)
-                
+
                 with col1:
                     st.markdown("**规则引擎建议**")
-                    st.json(call['rule_suggestion'])
-                
+                    rule_suggestion = call['rule_suggestion']
+                    if isinstance(rule_suggestion, dict):
+                        st.json(rule_suggestion)
+                    else:
+                        st.write("规则建议格式异常:")
+                        st.text(str(rule_suggestion))
+
                 with col2:
                     st.markdown("**最终决策**")
-                    st.json(call['final_decision'])
+                    final_decision = call['final_decision']
+                    if isinstance(final_decision, dict):
+                        st.json(final_decision)
+                    else:
+                        st.write("最终决策格式异常:")
+                        st.text(str(final_decision))
 
 
 def render_config_management():

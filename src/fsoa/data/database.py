@@ -9,7 +9,7 @@ import sqlite3
 from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any
 from contextlib import contextmanager
-from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Boolean, Text, JSON, Index
+from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Boolean, Text, JSON, Index, func
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.exc import SQLAlchemyError
@@ -998,7 +998,19 @@ class DatabaseManager:
                 # 排序和分页
                 records = query.order_by(LLMCallRecordTable.timestamp.desc()).offset(offset).limit(limit).all()
 
-                # 转换为字典
+                # 转换为字典，确保JSON字段正确解析
+                def parse_json_field(field_value):
+                    """解析JSON字段，确保返回Python对象"""
+                    if field_value is None:
+                        return None
+                    if isinstance(field_value, str):
+                        try:
+                            import json
+                            return json.loads(field_value)
+                        except (json.JSONDecodeError, TypeError):
+                            return field_value
+                    return field_value
+
                 return [
                     {
                         'id': record.id,
@@ -1006,21 +1018,21 @@ class DatabaseManager:
                         'timestamp': record.timestamp.isoformat(),
                         'opportunity_id': record.opportunity_id,
                         'status': record.status,
-                        'context_data': record.context_data,
+                        'context_data': parse_json_field(record.context_data),
                         'prompt_text': record.prompt_text,
                         'model_name': record.model_name,
                         'temperature': record.temperature,
                         'max_tokens': record.max_tokens,
                         'response_text': record.response_text,
-                        'parsed_result': record.parsed_result,
+                        'parsed_result': parse_json_field(record.parsed_result),
                         'duration_ms': record.duration_ms,
                         'tokens_used': record.tokens_used,
                         'tokens_prompt': record.tokens_prompt,
                         'tokens_completion': record.tokens_completion,
                         'error_message': record.error_message,
                         'error_type': record.error_type,
-                        'rule_suggestion': record.rule_suggestion,
-                        'final_decision': record.final_decision,
+                        'rule_suggestion': parse_json_field(record.rule_suggestion),
+                        'final_decision': parse_json_field(record.final_decision),
                         'created_at': record.created_at.isoformat()
                     }
                     for record in records
