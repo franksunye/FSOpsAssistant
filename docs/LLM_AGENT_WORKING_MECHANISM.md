@@ -343,12 +343,59 @@ decision_result = DecisionResult(
 3. **类型转换**：将LLM的抽象决策转换为具体的业务通知任务类型
 4. **数据库持久化**：创建的通知任务立即保存到数据库，确保不丢失
 
+### decision_map的重要特性
+
+#### 🎯 在所有决策模式下都会生成
+无论是**纯规则**、**混合**还是**纯LLM**模式，`decision_map`都会生成：
+
+| 决策模式 | DecisionResult来源 | llm_used字段 | decision_map生成 |
+|---------|------------------|-------------|-----------------|
+| **纯规则模式** | `RuleEngine.evaluate_task()` | `False` | ✅ 总是生成 |
+| **混合模式** | `规则预筛选 + LLM优化` | `True` | ✅ 总是生成 |
+| **纯LLM模式** | `DeepSeekClient.analyze_task_priority()` | `True` | ✅ 总是生成 |
+
+```python
+# 无论什么决策模式，都会执行这个逻辑
+decision_map = {}
+for opp in opportunities:
+    decision = self.decision_engine.make_decision(opp)  # 根据配置调用不同模式
+    decision_map[opp.order_num] = decision  # 总是保存决策结果
+```
+
+#### 💾 仅保存在内存中，不持久化
+`decision_map`是临时的内存数据结构，生命周期仅限于`make_decision_node`的执行期间：
+
+```python
+def _make_decision_node(self, state: AgentState) -> AgentState:
+    decision_map = {}  # 1. 创建临时内存映射
+
+    # 2. 填充决策结果
+    for opp in opportunities:
+        decision_map[opp.order_num] = decision
+
+    # 3. 立即使用创建通知任务
+    notification_tasks = self.notification_manager.create_notification_tasks_from_decisions(
+        processed_opportunities, run_id, decision_map
+    )
+
+    # 4. 方法结束后，decision_map被垃圾回收
+    return state
+```
+
+#### 📊 什么被持久化了？
+虽然`decision_map`本身不持久化，但其产生的结果会被持久化：
+
+1. **通知任务** → `notification_tasks`表
+2. **LLM调用记录** → `llm_call_records`表（包含DecisionResult内容）
+3. **Agent执行统计** → `agent_history`表（包含决策统计）
+
 ### 为什么不是LLM直接调用？
 
 1. **架构分离**：LLM专注于分析决策，Agent负责业务逻辑执行
 2. **错误隔离**：LLM调用失败不会影响通知任务的创建流程
 3. **可控性**：Agent可以对LLM的决策进行验证和调整
 4. **可观测性**：每个环节都有清晰的日志和状态追踪
+5. **模式统一**：无论哪种决策模式，都通过相同的触发机制
 
 ## 📊 当前系统工作现状
 
