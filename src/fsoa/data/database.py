@@ -191,6 +191,10 @@ class DatabaseManager:
             ("sla_not_visiting_reminder", "8", "暂不上门提醒阈值（工作小时）→服务商群"),
             ("sla_not_visiting_escalation", "16", "暂不上门升级阈值（工作小时）→运营群"),
 
+            # 通知开关配置
+            ("notification_reminder_enabled", "true", "是否启用提醒通知（4/8小时）→服务商群"),
+            ("notification_escalation_enabled", "false", "是否启用升级通知（8/16小时）→运营群"),
+
             # 工作时间配置
             ("work_start_hour", "9", "工作开始时间（小时）"),
             ("work_end_hour", "19", "工作结束时间（小时）"),
