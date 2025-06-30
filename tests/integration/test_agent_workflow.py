@@ -208,17 +208,17 @@ class TestAgentWorkflow:
             tracker = AgentExecutionTracker()
             
             # Act
-            run_id = tracker.start_execution()
-            
+            run_id = tracker.start_run()
+
             # 模拟执行步骤
-            tracker.log_step("fetch_opportunities", {"count": 5})
-            tracker.log_step("create_notifications", {"created": 3})
-            
+            tracker.log_step(run_id, "fetch_opportunities", {"count": 5})
+            tracker.log_step(run_id, "create_notifications", {"created": 3})
+
             # 完成执行
-            result = tracker.complete_execution(
-                opportunities_processed=5,
-                notifications_sent=3
-            )
+            result = tracker.complete_run(run_id, {
+                "opportunities_processed": 5,
+                "notifications_sent": 3
+            })
             
             # Assert
             assert run_id is not None

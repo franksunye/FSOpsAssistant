@@ -122,40 +122,40 @@ class TestCompleteWorkflow:
         # Act - 模拟完整的Agent执行流程
         
         # 1. 开始执行追踪
-        run_id = execution_tracker.start_execution("integration_test")
+        run_id = execution_tracker.start_run({"test": "integration_test"})
         assert run_id is not None
-        
+
         # 2. 获取商机数据
         with execution_tracker.track_step("fetch_opportunities"):
             opportunities = data_strategy.get_opportunities()
-        
+
         assert len(opportunities) >= 0
-        
+
         # 3. 创建通知任务
         with execution_tracker.track_step("create_notifications"):
             # 更新商机的逾期信息
             for opp in opportunities:
                 opp.update_overdue_info(use_business_time=True)
-            
+
             # 创建通知任务
             tasks = notification_manager.create_notification_tasks(opportunities, run_id)
-        
+
         assert isinstance(tasks, list)
-        
+
         # 4. 执行通知任务
         with execution_tracker.track_step("execute_notifications"):
             result = notification_manager.execute_pending_tasks(run_id)
-        
+
         assert hasattr(result, 'total_tasks')
         assert hasattr(result, 'sent_count')
         assert hasattr(result, 'failed_count')
-        
+
         # 5. 完成执行
-        execution_tracker.complete_execution(
-            opportunities_processed=len(opportunities),
-            notifications_sent=result.sent_count
-        )
-        
+        execution_tracker.complete_run(run_id, {
+            "opportunities_processed": len(opportunities),
+            "notifications_sent": result.sent_count
+        })
+
         # Assert - 验证整个流程
         assert execution_tracker.current_run_id is None  # 执行已完成
     
@@ -238,17 +238,17 @@ class TestCompleteWorkflow:
         managers['mock_metabase'].get_all_monitored_opportunities.side_effect = Exception("Metabase连接失败")
         
         # Act
-        run_id = execution_tracker.start_execution("error_test")
-        
+        run_id = execution_tracker.start_run({"test": "error_test"})
+
         try:
             with execution_tracker.track_step("fetch_opportunities"):
                 opportunities = data_strategy.get_opportunities()
         except Exception as e:
-            execution_tracker.log_step_error("fetch_opportunities", str(e))
+            execution_tracker.log_step(run_id, "fetch_opportunities", error_message=str(e))
             opportunities = []  # 降级处理
-        
+
         # 即使出错也要完成执行
-        execution_tracker.fail_execution(["Metabase连接失败"])
+        execution_tracker.fail_run(run_id, "Metabase连接失败")
         
         # Assert
         assert len(opportunities) == 0  # 由于异常，应该返回空列表或降级数据
