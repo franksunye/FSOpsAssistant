@@ -1,6 +1,6 @@
-# FSOA 测试指南
+# FSOA 测试指南 (2025年更新版)
 
-Field Service Operations Assistant - 测试策略和实施指南
+Field Service Operations Assistant - 系统性测试策略和实施指南
 
 ## 1. 测试策略
 
@@ -23,14 +23,24 @@ Field Service Operations Assistant - 测试策略和实施指南
 - **可靠稳定**：测试结果一致，减少flaky tests
 - **易于维护**：测试代码清晰，便于修改和扩展
 - **业务导向**：优先测试核心业务逻辑和用户场景
+- **架构一致**：测试代码与重构后的架构保持一致
 
-### 1.3 测试范围
+### 1.3 当前系统架构概述
+经过长期迭代，系统已从任务导向重构为商机导向：
+- **核心数据模型**：`OpportunityInfo`（商机信息）替代废弃的`TaskInfo`
+- **通知系统**：`NotificationTask`模型，支持两级SLA（4小时提醒+8小时升级）
+- **管理器架构**：DataStrategyManager、NotificationManager、ExecutionTracker
+- **Agent编排**：基于LangGraph的工作流编排
+- **决策引擎**：规则引擎+可选LLM增强
+
+### 1.4 测试范围
 - **核心功能**：Agent执行、商机检测、分级通知发送
-- **管理器组件**：BusinessDataStrategy、NotificationTaskManager、AgentExecutionTracker
-- **集成点**：Metabase API、企微Webhook、LLM调用
-- **缓存机制**：数据缓存、TTL策略、一致性验证
+- **管理器组件**：DataStrategyManager、NotificationManager、ExecutionTracker
+- **集成点**：Metabase API、企微Webhook、DeepSeek LLM
+- **缓存机制**：商机数据缓存、TTL策略、一致性验证
 - **边界条件**：异常处理、网络故障、数据异常
 - **性能要求**：响应时间、并发处理、资源使用
+- **业务逻辑**：SLA计算、通知路由、升级机制
 
 ## 2. 单元测试
 
@@ -40,27 +50,47 @@ Field Service Operations Assistant - 测试策略和实施指南
 - **pytest-cov**：代码覆盖率统计
 - **pytest-asyncio**：异步代码测试
 
-### 2.2 测试结构
+### 2.2 测试结构 (重构后)
 ```
-tests/unit/
-├── test_agent/
-│   ├── test_orchestrator.py    # Agent编排器测试
-│   ├── test_tools.py          # 工具函数测试
-│   ├── test_decision.py       # 决策引擎测试
-│   └── test_managers/         # 管理器测试
-│       ├── test_data_strategy.py      # 数据策略测试
-│       ├── test_notification_manager.py # 通知管理器测试
-│       └── test_execution_tracker.py   # 执行追踪器测试
-├── test_data/
-│   ├── test_models.py         # 数据模型测试
-│   ├── test_database.py       # 数据库操作测试
-│   └── test_metabase.py       # Metabase集成测试
-├── test_notification/
-│   ├── test_wechat.py         # 企微通知测试
-│   └── test_templates.py      # 消息模板测试
-└── test_utils/
-    ├── test_config.py         # 配置管理测试
-    └── test_scheduler.py      # 任务调度测试
+tests/
+├── unit/                      # 单元测试
+│   ├── test_agent/           # Agent模块测试
+│   │   ├── test_orchestrator.py    # Agent编排器测试
+│   │   ├── test_tools.py           # 工具函数测试
+│   │   ├── test_decision.py        # 决策引擎测试
+│   │   ├── test_llm.py            # LLM集成测试
+│   │   └── test_managers/          # 管理器测试
+│   │       ├── test_data_strategy.py      # 数据策略管理器
+│   │       ├── test_notification_manager.py # 通知任务管理器
+│   │       └── test_execution_tracker.py   # 执行追踪器
+│   ├── test_data/            # 数据层测试
+│   │   ├── test_models.py         # 数据模型测试
+│   │   ├── test_database.py       # 数据库操作测试
+│   │   └── test_metabase.py       # Metabase集成测试
+│   ├── test_notification/    # 通知模块测试
+│   │   ├── test_wechat.py         # 企微通知测试
+│   │   ├── test_business_formatter.py # 业务消息格式化
+│   │   └── test_templates.py      # 消息模板测试
+│   ├── test_analytics/       # 分析模块测试
+│   │   └── test_business_metrics.py # 业务指标计算
+│   └── test_utils/           # 工具模块测试
+│       ├── test_config.py         # 配置管理测试
+│       ├── test_scheduler.py      # 任务调度测试
+│       ├── test_business_time.py  # 工作时间计算
+│       └── test_timezone_utils.py # 时区工具测试
+├── integration/              # 集成测试
+│   ├── test_agent_workflow.py    # Agent完整工作流
+│   ├── test_notification_flow.py # 通知流程测试
+│   ├── test_data_sync.py         # 数据同步测试
+│   └── test_e2e.py              # 端到端测试
+├── performance/              # 性能测试
+│   ├── test_agent_performance.py # Agent性能测试
+│   ├── test_cache_performance.py # 缓存性能测试
+│   └── test_concurrent_load.py   # 并发负载测试
+└── fixtures/                 # 测试数据
+    ├── opportunities.py          # 商机测试数据
+    ├── notifications.py          # 通知测试数据
+    └── configs.py               # 配置测试数据
 ```
 
 ### 2.3 测试示例

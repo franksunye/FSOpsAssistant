@@ -49,6 +49,9 @@ class NotificationTaskManager:
         self.notification_cooldown_hours = 2.0  # 通知冷却时间（小时）
         self.max_retry_count = 5  # 最大重试次数
 
+        # 通知开关配置
+        self.reminder_enabled = True  # 默认启用提醒通知
+        self.escalation_enabled = False  # 默认关闭升级通知
 
         # 从数据库加载配置
         self._load_config_from_db()
@@ -65,8 +68,13 @@ class NotificationTaskManager:
             self.max_retry_count = int(configs.get("max_retry_count", "5"))
             # API间隔现在由WeChatClient处理，这里不再需要
 
+            # 加载通知开关配置
+            self.reminder_enabled = configs.get("notification_reminder_enabled", "true").lower() == "true"
+            self.escalation_enabled = configs.get("notification_escalation_enabled", "false").lower() == "true"
+
             logger.info(f"Loaded notification config: cooldown={self.notification_cooldown_hours}h, "
-                       f"max_retry={self.max_retry_count}")
+                       f"max_retry={self.max_retry_count}, reminder={self.reminder_enabled}, "
+                       f"escalation={self.escalation_enabled}")
         except Exception as e:
             logger.warning(f"Failed to load config from database, using defaults: {e}")
 
@@ -86,7 +94,7 @@ class NotificationTaskManager:
                 opp.update_overdue_info(use_business_time=True)
 
                 # 创建提醒通知任务（4/8小时）→ 服务商群
-                if opp.is_violation:
+                if opp.is_violation and self.reminder_enabled:
                     task_key = (opp.order_num, NotificationTaskType.REMINDER)
                     # 检查数据库中是否已存在 + 检查当前批次中是否已创建
                     if (not self._has_pending_task(opp.order_num, NotificationTaskType.REMINDER) and
@@ -102,14 +110,15 @@ class NotificationTaskManager:
                         )
                         tasks.append(reminder_task)
                         created_tasks_tracker.add(task_key)
+                        logger.info(f"Created REMINDER task for order {opp.order_num}")
                     else:
                         logger.info(f"Order {opp.order_num} already has pending/recent REMINDER notification")
-
-                # 🔧 修复：不再为每个工单创建标准通知任务
-                # 标准通知现在通过升级通知统一处理
-                # 保留此注释以说明逻辑变更
+                elif opp.is_violation and not self.reminder_enabled:
+                    logger.info(f"Order {opp.order_num} needs reminder but reminder notifications are disabled")
 
                 # 🔧 修复：收集需要升级的组织，而不是为每个工单创建升级任务
+
+                # 收集需要升级的商机（用于后续创建升级通知）
                 if opp.escalation_level > 0:
                     escalation_orgs.add(opp.org_name)
 
@@ -396,11 +405,11 @@ class NotificationTaskManager:
                                    notification_type: NotificationTaskType) -> str:
         """构建LLM格式化提示词"""
         type_desc = {
-            NotificationTaskType.REMINDER: "提醒通知（4/8小时未处理）",
-            NotificationTaskType.ESCALATION: "升级通知（运营介入）",
-            # 🔧 向后兼容
-            NotificationTaskType.VIOLATION: "提醒通知（4/8小时未处理）",
-            NotificationTaskType.STANDARD: "升级通知（运营介入）"
+            NotificationTaskType.REMINDER: "提醒通知（4/8小时）→服务商群",
+            NotificationTaskType.ESCALATION: "升级通知（8/16小时）→运营群",
+            # 向后兼容
+            NotificationTaskType.VIOLATION: "提醒通知（4/8小时）→服务商群",
+            NotificationTaskType.STANDARD: "升级通知（8/16小时）→运营群"
         }
         
         opp_list = []

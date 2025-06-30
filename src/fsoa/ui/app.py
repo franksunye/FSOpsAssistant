@@ -966,6 +966,27 @@ def show_system_settings():
             help="每次调用企微Webhook API之间的间隔时间，避免触发速率限制"
         )
 
+        st.markdown("**通知开关配置**")
+        st.info("💡 控制是否发送不同类型的SLA通知")
+
+        col_switch1, col_switch2 = st.columns(2)
+
+        with col_switch1:
+            default_reminder_enabled = configs.get("notification_reminder_enabled", "true").lower() == "true"
+            reminder_enabled = st.checkbox(
+                "启用提醒通知（4/8小时）→ 服务商群",
+                value=default_reminder_enabled,
+                help="是否发送SLA提醒通知到服务商群"
+            )
+
+        with col_switch2:
+            default_escalation_enabled = configs.get("notification_escalation_enabled", "false").lower() == "true"
+            escalation_enabled = st.checkbox(
+                "启用升级通知（8/16小时）→ 运营群",
+                value=default_escalation_enabled,
+                help="是否发送SLA升级通知到运营群"
+            )
+
         st.markdown("**SLA阈值设置（工作时间）**")
         st.info("💡 两级SLA体系：提醒→服务商群，升级→运营群")
 
@@ -1068,6 +1089,9 @@ def show_system_settings():
                     ("max_retry_count", str(max_retry_count), "最大重试次数"),
                     ("webhook_api_interval", str(api_interval_seconds), "Webhook API发送间隔（秒）"),
                     ("enable_dedup", str(enable_dedup).lower(), "启用智能去重"),
+                    # 通知开关配置
+                    ("notification_reminder_enabled", str(reminder_enabled).lower(), "是否启用提醒通知（4/8小时）→服务商群"),
+                    ("notification_escalation_enabled", str(escalation_enabled).lower(), "是否启用升级通知（8/16小时）→运营群"),
                     # SLA配置
                     ("sla_pending_reminder", str(pending_reminder), "待预约提醒阈值（工作小时）→服务商群"),
                     ("sla_pending_escalation", str(pending_escalation), "待预约升级阈值（工作小时）→运营群"),
