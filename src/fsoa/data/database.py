@@ -9,7 +9,7 @@ import sqlite3
 from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any
 from contextlib import contextmanager
-from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Boolean, Text, JSON, Index, func
+from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Boolean, Text, Index, func
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.exc import SQLAlchemyError
@@ -41,10 +41,10 @@ class AgentRunTable(Base):
     trigger_time = Column(DateTime, nullable=False)
     end_time = Column(DateTime)
     status = Column(String(50), nullable=False)  # 'running', 'completed', 'failed'
-    context = Column(JSON)  # 执行上下文和结果统计
+    context = Column(Text)  # 执行上下文和结果统计，存储JSON字符串
     opportunities_processed = Column(Integer, default=0)
     notifications_sent = Column(Integer, default=0)
-    errors = Column(JSON)  # 错误信息列表
+    errors = Column(Text)  # 错误信息列表，存储JSON字符串
     created_at = Column(DateTime, nullable=False, default=now_china_naive)
 
 
@@ -55,8 +55,8 @@ class AgentHistoryTable(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     run_id = Column(Integer, nullable=False)  # 关联agent_runs.id
     step_name = Column(String(100), nullable=False)  # 'fetch_data', 'analyze', 'send_notifications'
-    input_data = Column(JSON)  # 输入数据
-    output_data = Column(JSON)  # 输出数据
+    input_data = Column(Text)  # 输入数据，存储JSON字符串
+    output_data = Column(Text)  # 输出数据，存储JSON字符串
     timestamp = Column(DateTime, nullable=False)
     duration_seconds = Column(Float)  # 执行耗时
     error_message = Column(Text)  # 错误信息
@@ -139,7 +139,7 @@ class LLMCallRecordTable(Base):
     status = Column(String(50), nullable=False)  # started, success, failed, timeout, rate_limited
 
     # 输入数据
-    context_data = Column(JSON)
+    context_data = Column(Text)  # 存储JSON字符串，确保可读性
     prompt_text = Column(Text)
     model_name = Column(String(100), nullable=False)
     temperature = Column(Float, nullable=False)
@@ -147,7 +147,7 @@ class LLMCallRecordTable(Base):
 
     # 输出数据
     response_text = Column(Text)
-    parsed_result = Column(JSON)
+    parsed_result = Column(Text)  # 存储JSON字符串，确保可读性
 
     # 性能指标
     duration_ms = Column(Float)
@@ -160,8 +160,8 @@ class LLMCallRecordTable(Base):
     error_type = Column(String(100))
 
     # 决策信息
-    rule_suggestion = Column(JSON)
-    final_decision = Column(JSON)
+    rule_suggestion = Column(Text)  # 存储JSON字符串，确保可读性
+    final_decision = Column(Text)   # 存储JSON字符串，确保可读性
 
     created_at = Column(DateTime, nullable=False, default=now_china_naive)
 

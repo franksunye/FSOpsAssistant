@@ -211,12 +211,13 @@ class LLMObserver:
                 import json
                 db_manager = get_database_manager()
 
-                # 确保JSON字段正确序列化
+                # 确保JSON字段正确序列化为可读字符串
                 def safe_json_serialize(obj):
                     if obj is None:
                         return None
                     if isinstance(obj, (dict, list)):
-                        return json.dumps(obj, ensure_ascii=False)
+                        # 使用紧凑格式，确保中文可读
+                        return json.dumps(obj, ensure_ascii=False, separators=(',', ':'))
                     return obj
 
                 update_data = {
@@ -317,12 +318,13 @@ class LLMObserver:
             import json
             db_manager = get_database_manager()
 
-            # 确保JSON字段正确序列化
+            # 确保JSON字段正确序列化为可读字符串
             def safe_json_serialize(obj):
                 if obj is None:
                     return None
                 if isinstance(obj, (dict, list)):
-                    return json.dumps(obj, ensure_ascii=False)
+                    # 使用紧凑格式，确保中文可读
+                    return json.dumps(obj, ensure_ascii=False, separators=(',', ':'))
                 return obj
 
             record_data = {
@@ -362,12 +364,13 @@ class LLMObserver:
             import json
             db_manager = get_database_manager()
 
-            # 确保JSON字段正确序列化
+            # 确保JSON字段正确序列化为可读字符串
             def safe_json_serialize(obj):
                 if obj is None:
                     return None
                 if isinstance(obj, (dict, list)):
-                    return json.dumps(obj, ensure_ascii=False)
+                    # 使用紧凑格式，确保中文可读
+                    return json.dumps(obj, ensure_ascii=False, separators=(',', ':'))
                 return obj
 
             update_data = {
