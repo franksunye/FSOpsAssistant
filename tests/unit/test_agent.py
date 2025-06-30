@@ -24,7 +24,7 @@ class TestRuleEngine:
         rule_engine = RuleEngine()
 
         # Act
-        result = rule_engine.evaluate_opportunity(sample_opportunity)
+        result = rule_engine.evaluate_task(sample_opportunity)
 
         # Assert
         assert result.action == "skip"
@@ -41,7 +41,7 @@ class TestRuleEngine:
         rule_engine = RuleEngine()
 
         # Act
-        result = rule_engine.evaluate_opportunity(overdue_opportunity)
+        result = rule_engine.evaluate_task(overdue_opportunity)
 
         # Assert
         assert result.action in ["escalate", "notify"]  # 根据具体实现
@@ -57,7 +57,7 @@ class TestRuleEngine:
         rule_engine = RuleEngine()
 
         # Act
-        result = rule_engine.evaluate_opportunity(overdue_opportunity)
+        result = rule_engine.evaluate_task(overdue_opportunity)
 
         # Assert
         assert result.action in ["notify", "escalate"]
@@ -76,7 +76,7 @@ class TestRuleEngine:
         rule_engine = RuleEngine()
 
         # Act
-        result = rule_engine.evaluate_opportunity(overdue_opportunity)
+        result = rule_engine.evaluate_task(overdue_opportunity)
 
         # Assert
         # 规则引擎本身可能不处理冷却时间，这由NotificationManager处理
@@ -103,7 +103,7 @@ class TestDecisionEngine:
         """测试仅LLM模式"""
         # Arrange
         mock_client = Mock()
-        mock_client.analyze_opportunity_priority.return_value = DecisionResult(
+        mock_client.analyze_task_priority.return_value = DecisionResult(
             action="notify",
             priority=Priority.HIGH,
             llm_used=True
@@ -125,7 +125,7 @@ class TestDecisionEngine:
         """测试LLM失败时的降级处理"""
         # Arrange
         mock_client = Mock()
-        mock_client.analyze_opportunity_priority.side_effect = Exception("LLM Error")
+        mock_client.analyze_task_priority.side_effect = Exception("LLM Error")
         mock_get_client.return_value = mock_client
 
         decision_engine = DecisionEngine(DecisionMode.LLM_FALLBACK)
@@ -174,7 +174,7 @@ class TestDeepSeekClient:
         deepseek_client = DeepSeekClient()
 
         # Act
-        result = deepseek_client.analyze_opportunity_priority(overdue_opportunity)
+        result = deepseek_client.analyze_task_priority(overdue_opportunity)
 
         # Assert
         assert result.action == "notify"
@@ -193,7 +193,7 @@ class TestDeepSeekClient:
         deepseek_client = DeepSeekClient()
 
         # Act
-        result = deepseek_client.analyze_opportunity_priority(overdue_opportunity)
+        result = deepseek_client.analyze_task_priority(overdue_opportunity)
 
         # Assert
         assert isinstance(result, DecisionResult)

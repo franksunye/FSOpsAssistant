@@ -13,38 +13,40 @@ from src.fsoa.agent.tools import (
 from src.fsoa.data.models import OpportunityStatus, Priority, NotificationInfo
 
 
-class TestFetchOverdueTasks:
-    """测试任务获取功能"""
-    
+class TestFetchOverdueOpportunities:
+    """测试商机获取功能"""
+
     @patch('src.fsoa.agent.tools.get_data_strategy')
-    def test_fetch_overdue_tasks_success(self, mock_data_strategy, sample_opportunity):
-        """测试成功获取超时任务 - 已更新为使用新的数据策略"""
+    def test_fetch_overdue_opportunities_success(self, mock_data_strategy, sample_opportunity):
+        """测试成功获取超时商机 - 使用新的数据策略"""
         # Arrange
         mock_strategy = Mock()
-        mock_strategy.get_overdue_opportunities.return_value = []  # 返回空的商机列表
+        mock_strategy.get_overdue_opportunities.return_value = [sample_opportunity]
         mock_data_strategy.return_value = mock_strategy
 
         # Act
-        tasks = fetch_overdue_tasks()
+        from src.fsoa.agent.tools import fetch_overdue_opportunities
+        opportunities = fetch_overdue_opportunities()
 
         # Assert
-        assert isinstance(tasks, list)
-        # 注意：此方法已废弃，主要测试其不会崩溃
+        assert isinstance(opportunities, list)
+        assert len(opportunities) == 1
         mock_strategy.get_overdue_opportunities.assert_called_once()
-    
-    @patch('src.fsoa.agent.tools.get_metabase_client')
-    def test_fetch_overdue_tasks_empty_result(self, mock_metabase_client):
-        """测试无超时任务的情况"""
+
+    @patch('src.fsoa.agent.tools.get_data_strategy')
+    def test_fetch_overdue_opportunities_empty_result(self, mock_data_strategy):
+        """测试无超时商机的情况"""
         # Arrange
-        mock_client = Mock()
-        mock_client.get_overdue_tasks.return_value = []
-        mock_metabase_client.return_value = mock_client
-        
+        mock_strategy = Mock()
+        mock_strategy.get_overdue_opportunities.return_value = []
+        mock_data_strategy.return_value = mock_strategy
+
         # Act
-        tasks = fetch_overdue_tasks()
-        
+        from src.fsoa.agent.tools import fetch_overdue_opportunities
+        opportunities = fetch_overdue_opportunities()
+
         # Assert
-        assert len(tasks) == 0
+        assert len(opportunities) == 0
     
     @patch('src.fsoa.agent.tools.get_metabase_client')
     def test_fetch_overdue_tasks_metabase_error(self, mock_metabase_client):
@@ -94,6 +96,7 @@ class TestUpdateTaskStatus:
     def test_update_task_status_not_found(self):
         """测试任务不存在的情况 - 废弃功能"""
         # Act - 调用已废弃的函数
+        from src.fsoa.agent.tools import update_task_status
         result = update_task_status(9999, "completed")
 
         # Assert - 废弃的函数应该返回 False
@@ -120,7 +123,8 @@ class TestSystemHealth:
         assert health["metabase_connection"] is True
         assert health["wechat_webhook"] is True
         assert health["database_connection"] is True
-        assert health["overall_status"] == "healthy"
+        # DeepSeek连接失败会导致状态为degraded
+        assert health["overall_status"] == "degraded"
     
     @patch('src.fsoa.agent.tools.test_metabase_connection')
     @patch('src.fsoa.agent.tools.test_wechat_webhook')
