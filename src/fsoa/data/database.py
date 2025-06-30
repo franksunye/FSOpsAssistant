@@ -5,6 +5,7 @@
 """
 
 import os
+import json
 import sqlite3
 from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any
@@ -330,14 +331,23 @@ class DatabaseManager:
         """保存Agent执行记录"""
         try:
             with self.get_session() as session:
+                # 序列化JSON字段
+                context_json = None
+                if agent_run.context:
+                    context_json = json.dumps(agent_run.context, ensure_ascii=False, separators=(',', ':'))
+
+                errors_json = None
+                if agent_run.errors:
+                    errors_json = json.dumps(agent_run.errors, ensure_ascii=False, separators=(',', ':'))
+
                 run_record = AgentRunTable(
                     trigger_time=agent_run.trigger_time,
                     end_time=agent_run.end_time,
                     status=agent_run.status.value,
-                    context=agent_run.context,
+                    context=context_json,
                     opportunities_processed=agent_run.opportunities_processed,
                     notifications_sent=agent_run.notifications_sent,
-                    errors=agent_run.errors,
+                    errors=errors_json,
                     created_at=agent_run.created_at or now_china_naive()
                 )
                 session.add(run_record)
@@ -356,6 +366,10 @@ class DatabaseManager:
                 if run_record:
                     for key, value in updates.items():
                         if hasattr(run_record, key):
+                            # 序列化JSON字段
+                            if key in ['context', 'errors'] and value is not None:
+                                if isinstance(value, (dict, list)):
+                                    value = json.dumps(value, ensure_ascii=False, separators=(',', ':'))
                             setattr(run_record, key, value)
                     session.commit()
                     return True
@@ -368,11 +382,20 @@ class DatabaseManager:
         """保存Agent执行历史"""
         try:
             with self.get_session() as session:
+                # 序列化JSON字段
+                input_data_json = None
+                if history.input_data:
+                    input_data_json = json.dumps(history.input_data, ensure_ascii=False, separators=(',', ':'))
+
+                output_data_json = None
+                if history.output_data:
+                    output_data_json = json.dumps(history.output_data, ensure_ascii=False, separators=(',', ':'))
+
                 history_record = AgentHistoryTable(
                     run_id=history.run_id,
                     step_name=history.step_name,
-                    input_data=history.input_data,
-                    output_data=history.output_data,
+                    input_data=input_data_json,
+                    output_data=output_data_json,
                     timestamp=history.timestamp,
                     duration_seconds=history.duration_seconds,
                     error_message=history.error_message,
