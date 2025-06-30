@@ -271,7 +271,7 @@ class MetabaseQuery(BaseModel):
 class DecisionContext(BaseModel):
     """决策上下文模型"""
     # task: TaskInfo  # 已废弃
-    history: List[NotificationInfo] = []
+    history: List[NotificationTask] = []  # 🔧 修复：使用NotificationTask替代废弃的NotificationInfo
     group_config: Optional[GroupConfig] = None
     system_config: Dict[str, str] = {}
 
