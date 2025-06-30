@@ -69,7 +69,11 @@ class DeepSeekClient:
             from ..data.database import get_database_manager
             db_manager = get_database_manager()
             temperature_config = db_manager.get_system_config("llm_temperature")
-            temperature = float(temperature_config) if temperature_config else 0.1
+            try:
+                temperature = float(temperature_config) if temperature_config else 0.1
+            except (ValueError, TypeError):
+                logger.warning(f"Invalid temperature config: {temperature_config}, using default 0.1")
+                temperature = 0.1
 
             # 开始观测记录
             call_id = observer.start_call(
@@ -132,8 +136,13 @@ class DeepSeekClient:
             error_type = type(e).__name__
             error_message = str(e)
 
+            # 安全获取call_id
+            call_id = 'unknown'
+            if observer and hasattr(observer, '_current_call') and observer._current_call:
+                call_id = observer._current_call.call_id
+
             logger.error(f"❌ DeepSeek API调用失败", extra={
-                "call_id": getattr(observer, '_current_call', {}).get('call_id', 'unknown') if observer else 'unknown',
+                "call_id": call_id,
                 "error_type": error_type,
                 "error_message": error_message,
                 "duration_ms": duration_ms
@@ -214,15 +223,15 @@ class DeepSeekClient:
 - 工单号: {opportunity.order_num}
 - 客户姓名: {opportunity.name}
 - 服务地址: {opportunity.address}
-- 当前状态: {opportunity.order_status.value}
+- 当前状态: {opportunity.order_status}
 - 负责人: {opportunity.supervisor_name}
 - 组织: {opportunity.org_name}
-- SLA阈值: {opportunity.sla_threshold_hours}小时
-- 已用时间: {opportunity.elapsed_hours:.1f}小时
-- 超时时间: {opportunity.overdue_hours:.1f}小时
+- SLA阈值: {opportunity.sla_threshold_hours or '未设置'}小时
+- 已用时间: {(opportunity.elapsed_hours or 0):.1f}小时
+- 超时时间: {(opportunity.overdue_hours or 0):.1f}小时
 - 是否违规: {'是' if opportunity.is_violation else '否'}
 - 是否逾期: {'是' if opportunity.is_overdue else '否'}
-- 升级级别: {opportunity.escalation_level}
+- 升级级别: {opportunity.escalation_level or 0}
 - 创建时间: {opportunity.create_time.strftime('%Y-%m-%d %H:%M:%S') if opportunity.create_time else '未知'}
 
 当前时间: {current_time}
@@ -314,14 +323,24 @@ class DeepSeekClient:
             # 尝试提取JSON
             start_idx = result_text.find('{')
             end_idx = result_text.rfind('}') + 1
-            
+
             if start_idx >= 0 and end_idx > start_idx:
                 json_str = result_text[start_idx:end_idx]
-                return json.loads(json_str)
+                parsed_result = json.loads(json_str)
+
+                # 确保必需字段存在，提供默认值
+                result = {
+                    "action": parsed_result.get("action", "skip"),
+                    "priority": parsed_result.get("priority", "normal"),
+                    "message": parsed_result.get("message", "系统自动生成的提醒消息"),
+                    "reasoning": parsed_result.get("reasoning", "LLM分析结果"),
+                    "confidence": parsed_result.get("confidence", 0.8)
+                }
+                return result
             else:
                 logger.warning("No JSON found in LLM response, using fallback")
                 return self._extract_fallback_decision(result_text)
-                
+
         except json.JSONDecodeError as e:
             logger.warning(f"Failed to parse JSON: {e}, using fallback")
             return self._extract_fallback_decision(result_text)
@@ -366,10 +385,14 @@ class DeepSeekClient:
     
     def _fallback_rule_decision(self, opportunity: OpportunityInfo) -> DecisionResult:
         """规则决策降级方案"""
-        if opportunity.overdue_hours > opportunity.sla_threshold_hours:
+        # 安全处理None值
+        overdue_hours = opportunity.overdue_hours or 0
+        sla_threshold = opportunity.sla_threshold_hours or 24  # 默认24小时
+
+        if overdue_hours > sla_threshold:
             action = "escalate"
             priority = Priority.URGENT
-        elif opportunity.overdue_hours > 0:
+        elif overdue_hours > 0:
             action = "notify"
             priority = Priority.HIGH
         else:
@@ -380,7 +403,7 @@ class DeepSeekClient:
             action=action,
             priority=priority,
             message="基于规则的自动决策",
-            reasoning=f"商机超时{opportunity.overdue_hours:.1f}小时，触发{action}动作",
+            reasoning=f"商机超时{overdue_hours:.1f}小时，触发{action}动作",
             confidence=1.0,
             llm_used=False
         )
