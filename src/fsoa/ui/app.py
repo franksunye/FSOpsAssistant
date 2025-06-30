@@ -891,24 +891,28 @@ def show_system_settings():
                 for key, value, description in agent_configs:
                     db_manager.set_system_config(key, value, description)
 
-                # 如果执行间隔发生变化且调度器正在运行，自动重启调度器
+                # 如果执行间隔发生变化，自动重启/启动调度器使配置立即生效
                 if interval_changed:
                     try:
                         scheduler = get_scheduler()
-                        if hasattr(scheduler, 'scheduler') and scheduler.scheduler and scheduler.scheduler.running:
-                            st.info("🔄 检测到执行间隔变化，正在重启调度器...")
+                        is_running = hasattr(scheduler, 'scheduler') and scheduler.scheduler and scheduler.scheduler.running
 
+                        if is_running:
+                            st.info("🔄 检测到执行间隔变化，正在重启调度器...")
                             # 重启调度器
                             stop_scheduler()
                             start_scheduler()
                             setup_agent_scheduler()
-
                             st.success(f"✅ Agent设置已保存，调度器已自动重启（新间隔：{execution_interval}分钟）")
                         else:
-                            st.success("✅ Agent设置已保存")
-                            st.info("💡 调度器未运行，新的执行间隔将在下次启动时生效")
+                            st.info("🔄 检测到执行间隔变化，正在启动调度器...")
+                            # 启动调度器
+                            start_scheduler()
+                            setup_agent_scheduler()
+                            st.success(f"✅ Agent设置已保存，调度器已自动启动（执行间隔：{execution_interval}分钟）")
+
                     except Exception as restart_error:
-                        st.warning(f"⚠️ 配置已保存，但调度器重启失败: {restart_error}")
+                        st.warning(f"⚠️ 配置已保存，但调度器启动/重启失败: {restart_error}")
                         st.info("💡 请手动点击'🔄 重启调度器'按钮使新配置生效")
                 else:
                     st.success("✅ Agent设置已保存")
