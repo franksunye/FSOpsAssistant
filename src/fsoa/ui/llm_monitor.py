@@ -65,7 +65,7 @@ def render_llm_monitor():
     st.divider()
     
     # 选项卡
-    tab1, tab2, tab3, tab4 = st.tabs(["📊 实时监控", "📋 调用历史", "🔍 详细查看", "⚙️ 配置管理"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 实时监控", "📋 调用历史", "🔍 详细查看", "⚙️ 配置管理", "💾 数据管理"])
     
     with tab1:
         render_real_time_monitor(observer)
@@ -78,6 +78,9 @@ def render_llm_monitor():
     
     with tab4:
         render_config_management()
+
+    with tab5:
+        render_data_management()
 
 
 def render_real_time_monitor(observer):
@@ -127,40 +130,54 @@ def render_real_time_monitor(observer):
 def render_call_history(observer):
     """渲染调用历史"""
     st.subheader("📋 调用历史")
-    
-    # 历史记录数量选择
-    limit = st.selectbox("显示记录数", [10, 20, 50, 100], index=1)
-    
-    calls = observer.get_call_history(limit=limit)
+
+    # 控制选项
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        limit = st.selectbox("显示记录数", [10, 20, 50, 100], index=1)
+
+    with col2:
+        data_source = st.selectbox("数据源", ["数据库", "内存"], index=0)
+
+    with col3:
+        auto_refresh = st.checkbox("自动刷新", value=False)
+
+    # 获取调用历史
+    use_database = (data_source == "数据库")
+    calls = observer.get_call_history(limit=limit, use_database=use_database)
     
     if not calls:
         st.info("暂无调用历史")
         return
     
     # 过滤选项
-    col1, col2 = st.columns(2)
-    
+    col1, col2, col3 = st.columns(3)
+
     with col1:
         status_filter = st.selectbox(
             "状态过滤",
-            ["全部", "成功", "失败"],
+            ["全部", "成功", "失败", "超时"],
             index=0
         )
-    
+
     with col2:
         time_filter = st.selectbox(
             "时间过滤",
             ["全部", "最近1小时", "最近24小时", "最近7天"],
             index=0
         )
+
+    with col3:
+        opportunity_filter = st.text_input("商机ID过滤", placeholder="输入商机ID")
     
     # 应用过滤
     filtered_calls = calls
-    
+
     if status_filter != "全部":
-        status_map = {"成功": "success", "失败": "failed"}
+        status_map = {"成功": "success", "失败": "failed", "超时": "timeout"}
         filtered_calls = [c for c in filtered_calls if c["status"] == status_map[status_filter]]
-    
+
     if time_filter != "全部":
         now = datetime.now()
         time_deltas = {
@@ -170,8 +187,14 @@ def render_call_history(observer):
         }
         cutoff = now - time_deltas[time_filter]
         filtered_calls = [
-            c for c in filtered_calls 
+            c for c in filtered_calls
             if datetime.fromisoformat(c["timestamp"]) > cutoff
+        ]
+
+    if opportunity_filter:
+        filtered_calls = [
+            c for c in filtered_calls
+            if opportunity_filter.lower() in c["opportunity_id"].lower()
         ]
     
     # 显示过滤后的结果
@@ -352,6 +375,199 @@ def render_config_management():
     
     except Exception as e:
         st.error(f"无法加载配置: {e}")
+
+
+def render_data_management():
+    """渲染数据管理"""
+    st.subheader("💾 LLM数据管理")
+
+    try:
+        from ..data.database import get_database_manager
+        db_manager = get_database_manager()
+
+        # 数据统计
+        st.markdown("### 数据统计")
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            # 总体统计
+            total_stats = db_manager.get_llm_call_statistics()
+            st.metric("数据库总记录数", total_stats.get("total_calls", 0))
+            st.metric("总成功调用", total_stats.get("success_calls", 0))
+            st.metric("总失败调用", total_stats.get("failed_calls", 0))
+
+        with col2:
+            # 最近24小时统计
+            from datetime import datetime, timedelta
+            yesterday = datetime.now() - timedelta(days=1)
+            recent_stats = db_manager.get_llm_call_statistics(start_time=yesterday)
+            st.metric("24小时内调用", recent_stats.get("total_calls", 0))
+            st.metric("24小时成功率", f"{recent_stats.get('success_rate', 0):.1%}")
+            st.metric("24小时平均响应时间", f"{recent_stats.get('avg_duration_ms', 0):.0f}ms")
+
+        st.divider()
+
+        # 数据清理
+        st.markdown("### 数据清理")
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.markdown("**清理旧数据**")
+            days_to_keep = st.number_input(
+                "保留天数",
+                min_value=1,
+                max_value=365,
+                value=30,
+                help="删除指定天数之前的LLM调用记录"
+            )
+
+            if st.button("清理旧数据", type="secondary"):
+                with st.spinner("正在清理数据..."):
+                    deleted_count = db_manager.delete_old_llm_records(days_to_keep)
+                    if deleted_count > 0:
+                        st.success(f"成功删除 {deleted_count} 条旧记录")
+                    else:
+                        st.info("没有需要清理的旧记录")
+
+        with col2:
+            st.markdown("**数据导出**")
+            export_days = st.number_input(
+                "导出天数",
+                min_value=1,
+                max_value=90,
+                value=7,
+                help="导出最近指定天数的LLM调用记录"
+            )
+
+            if st.button("导出数据", type="secondary"):
+                try:
+                    import json
+                    from datetime import datetime, timedelta
+
+                    start_time = datetime.now() - timedelta(days=export_days)
+                    records = db_manager.get_llm_call_records(
+                        limit=1000,
+                        start_time=start_time
+                    )
+
+                    if records:
+                        # 转换为JSON格式
+                        export_data = {
+                            "export_time": datetime.now().isoformat(),
+                            "export_days": export_days,
+                            "total_records": len(records),
+                            "records": records
+                        }
+
+                        json_str = json.dumps(export_data, ensure_ascii=False, indent=2)
+
+                        st.download_button(
+                            label="下载JSON文件",
+                            data=json_str,
+                            file_name=f"llm_records_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                            mime="application/json"
+                        )
+
+                        st.success(f"准备导出 {len(records)} 条记录")
+                    else:
+                        st.info("没有找到符合条件的记录")
+
+                except Exception as e:
+                    st.error(f"导出失败: {e}")
+
+        st.divider()
+
+        # 数据库维护
+        st.markdown("### 数据库维护")
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.markdown("**数据库信息**")
+            try:
+                # 获取数据库文件大小等信息
+                import os
+                db_path = "fsoa.db"  # 默认数据库路径
+                if os.path.exists(db_path):
+                    db_size = os.path.getsize(db_path)
+                    st.write(f"数据库文件大小: {db_size / 1024 / 1024:.2f} MB")
+                else:
+                    st.write("数据库文件: 未找到")
+
+                # 显示表信息
+                st.write("LLM记录表: llm_call_records")
+
+            except Exception as e:
+                st.write(f"无法获取数据库信息: {e}")
+
+        with col2:
+            st.markdown("**性能优化**")
+
+            if st.button("优化数据库", type="secondary"):
+                try:
+                    # 这里可以添加数据库优化逻辑，比如VACUUM等
+                    st.info("数据库优化功能开发中...")
+                except Exception as e:
+                    st.error(f"优化失败: {e}")
+
+        # 高级查询
+        st.divider()
+        st.markdown("### 高级查询")
+
+        with st.expander("自定义查询", expanded=False):
+            col1, col2 = st.columns(2)
+
+            with col1:
+                query_start_date = st.date_input("开始日期")
+                query_status = st.selectbox("状态", ["全部", "success", "failed", "timeout"])
+
+            with col2:
+                query_end_date = st.date_input("结束日期")
+                query_limit = st.number_input("记录数量", min_value=1, max_value=500, value=50)
+
+            if st.button("执行查询"):
+                try:
+                    from datetime import datetime
+
+                    start_time = datetime.combine(query_start_date, datetime.min.time())
+                    end_time = datetime.combine(query_end_date, datetime.max.time())
+
+                    status_filter = None if query_status == "全部" else query_status
+
+                    records = db_manager.get_llm_call_records(
+                        limit=query_limit,
+                        status_filter=status_filter,
+                        start_time=start_time,
+                        end_time=end_time
+                    )
+
+                    if records:
+                        st.success(f"查询到 {len(records)} 条记录")
+
+                        # 显示查询结果摘要
+                        df_data = []
+                        for record in records:
+                            df_data.append({
+                                "时间": record["timestamp"][:19].replace("T", " "),
+                                "商机ID": record["opportunity_id"],
+                                "状态": record["status"],
+                                "响应时间": f"{record.get('duration_ms', 0):.0f}ms",
+                                "Token": record.get("tokens_used", "N/A")
+                            })
+
+                        import pandas as pd
+                        df = pd.DataFrame(df_data)
+                        st.dataframe(df, use_container_width=True)
+                    else:
+                        st.info("没有找到符合条件的记录")
+
+                except Exception as e:
+                    st.error(f"查询失败: {e}")
+
+    except Exception as e:
+        st.error(f"无法加载数据管理功能: {e}")
 
 
 if __name__ == "__main__":

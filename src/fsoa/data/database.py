@@ -128,10 +128,48 @@ class OpportunityCacheTable(Base):
 # 旧的AgentHistoryTable已被新设计替代，见上面的新表结构
 
 
+class LLMCallRecordTable(Base):
+    """LLM调用记录表"""
+    __tablename__ = 'llm_call_records'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    call_id = Column(String(100), nullable=False, unique=True)
+    timestamp = Column(DateTime, nullable=False)
+    opportunity_id = Column(String(100), nullable=False)
+    status = Column(String(50), nullable=False)  # started, success, failed, timeout, rate_limited
+
+    # 输入数据
+    context_data = Column(JSON)
+    prompt_text = Column(Text)
+    model_name = Column(String(100), nullable=False)
+    temperature = Column(Float, nullable=False)
+    max_tokens = Column(Integer, nullable=False)
+
+    # 输出数据
+    response_text = Column(Text)
+    parsed_result = Column(JSON)
+
+    # 性能指标
+    duration_ms = Column(Float)
+    tokens_used = Column(Integer)
+    tokens_prompt = Column(Integer)
+    tokens_completion = Column(Integer)
+
+    # 错误信息
+    error_message = Column(Text)
+    error_type = Column(String(100))
+
+    # 决策信息
+    rule_suggestion = Column(JSON)
+    final_decision = Column(JSON)
+
+    created_at = Column(DateTime, nullable=False, default=now_china_naive)
+
+
 class SystemConfigTable(Base):
     """系统配置表"""
     __tablename__ = 'system_config'
-    
+
     key = Column(String(100), primary_key=True)
     value = Column(Text, nullable=False)
     description = Column(Text)
@@ -907,6 +945,141 @@ class DatabaseManager:
                 session.commit()
                 return True
             return False
+
+    # LLM调用记录管理
+    def create_llm_call_record(self, call_record_data: Dict[str, Any]) -> bool:
+        """创建LLM调用记录"""
+        try:
+            with self.get_session() as session:
+                record = LLMCallRecordTable(**call_record_data)
+                session.add(record)
+                session.commit()
+                return True
+        except Exception as e:
+            logger.error(f"Failed to create LLM call record: {e}")
+            return False
+
+    def update_llm_call_record(self, call_id: str, update_data: Dict[str, Any]) -> bool:
+        """更新LLM调用记录"""
+        try:
+            with self.get_session() as session:
+                record = session.query(LLMCallRecordTable).filter_by(call_id=call_id).first()
+                if record:
+                    for key, value in update_data.items():
+                        if hasattr(record, key):
+                            setattr(record, key, value)
+                    session.commit()
+                    return True
+                return False
+        except Exception as e:
+            logger.error(f"Failed to update LLM call record {call_id}: {e}")
+            return False
+
+    def get_llm_call_records(self, limit: int = 50, offset: int = 0,
+                           status_filter: str = None,
+                           start_time: datetime = None,
+                           end_time: datetime = None) -> List[Dict[str, Any]]:
+        """获取LLM调用记录"""
+        try:
+            with self.get_session() as session:
+                query = session.query(LLMCallRecordTable)
+
+                # 应用过滤条件
+                if status_filter:
+                    query = query.filter(LLMCallRecordTable.status == status_filter)
+                if start_time:
+                    query = query.filter(LLMCallRecordTable.timestamp >= start_time)
+                if end_time:
+                    query = query.filter(LLMCallRecordTable.timestamp <= end_time)
+
+                # 排序和分页
+                records = query.order_by(LLMCallRecordTable.timestamp.desc()).offset(offset).limit(limit).all()
+
+                # 转换为字典
+                return [
+                    {
+                        'id': record.id,
+                        'call_id': record.call_id,
+                        'timestamp': record.timestamp.isoformat(),
+                        'opportunity_id': record.opportunity_id,
+                        'status': record.status,
+                        'context_data': record.context_data,
+                        'prompt_text': record.prompt_text,
+                        'model_name': record.model_name,
+                        'temperature': record.temperature,
+                        'max_tokens': record.max_tokens,
+                        'response_text': record.response_text,
+                        'parsed_result': record.parsed_result,
+                        'duration_ms': record.duration_ms,
+                        'tokens_used': record.tokens_used,
+                        'tokens_prompt': record.tokens_prompt,
+                        'tokens_completion': record.tokens_completion,
+                        'error_message': record.error_message,
+                        'error_type': record.error_type,
+                        'rule_suggestion': record.rule_suggestion,
+                        'final_decision': record.final_decision,
+                        'created_at': record.created_at.isoformat()
+                    }
+                    for record in records
+                ]
+        except Exception as e:
+            logger.error(f"Failed to get LLM call records: {e}")
+            return []
+
+    def get_llm_call_statistics(self, start_time: datetime = None, end_time: datetime = None) -> Dict[str, Any]:
+        """获取LLM调用统计"""
+        try:
+            with self.get_session() as session:
+                query = session.query(LLMCallRecordTable)
+
+                # 应用时间过滤
+                if start_time:
+                    query = query.filter(LLMCallRecordTable.timestamp >= start_time)
+                if end_time:
+                    query = query.filter(LLMCallRecordTable.timestamp <= end_time)
+
+                total_calls = query.count()
+                if total_calls == 0:
+                    return {"total_calls": 0}
+
+                success_calls = query.filter(LLMCallRecordTable.status == 'success').count()
+                failed_calls = query.filter(LLMCallRecordTable.status == 'failed').count()
+
+                # 计算平均响应时间
+                avg_duration = session.query(func.avg(LLMCallRecordTable.duration_ms)).filter(
+                    LLMCallRecordTable.duration_ms.isnot(None)
+                ).scalar() or 0
+
+                # 计算总Token使用
+                total_tokens = session.query(func.sum(LLMCallRecordTable.tokens_used)).filter(
+                    LLMCallRecordTable.tokens_used.isnot(None)
+                ).scalar() or 0
+
+                return {
+                    "total_calls": total_calls,
+                    "success_calls": success_calls,
+                    "failed_calls": failed_calls,
+                    "success_rate": success_calls / total_calls if total_calls > 0 else 0,
+                    "avg_duration_ms": float(avg_duration),
+                    "total_tokens_used": int(total_tokens)
+                }
+        except Exception as e:
+            logger.error(f"Failed to get LLM call statistics: {e}")
+            return {"total_calls": 0}
+
+    def delete_old_llm_records(self, days_to_keep: int = 30) -> int:
+        """删除旧的LLM调用记录"""
+        try:
+            cutoff_date = now_china_naive() - timedelta(days=days_to_keep)
+            with self.get_session() as session:
+                deleted_count = session.query(LLMCallRecordTable).filter(
+                    LLMCallRecordTable.timestamp < cutoff_date
+                ).delete()
+                session.commit()
+                return deleted_count
+        except Exception as e:
+            logger.error(f"Failed to delete old LLM records: {e}")
+            return 0
 
 
 # 全局数据库管理器实例

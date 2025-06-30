@@ -74,11 +74,12 @@ class LLMCallRecord:
 
 class LLMObserver:
     """LLM观测器"""
-    
+
     def __init__(self):
         self.logger = get_logger(__name__)
-        self._call_records: List[LLMCallRecord] = []
+        self._call_records: List[LLMCallRecord] = []  # 内存缓存，用于快速访问
         self._current_call: Optional[LLMCallRecord] = None
+        self._use_database = True  # 是否使用数据库持久化
     
     def start_call(self, opportunity_id: str, context_data: Dict[str, Any], 
                    prompt_text: str, model_name: str = "deepseek-chat",
@@ -117,7 +118,11 @@ class LLMObserver:
         
         # 记录完整的提示词内容（调试模式）
         self._log_prompt_details(call_id, prompt_text)
-        
+
+        # 保存到数据库
+        if self._use_database:
+            self._save_to_database()
+
         return call_id
     
     def record_success(self, call_id: str, response_text: str, 
@@ -155,7 +160,11 @@ class LLMObserver:
         
         # 记录完整的响应内容（调试模式）
         self._log_response_details(call_id, response_text, parsed_result)
-        
+
+        # 更新数据库
+        if self._use_database:
+            self._update_database()
+
         self._finalize_call()
     
     def record_failure(self, call_id: str, error_message: str, 
@@ -180,7 +189,11 @@ class LLMObserver:
                 "error_message": error_message
             }
         )
-        
+
+        # 更新数据库
+        if self._use_database:
+            self._update_database()
+
         self._finalize_call()
     
     def record_decision_context(self, call_id: str, rule_suggestion: Dict[str, Any],
@@ -269,33 +282,118 @@ class LLMObserver:
             summary["rule_priority"] = rule.get("priority")
         
         return summary
-    
+
+    def _save_to_database(self):
+        """保存当前调用到数据库"""
+        if not self._current_call:
+            return
+
+        try:
+            from ..data.database import get_database_manager
+            db_manager = get_database_manager()
+
+            record_data = {
+                'call_id': self._current_call.call_id,
+                'timestamp': self._current_call.timestamp,
+                'opportunity_id': self._current_call.opportunity_id,
+                'status': self._current_call.status.value,
+                'context_data': self._current_call.context_data,
+                'prompt_text': self._current_call.prompt_text,
+                'model_name': self._current_call.model_name,
+                'temperature': self._current_call.temperature,
+                'max_tokens': self._current_call.max_tokens,
+                'response_text': self._current_call.response_text,
+                'parsed_result': self._current_call.parsed_result,
+                'duration_ms': self._current_call.duration_ms,
+                'tokens_used': self._current_call.tokens_used,
+                'tokens_prompt': self._current_call.tokens_prompt,
+                'tokens_completion': self._current_call.tokens_completion,
+                'error_message': self._current_call.error_message,
+                'error_type': self._current_call.error_type,
+                'rule_suggestion': self._current_call.rule_suggestion,
+                'final_decision': self._current_call.final_decision
+            }
+
+            db_manager.create_llm_call_record(record_data)
+
+        except Exception as e:
+            self.logger.error(f"Failed to save LLM call record to database: {e}")
+
+    def _update_database(self):
+        """更新数据库中的调用记录"""
+        if not self._current_call:
+            return
+
+        try:
+            from ..data.database import get_database_manager
+            db_manager = get_database_manager()
+
+            update_data = {
+                'status': self._current_call.status.value,
+                'response_text': self._current_call.response_text,
+                'parsed_result': self._current_call.parsed_result,
+                'duration_ms': self._current_call.duration_ms,
+                'tokens_used': self._current_call.tokens_used,
+                'tokens_prompt': self._current_call.tokens_prompt,
+                'tokens_completion': self._current_call.tokens_completion,
+                'error_message': self._current_call.error_message,
+                'error_type': self._current_call.error_type,
+                'rule_suggestion': self._current_call.rule_suggestion,
+                'final_decision': self._current_call.final_decision
+            }
+
+            db_manager.update_llm_call_record(self._current_call.call_id, update_data)
+
+        except Exception as e:
+            self.logger.error(f"Failed to update LLM call record in database: {e}")
+
     def _finalize_call(self):
         """完成调用记录"""
         if self._current_call:
             self._call_records.append(self._current_call)
             self._current_call = None
     
-    def get_call_history(self, limit: int = 10) -> List[Dict[str, Any]]:
+    def get_call_history(self, limit: int = 10, use_database: bool = True) -> List[Dict[str, Any]]:
         """获取调用历史"""
-        return [record.to_dict() for record in self._call_records[-limit:]]
+        if use_database and self._use_database:
+            try:
+                from ..data.database import get_database_manager
+                db_manager = get_database_manager()
+                return db_manager.get_llm_call_records(limit=limit)
+            except Exception as e:
+                self.logger.error(f"Failed to get call history from database: {e}")
+                # 降级到内存数据
+                return [record.to_dict() for record in self._call_records[-limit:]]
+        else:
+            return [record.to_dict() for record in self._call_records[-limit:]]
     
-    def get_statistics(self) -> Dict[str, Any]:
+    def get_statistics(self, use_database: bool = True) -> Dict[str, Any]:
         """获取统计信息"""
+        if use_database and self._use_database:
+            try:
+                from ..data.database import get_database_manager
+                db_manager = get_database_manager()
+                return db_manager.get_llm_call_statistics()
+            except Exception as e:
+                self.logger.error(f"Failed to get statistics from database: {e}")
+                # 降级到内存数据
+                pass
+
+        # 使用内存数据计算统计
         if not self._call_records:
             return {"total_calls": 0}
-        
+
         total_calls = len(self._call_records)
         success_calls = len([r for r in self._call_records if r.status == LLMCallStatus.SUCCESS])
         failed_calls = len([r for r in self._call_records if r.status == LLMCallStatus.FAILED])
-        
+
         # 计算平均响应时间
         durations = [r.duration_ms for r in self._call_records if r.duration_ms]
         avg_duration = sum(durations) / len(durations) if durations else 0
-        
+
         # 计算Token使用
         total_tokens = sum([r.tokens_used for r in self._call_records if r.tokens_used])
-        
+
         return {
             "total_calls": total_calls,
             "success_calls": success_calls,
