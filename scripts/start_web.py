@@ -43,14 +43,18 @@ def main():
     try:
         # 切换到项目根目录
         os.chdir(project_root)
-        
+
+        # 设置环境变量，确保Python能找到项目模块
+        env = os.environ.copy()
+        env['PYTHONPATH'] = str(project_root)
+
         # 启动 Streamlit
         subprocess.run([
-            sys.executable, "-m", "streamlit", "run", 
+            sys.executable, "-m", "streamlit", "run",
             str(app_path),
             "--server.address", "localhost",
             "--server.port", "8501"
-        ])
+        ], env=env)
         
     except KeyboardInterrupt:
         print("\n🛑 Web 界面已停止")

@@ -10,8 +10,8 @@ import json
 from datetime import datetime, timedelta
 from typing import Dict, Any, List
 
-from ..agent.llm_observer import get_llm_observer
-from ..utils.logger import get_logger
+from src.fsoa.agent.llm_observer import get_llm_observer
+from src.fsoa.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
@@ -301,7 +301,7 @@ def render_config_management():
     st.subheader("⚙️ LLM配置管理")
     
     try:
-        from ..data.database import get_database_manager
+        from src.fsoa.data.database import get_database_manager
         db_manager = get_database_manager()
         
         # 当前配置
@@ -360,7 +360,7 @@ def render_config_management():
         st.markdown("### 连接测试")
         if st.button("测试DeepSeek连接"):
             try:
-                from ..agent.llm import get_deepseek_client
+                from src.fsoa.agent.llm import get_deepseek_client
                 client = get_deepseek_client()
                 
                 with st.spinner("正在测试连接..."):
@@ -382,7 +382,7 @@ def render_data_management():
     st.subheader("💾 LLM数据管理")
 
     try:
-        from ..data.database import get_database_manager
+        from src.fsoa.data.database import get_database_manager
         db_manager = get_database_manager()
 
         # 数据统计

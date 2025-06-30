@@ -203,7 +203,7 @@ class NotificationTaskManager:
                 return result
 
             # 过滤出应该立即发送的任务（考虑冷静时间）
-            ready_tasks = [task for task in pending_tasks if task.should_send_now()]
+            ready_tasks = [task for task in pending_tasks if self._should_send_task_now(task)]
 
             if not ready_tasks:
                 logger.info(f"No tasks ready to send (total pending: {len(pending_tasks)})")
@@ -231,11 +231,45 @@ class NotificationTaskManager:
             
             logger.info(f"Notification execution completed: {result.sent_count} sent, {result.failed_count} failed")
             return result
-            
+
         except Exception as e:
             logger.error(f"Failed to execute pending tasks: {e}")
             result.errors.append(str(e))
             return result
+
+    def _should_send_task_now(self, task: NotificationTask) -> bool:
+        """判断任务是否应该立即发送"""
+        try:
+            # 基本检查：必须是pending状态且未超过最大重试次数
+            if task.status != NotificationTaskStatus.PENDING:
+                return False
+
+            if task.retry_count >= task.max_retry_count:
+                return False
+
+            # 时间检查：必须已到发送时间
+            current_time = now_china_naive()
+            if task.due_time > current_time:
+                return False
+
+            # 冷却期检查：如果有重试记录，需要检查冷却期
+            if task.retry_count > 0:
+                # 检查是否在冷却期内
+                cooldown_cutoff = current_time - timedelta(hours=self.notification_cooldown_hours)
+                recent_tasks = self.db_manager.get_recent_notification_tasks(
+                    task.order_num,
+                    since=cooldown_cutoff,
+                    notification_type=task.notification_type.value
+                )
+                if recent_tasks:
+                    logger.debug(f"Task {task.id} is in cooldown period")
+                    return False
+
+            return True
+
+        except Exception as e:
+            logger.error(f"Error checking if task {task.id} should send: {e}")
+            return False
     
     def _has_pending_task(self, order_num: str, notification_type: NotificationTaskType = None) -> bool:
         """检查是否已存在待处理任务或在冷却期内的已发送任务
@@ -661,7 +695,6 @@ class NotificationTaskManager:
         try:
             if success:
                 # 🔧 修复：发送成功时不应该增加重试次数
-                task.last_sent_at = now_china_naive()
                 # task.retry_count += 1  # ❌ 移除：成功时不增加重试次数
 
                 self.db_manager.update_notification_task_status(
@@ -682,7 +715,7 @@ class NotificationTaskManager:
                 else:
                     # 更新重试次数，保持PENDING状态以便后续重试
                     self.db_manager.update_notification_task_retry_info(
-                        task.id, task.retry_count, task.last_sent_at
+                        task.id, task.retry_count, now_china_naive()
                     )
                     logger.warning(f"Task {task.id} failed, retry count: {task.retry_count}/{task.max_retry_count}")
 

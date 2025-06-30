@@ -2597,7 +2597,7 @@ def show_about():
 def show_llm_monitor():
     """显示LLM监控页面"""
     try:
-        from .llm_monitor import render_llm_monitor
+        from src.fsoa.ui.llm_monitor import render_llm_monitor
         render_llm_monitor()
     except ImportError as e:
         st.error(f"LLM监控模块导入失败: {e}")

@@ -75,10 +75,15 @@ def start_web_ui():
         print("🚀 启动Streamlit服务器...")
         print(f"📝 命令: {' '.join(cmd)}")
         
+        # 设置环境变量
+        env = os.environ.copy()
+        env['PYTHONPATH'] = str(project_root)
+
         # 启动进程
         process = subprocess.Popen(
             cmd,
             cwd=str(project_root),
+            env=env,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             universal_newlines=True,

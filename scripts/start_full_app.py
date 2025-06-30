@@ -208,6 +208,10 @@ def start_web_interface():
     print("📍 访问地址: http://localhost:8501")
 
     try:
+        # 设置环境变量
+        env = os.environ.copy()
+        env['PYTHONPATH'] = str(project_root)
+
         # 启动 Streamlit 进程
         process = subprocess.Popen([
             sys.executable, "-m", "streamlit", "run",
@@ -215,7 +219,7 @@ def start_web_interface():
             "--server.address", "localhost",
             "--server.port", "8501",
             "--server.headless", "true"
-        ], cwd=str(project_root))
+        ], cwd=str(project_root), env=env)
 
         print("✅ Web界面启动成功")
         return process
