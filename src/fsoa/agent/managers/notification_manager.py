@@ -113,9 +113,9 @@ class NotificationTaskManager:
                 if opp.escalation_level > 0:
                     escalation_orgs.add(opp.org_name)
 
-            # 🔧 新增：为每个需要升级的组织创建一个升级通知任务
+            # 🔧 修复：为每个需要升级的组织创建一个升级通知任务
             for org_name in escalation_orgs:
-                # 使用组织名作为order_num的标识符，确保每个组织只有一个升级任务
+                # 使用组织级标识符，但保持现有的order_num字段语义
                 escalation_order_key = f"ESCALATION_{org_name}"
                 task_key = (escalation_order_key, NotificationTaskType.ESCALATION)
 
@@ -126,7 +126,7 @@ class NotificationTaskManager:
                 if (not self._has_pending_escalation_task_for_org(org_name) and
                     task_key not in created_tasks_tracker):
                     escalation_task = NotificationTask(
-                        order_num=escalation_order_key,  # 使用特殊标识符
+                        order_num=escalation_order_key,  # 升级任务使用特殊标识符
                         org_name=org_name,
                         notification_type=NotificationTaskType.ESCALATION,
                         due_time=now_china_naive(),
@@ -206,7 +206,7 @@ class NotificationTaskManager:
         """检查是否已存在待处理任务或在冷却期内的已发送任务
 
         Args:
-            order_num: 订单号
+            order_num: 工单号或任务标识符
             notification_type: 通知类型，如果指定则只检查该类型的通知
         """
         try:

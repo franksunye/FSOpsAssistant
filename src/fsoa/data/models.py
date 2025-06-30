@@ -135,7 +135,7 @@ class AgentHistory(BaseModel):
 class NotificationTask(BaseModel):
     """通知任务模型"""
     id: Optional[int] = None
-    order_num: str = Field(..., description="工单号")
+    order_num: str = Field(..., description="工单号或任务标识符")
     org_name: str = Field(..., description="组织名称")
     notification_type: NotificationTaskType = Field(..., description="通知类型")
     due_time: datetime = Field(..., description="应该通知的时间")
